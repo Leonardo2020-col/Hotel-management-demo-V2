@@ -1,31 +1,98 @@
-// hooks/useRooms.js
-import { useState, useEffect, useMemo } from 'react';
-import { mockRooms, roomTypes, cleaningStaff, ROOM_STATUS, CLEANING_STATUS } from '../utils/roomMockData';
+// src/hooks/useRooms.js - Actualizado para Supabase
+import { useState, useEffect, useMemo } from 'react'
+import { db, subscriptions } from '../lib/supabase'
+import toast from 'react-hot-toast'
 
 export const useRooms = () => {
-  const [rooms, setRooms] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [rooms, setRooms] = useState([])
+  const [roomTypes, setRoomTypes] = useState([])
+  const [cleaningStaff, setCleaningStaff] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  // Simular carga inicial de datos
+  // Estados de limpieza y habitaciones (para compatibilidad)
+  const ROOM_STATUS = {
+    AVAILABLE: 'available',
+    OCCUPIED: 'occupied', 
+    CLEANING: 'cleaning',
+    MAINTENANCE: 'maintenance',
+    OUT_OF_ORDER: 'out_of_order'
+  }
+
+  const CLEANING_STATUS = {
+    CLEAN: 'clean',
+    DIRTY: 'dirty',
+    IN_PROGRESS: 'in_progress',
+    INSPECTED: 'inspected'
+  }
+
+  // Mock de personal de limpieza (esto podría venir de la BD)
+  const defaultCleaningStaff = [
+    { id: 1, name: 'María García', active: true, shift: 'Mañana' },
+    { id: 2, name: 'Ana López', active: true, shift: 'Tarde' },
+    { id: 3, name: 'Pedro Martín', active: true, shift: 'Mañana' },
+    { id: 4, name: 'Carmen Ruiz', active: true, shift: 'Tarde' },
+    { id: 5, name: 'José Hernández', active: false, shift: 'Noche' }
+  ]
+
+  // Cargar datos iniciales
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        
-        // Simular delay de API
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        setRooms(mockRooms);
-        setLoading(false);
-      } catch (err) {
-        setError('Error al cargar los datos de habitaciones');
-        setLoading(false);
-      }
-    };
+    loadData()
+  }, [])
 
-    loadData();
-  }, []);
+  // Suscripción en tiempo real
+  useEffect(() => {
+    const subscription = subscriptions.rooms((payload) => {
+      const { eventType, new: newRecord, old: oldRecord } = payload
+      
+      switch (eventType) {
+        case 'INSERT':
+          setRooms(prev => [...prev, newRecord])
+          toast.success('Nueva habitación agregada')
+          break
+        case 'UPDATE':
+          setRooms(prev => 
+            prev.map(room => room.id === newRecord.id ? newRecord : room)
+          )
+          break
+        case 'DELETE':
+          setRooms(prev => prev.filter(room => room.id !== oldRecord.id))
+          toast.info('Habitación eliminada')
+          break
+        default:
+          break
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const [roomsResult, roomTypesResult] = await Promise.all([
+        db.getRooms(),
+        db.getRoomTypes()
+      ])
+      
+      if (roomsResult.error) throw roomsResult.error
+      if (roomTypesResult.error) throw roomTypesResult.error
+      
+      setRooms(roomsResult.data || [])
+      setRoomTypes(roomTypesResult.data || [])
+      setCleaningStaff(defaultCleaningStaff) // Por ahora mock data
+      
+    } catch (err) {
+      setError(err.message)
+      toast.error('Error al cargar datos de habitaciones')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // Calcular estadísticas de habitaciones
   const roomStats = useMemo(() => {
@@ -44,23 +111,29 @@ export const useRooms = () => {
           thisMonth: 0,
           average: 0
         }
-      };
+      }
     }
 
-    const total = rooms.length;
-    const available = rooms.filter(r => r.status === ROOM_STATUS.AVAILABLE).length;
-    const occupied = rooms.filter(r => r.status === ROOM_STATUS.OCCUPIED).length;
-    const cleaning = rooms.filter(r => r.status === ROOM_STATUS.CLEANING).length;
-    const maintenance = rooms.filter(r => r.status === ROOM_STATUS.MAINTENANCE).length;
-    const outOfOrder = rooms.filter(r => r.status === ROOM_STATUS.OUT_OF_ORDER).length;
-    const needsCleaning = rooms.filter(r => r.cleaningStatus === CLEANING_STATUS.DIRTY).length;
+    const total = rooms.length
+    const available = rooms.filter(r => r.status === ROOM_STATUS.AVAILABLE).length
+    const occupied = rooms.filter(r => r.status === ROOM_STATUS.OCCUPIED).length
+    const cleaning = rooms.filter(r => r.status === ROOM_STATUS.CLEANING).length
+    const maintenance = rooms.filter(r => r.status === ROOM_STATUS.MAINTENANCE).length
+    const outOfOrder = rooms.filter(r => r.status === ROOM_STATUS.OUT_OF_ORDER).length
+    const needsCleaning = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.DIRTY).length
     
-    const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0;
+    const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0
 
-    // Simular ingresos
-    const todayRevenue = occupied * 200; // Promedio de S/ 200 por habitación
-    const monthlyRevenue = todayRevenue * 30; // Estimado mensual
-    const averageRevenue = monthlyRevenue / 30;
+    // Calcular ingresos estimados basados en tipos de habitación
+    const todayRevenue = rooms.reduce((sum, room) => {
+      if (room.status === ROOM_STATUS.OCCUPIED && room.room_type?.base_rate) {
+        return sum + room.room_type.base_rate
+      }
+      return sum
+    }, 0)
+    
+    const monthlyRevenue = todayRevenue * 30
+    const averageRevenue = monthlyRevenue / 30
 
     return {
       total,
@@ -76,137 +149,194 @@ export const useRooms = () => {
         thisMonth: monthlyRevenue,
         average: averageRevenue
       }
-    };
-  }, [rooms]);
+    }
+  }, [rooms])
 
   // Calcular habitaciones por tipo
   const roomsByType = useMemo(() => {
-    if (!rooms || rooms.length === 0) return {};
+    if (!rooms || rooms.length === 0 || !roomTypes) return {}
 
-    const typeStats = {};
+    const typeStats = {}
     
     roomTypes.forEach(type => {
-      const typeRooms = rooms.filter(r => r.type === type.name);
+      const typeRooms = rooms.filter(r => r.room_type_id === type.id)
       typeStats[type.name] = {
         total: typeRooms.length,
         available: typeRooms.filter(r => r.status === ROOM_STATUS.AVAILABLE).length,
         occupied: typeRooms.filter(r => r.status === ROOM_STATUS.OCCUPIED).length,
-        averageRate: type.baseRate
-      };
-    });
+        averageRate: type.base_rate
+      }
+    })
 
-    return typeStats;
-  }, [rooms]);
+    return typeStats
+  }, [rooms, roomTypes])
 
   // Crear nueva habitación
   const createRoom = async (roomData) => {
     try {
-      const newRoom = {
-        id: Date.now(),
+      // Encontrar el room_type_id basado en el nombre
+      const roomType = roomTypes.find(rt => rt.name === roomData.type)
+      if (!roomType) {
+        throw new Error('Tipo de habitación no encontrado')
+      }
+
+      const newRoomData = {
         number: roomData.number,
         floor: parseInt(roomData.floor),
-        type: roomData.type,
+        room_type_id: roomType.id,
         status: ROOM_STATUS.AVAILABLE,
-        cleaningStatus: CLEANING_STATUS.CLEAN,
-        capacity: parseInt(roomData.capacity),
-        beds: roomData.beds,
-        size: parseFloat(roomData.size),
-        rate: parseFloat(roomData.rate),
-        features: roomData.features,
-        description: roomData.description,
-        lastCleaned: new Date().toISOString(),
-        cleanedBy: 'Sistema',
-        currentGuest: null,
-        nextReservation: null,
-        maintenanceNotes: '',
-        images: [],
-        created: new Date().toISOString()
-      };
+        cleaning_status: CLEANING_STATUS.CLEAN,
+        beds: roomData.beds || [{ type: 'Doble', count: 1 }],
+        size: parseInt(roomData.size),
+        features: roomData.features || roomType.features,
+        description: roomData.description || `Habitación ${roomType.name}`,
+        last_cleaned: new Date().toISOString(),
+        cleaned_by: 'Sistema',
+        maintenance_notes: ''
+      }
 
-      setRooms(prev => [...prev, newRoom]);
-      return newRoom;
+      const { data, error } = await db.createRoom(newRoomData)
+      
+      if (error) throw error
+      
+      toast.success('Habitación creada exitosamente')
+      return { data, error: null }
+      
     } catch (error) {
-      throw new Error('Error al crear la habitación');
+      toast.error('Error al crear la habitación')
+      return { data: null, error }
     }
-  };
+  }
 
   // Actualizar habitación
   const updateRoom = async (roomId, updateData) => {
     try {
-      setRooms(prev => prev.map(room => 
-        room.id === roomId 
-          ? { ...room, ...updateData }
-          : room
-      ));
-      return true;
+      const { data, error } = await db.updateRoom(roomId, updateData)
+      
+      if (error) throw error
+      
+      toast.success('Habitación actualizada exitosamente')
+      return { data, error: null }
+      
     } catch (error) {
-      throw new Error('Error al actualizar la habitación');
+      toast.error('Error al actualizar la habitación')
+      return { data: null, error }
     }
-  };
+  }
 
   // Eliminar habitación
   const deleteRoom = async (roomId) => {
     try {
-      setRooms(prev => prev.filter(room => room.id !== roomId));
-      return true;
+      const { data, error } = await db.deleteRoom(roomId)
+      
+      if (error) throw error
+      
+      toast.success('Habitación eliminada exitosamente')
+      return { data, error: null }
+      
     } catch (error) {
-      throw new Error('Error al eliminar la habitación');
+      toast.error('Error al eliminar la habitación')
+      return { data: null, error }
     }
-  };
+  }
 
   // Actualizar estado de habitación
   const updateRoomStatus = async (roomId, newStatus) => {
     try {
-      setRooms(prev => prev.map(room => 
-        room.id === roomId 
-          ? { ...room, status: newStatus }
-          : room
-      ));
-      return true;
+      const { data, error } = await db.updateRoomStatus(roomId, newStatus)
+      
+      if (error) throw error
+      
+      const statusMessages = {
+        [ROOM_STATUS.AVAILABLE]: 'Habitación disponible',
+        [ROOM_STATUS.OCCUPIED]: 'Habitación ocupada',
+        [ROOM_STATUS.CLEANING]: 'Habitación en limpieza',
+        [ROOM_STATUS.MAINTENANCE]: 'Habitación en mantenimiento',
+        [ROOM_STATUS.OUT_OF_ORDER]: 'Habitación fuera de servicio'
+      }
+      
+      toast.success(statusMessages[newStatus] || 'Estado actualizado')
+      return { data, error: null }
+      
     } catch (error) {
-      throw new Error('Error al actualizar el estado');
+      toast.error('Error al actualizar el estado')
+      return { data: null, error }
     }
-  };
+  }
 
   // Actualizar estado de limpieza
   const updateCleaningStatus = async (roomId, newStatus) => {
     try {
-      setRooms(prev => prev.map(room => 
-        room.id === roomId 
-          ? { 
-              ...room, 
-              cleaningStatus: newStatus,
-              lastCleaned: newStatus === CLEANING_STATUS.CLEAN ? new Date().toISOString() : room.lastCleaned
-            }
-          : room
-      ));
-      return true;
+      const { data, error } = await db.updateRoomStatus(roomId, null, newStatus)
+      
+      if (error) throw error
+      
+      const cleaningMessages = {
+        [CLEANING_STATUS.CLEAN]: 'Habitación limpia',
+        [CLEANING_STATUS.DIRTY]: 'Habitación sucia',
+        [CLEANING_STATUS.IN_PROGRESS]: 'Limpieza en progreso',
+        [CLEANING_STATUS.INSPECTED]: 'Habitación inspeccionada'
+      }
+      
+      toast.success(cleaningMessages[newStatus] || 'Estado de limpieza actualizado')
+      return { data, error: null }
+      
     } catch (error) {
-      throw new Error('Error al actualizar el estado de limpieza');
+      toast.error('Error al actualizar el estado de limpieza')
+      return { data: null, error }
     }
-  };
+  }
 
-  // Asignar limpieza
+  // Asignar limpieza a habitaciones
   const assignCleaning = async (roomIds, staffId) => {
     try {
-      const staff = cleaningStaff.find(s => s.id === staffId);
-      const staffName = staff ? staff.name : 'Personal asignado';
+      const staff = cleaningStaff.find(s => s.id === staffId)
+      const staffName = staff ? staff.name : 'Personal asignado'
 
-      setRooms(prev => prev.map(room => 
-        roomIds.includes(room.id)
-          ? { 
-              ...room, 
-              cleaningStatus: CLEANING_STATUS.IN_PROGRESS,
-              assignedCleaner: staffName,
-              cleaningStartTime: new Date().toISOString()
-            }
-          : room
-      ));
-      return true;
+      const { data, error } = await db.assignCleaning(roomIds, staffName)
+      
+      if (error) throw error
+      
+      toast.success(`Limpieza asignada a ${staffName}`)
+      return { data, error: null }
+      
     } catch (error) {
-      throw new Error('Error al asignar la limpieza');
+      toast.error('Error al asignar la limpieza')
+      return { data: null, error }
     }
-  };
+  }
+
+  // Obtener habitaciones que necesitan limpieza
+  const getRoomsNeedingCleaning = () => {
+    return rooms.filter(room => 
+      room.status === ROOM_STATUS.CLEANING || 
+      room.cleaning_status === CLEANING_STATUS.DIRTY
+    )
+  }
+
+  // Obtener habitaciones disponibles
+  const getAvailableRooms = () => {
+    return rooms.filter(room => 
+      room.status === ROOM_STATUS.AVAILABLE && 
+      room.cleaning_status === CLEANING_STATUS.CLEAN
+    )
+  }
+
+  // Obtener estadísticas de limpieza
+  const getCleaningStats = () => {
+    const needsCleaning = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.DIRTY).length
+    const inProgress = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.IN_PROGRESS).length
+    const clean = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.CLEAN).length
+    const inspected = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.INSPECTED).length
+
+    return {
+      needsCleaning,
+      inProgress,
+      clean,
+      inspected,
+      total: rooms.length
+    }
+  }
 
   return {
     // Datos
@@ -218,12 +348,24 @@ export const useRooms = () => {
     loading,
     error,
     
+    // Estados para compatibilidad
+    ROOM_STATUS,
+    CLEANING_STATUS,
+    
     // Métodos CRUD
     createRoom,
     updateRoom,
     deleteRoom,
     updateRoomStatus,
     updateCleaningStatus,
-    assignCleaning
-  };
-};
+    assignCleaning,
+    
+    // Métodos de consulta
+    getRoomsNeedingCleaning,
+    getAvailableRooms,
+    getCleaningStats,
+    
+    // Utilidades
+    refetch: loadData
+  }
+}

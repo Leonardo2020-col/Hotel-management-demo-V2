@@ -1,144 +1,262 @@
-// src/hooks/useCheckInData.js
-import { useState } from 'react';
+// src/hooks/useCheckInData.js - Actualizado para Supabase
+import { useState, useEffect } from 'react'
+import { db } from '../lib/supabase'
+import toast from 'react-hot-toast'
 
 export const useCheckInData = () => {
-  // Datos de habitaciones por piso
-  const floorRooms = {
-    1: [
-      { number: 101, status: 'available' },
-      { number: 102, status: 'available' },
-      { number: 103, status: 'occupied' },
-      { number: 104, status: 'available' },
-      { number: 105, status: 'available' },
-      { number: 106, status: 'available' },
-      { number: 107, status: 'checkout' },
-      { number: 108, status: 'available' },
-      { number: 109, status: 'available' },
-      { number: 110, status: 'available' },
-      { number: 111, status: 'available' },
-      { number: 112, status: 'available' }
-    ],
-    2: [
-      { number: 201, status: 'available' },
-      { number: 202, status: 'occupied' },
-      { number: 203, status: 'available' },
-      { number: 204, status: 'available' },
-      { number: 205, status: 'checkout' },
-      { number: 206, status: 'available' },
-      { number: 207, status: 'available' },
-      { number: 208, status: 'available' },
-      { number: 209, status: 'occupied' },
-      { number: 210, status: 'available' },
-      { number: 211, status: 'available' },
-      { number: 212, status: 'available' }
-    ],
-    3: [
-      { number: 301, status: 'available' },
-      { number: 302, status: 'available' },
-      { number: 303, status: 'available' },
-      { number: 304, status: 'occupied' },
-      { number: 305, status: 'available' },
-      { number: 306, status: 'checkout' },
-      { number: 307, status: 'available' },
-      { number: 308, status: 'available' },
-      { number: 309, status: 'available' },
-      { number: 310, status: 'available' },
-      { number: 311, status: 'available' },
-      { number: 312, status: 'available' }
-    ]
-  };
+  const [roomsByFloor, setRoomsByFloor] = useState({})
+  const [savedOrders, setSavedOrders] = useState({})
+  const [snackItems, setSnackItems] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  // Tipos de snacks
+  // Tipos de snacks (estos podrían venir de la BD en el futuro)
   const snackTypes = [
     { id: 'frutas', name: 'FRUTAS', description: 'Frutas frescas y naturales' },
     { id: 'bebidas', name: 'BEBIDAS', description: 'Bebidas frías y calientes' },
     { id: 'snacks', name: 'SNACKS', description: 'Bocadillos y aperitivos' },
     { id: 'postres', name: 'POSTRES', description: 'Dulces y postres' }
-  ];
+  ]
 
-  // Lista de snacks por tipo
-  const snackItems = {
-    frutas: [
-      { id: 1, name: 'Manzana', price: 2.50 },
-      { id: 2, name: 'Plátano', price: 1.50 },
-      { id: 3, name: 'Naranja', price: 2.00 },
-      { id: 4, name: 'Uvas', price: 4.00 },
-      { id: 5, name: 'Ensalada de frutas', price: 6.00 }
-    ],
-    bebidas: [
-      { id: 6, name: 'Agua', price: 1.00 },
-      { id: 7, name: 'Coca Cola', price: 2.50 },
-      { id: 8, name: 'Jugo de naranja', price: 3.00 },
-      { id: 9, name: 'Café', price: 2.00 },
-      { id: 10, name: 'Té', price: 1.50 }
-    ],
-    snacks: [
-      { id: 11, name: 'Papas fritas', price: 3.50 },
-      { id: 12, name: 'Galletas', price: 2.00 },
-      { id: 13, name: 'Nueces', price: 4.50 },
-      { id: 14, name: 'Chocolate', price: 3.00 },
-      { id: 15, name: 'Chips', price: 2.50 }
-    ],
-    postres: [
-      { id: 16, name: 'Helado', price: 4.00 },
-      { id: 17, name: 'Torta', price: 5.50 },
-      { id: 18, name: 'Flan', price: 3.50 },
-      { id: 19, name: 'Brownie', price: 4.50 },
-      { id: 20, name: 'Gelatina', price: 2.50 }
-    ]
-  };
-
-  // Precios de habitaciones por piso
+  // Precios de habitaciones por piso (esto vendrá de room_types en la BD)
   const roomPrices = {
     1: 80.00,
     2: 95.00,
     3: 110.00
-  };
+  }
 
-  // Estado para órdenes guardadas
-  const [savedOrders, setSavedOrders] = useState({
-    103: {
-      room: { number: 103, status: 'occupied' },
-      roomPrice: 80.00,
-      snacks: [
-        { id: 6, name: 'Agua', price: 1.00, quantity: 2 },
-        { id: 7, name: 'Coca Cola', price: 2.50, quantity: 1 },
-        { id: 11, name: 'Papas fritas', price: 3.50, quantity: 1 }
-      ],
-      total: 88.00,
-      checkInDate: '2024-06-24',
-      guestName: 'Carlos González'
-    },
-    202: {
-      room: { number: 202, status: 'occupied' },
-      roomPrice: 95.00,
-      snacks: [
-        { id: 9, name: 'Café', price: 2.00, quantity: 3 },
-        { id: 16, name: 'Helado', price: 4.00, quantity: 2 }
-      ],
-      total: 109.00,
-      checkInDate: '2024-06-23',
-      guestName: 'María López'
-    },
-    304: {
-      room: { number: 304, status: 'occupied' },
-      roomPrice: 110.00,
-      snacks: [
-        { id: 1, name: 'Manzana', price: 2.50, quantity: 1 },
-        { id: 8, name: 'Jugo de naranja', price: 3.00, quantity: 2 }
-      ],
-      total: 118.50,
-      checkInDate: '2024-06-22',
-      guestName: 'Ana Martínez'
+  // Cargar datos iniciales
+  useEffect(() => {
+    loadInitialData()
+  }, [])
+
+  const loadInitialData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      // Cargar habitaciones agrupadas por piso
+      const { data: roomsData, error: roomsError } = await db.getRoomsByFloor()
+      if (roomsError) throw roomsError
+      
+      // Cargar snacks (mock data por ahora)
+      const { data: snacksData, error: snacksError } = await db.getSnackItems()
+      if (snacksError) throw snacksError
+      
+      // Cargar órdenes guardadas (reservas activas con check-in)
+      const { data: ordersData, error: ordersError } = await loadSavedOrders()
+      if (ordersError) throw ordersError
+      
+      setRoomsByFloor(roomsData || {})
+      setSnackItems(snacksData || {})
+      setSavedOrders(ordersData || {})
+      
+    } catch (err) {
+      setError(err.message)
+      toast.error('Error al cargar datos del check-in')
+    } finally {
+      setLoading(false)
     }
-  });
+  }
+
+  // Cargar órdenes guardadas desde reservas activas
+  const loadSavedOrders = async () => {
+    try {
+      const { data: reservations, error } = await db.getReservations({
+        status: 'checked_in'
+      })
+      
+      if (error) throw error
+      
+      // Convertir reservas a formato de órdenes guardadas
+      const orders = {}
+      
+      reservations?.forEach(reservation => {
+        if (reservation.room && reservation.guest) {
+          orders[reservation.room.number] = {
+            id: reservation.id,
+            room: {
+              number: reservation.room.number,
+              status: 'occupied'
+            },
+            roomPrice: reservation.rate,
+            snacks: [], // Por ahora vacío, se puede expandir
+            total: reservation.total_amount,
+            checkInDate: reservation.check_in,
+            guestName: reservation.guest.full_name || `${reservation.guest.first_name} ${reservation.guest.last_name}`,
+            guestId: reservation.guest_id,
+            reservationId: reservation.id
+          }
+        }
+      })
+      
+      return { data: orders, error: null }
+    } catch (error) {
+      return { data: null, error }
+    }
+  }
+
+  // Procesar check-in de habitación
+  const processCheckIn = async (roomData, snacks = []) => {
+    try {
+      const room = roomData.room || roomData
+      const floor = Math.floor(room.number / 100)
+      const roomPrice = roomPrices[floor]
+      const snacksTotal = snacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
+      const totalAmount = roomPrice + snacksTotal
+
+      // Actualizar estado de la habitación a ocupada
+      const { error: roomError } = await db.updateRoomStatus(
+        room.id || room.room_id, 
+        'occupied', 
+        'dirty'
+      )
+      
+      if (roomError) throw roomError
+
+      // Crear reserva automática o actualizar existente
+      const reservationData = {
+        room_id: room.id || room.room_id,
+        check_in: new Date().toISOString().split('T')[0],
+        check_out: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // +1 día
+        adults: 1,
+        children: 0,
+        status: 'checked_in',
+        total_amount: totalAmount,
+        rate: roomPrice,
+        special_requests: snacks.length > 0 ? `Snacks: ${snacks.map(s => `${s.name} x${s.quantity}`).join(', ')}` : '',
+        payment_status: 'paid'
+      }
+
+      // Si no hay guest_id, necesitaremos crear un huésped temporal o usar uno existente
+      // Por ahora, usar un huésped por defecto
+      const { data: defaultGuest } = await db.getGuests({ limit: 1 })
+      if (defaultGuest && defaultGuest.length > 0) {
+        reservationData.guest_id = defaultGuest[0].id
+      }
+
+      const { data: reservation, error: reservationError } = await db.createReservation(reservationData)
+      
+      if (reservationError) throw reservationError
+
+      // Actualizar órdenes guardadas localmente
+      const newOrder = {
+        id: reservation.id,
+        room: { number: room.number, status: 'occupied' },
+        roomPrice,
+        snacks,
+        total: totalAmount,
+        checkInDate: reservationData.check_in,
+        guestName: defaultGuest?.[0]?.full_name || 'Huésped',
+        guestId: reservationData.guest_id,
+        reservationId: reservation.id
+      }
+
+      setSavedOrders(prev => ({
+        ...prev,
+        [room.number]: newOrder
+      }))
+
+      toast.success(`Check-in completado para habitación ${room.number}`)
+      return { data: newOrder, error: null }
+
+    } catch (error) {
+      toast.error('Error al procesar check-in')
+      return { data: null, error }
+    }
+  }
+
+  // Procesar check-out
+  const processCheckOut = async (roomNumber, paymentMethod) => {
+    try {
+      const order = savedOrders[roomNumber]
+      if (!order) throw new Error('Orden no encontrada')
+
+      // Actualizar reserva a checked_out
+      const { error: reservationError } = await db.updateReservation(order.reservationId, {
+        status: 'checked_out',
+        payment_status: 'paid'
+      })
+
+      if (reservationError) throw reservationError
+
+      // Actualizar habitación a limpieza
+      const { error: roomError } = await db.updateRoomStatus(
+        order.room.id,
+        'cleaning',
+        'dirty'
+      )
+
+      if (roomError) throw roomError
+
+      // Remover de órdenes guardadas
+      setSavedOrders(prev => {
+        const newOrders = { ...prev }
+        delete newOrders[roomNumber]
+        return newOrders
+      })
+
+      toast.success(`Check-out completado para habitación ${roomNumber}`)
+      return { data: true, error: null }
+
+    } catch (error) {
+      toast.error('Error al procesar check-out')
+      return { data: null, error }
+    }
+  }
+
+  // Obtener habitaciones disponibles para check-in
+  const getAvailableRooms = () => {
+    const available = {}
+    
+    Object.keys(roomsByFloor).forEach(floor => {
+      available[floor] = roomsByFloor[floor].filter(room => 
+        room.status === 'available' && room.cleaning_status === 'clean'
+      )
+    })
+    
+    return available
+  }
+
+  // Obtener habitaciones ocupadas para check-out
+  const getOccupiedRooms = () => {
+    const occupied = {}
+    
+    Object.keys(roomsByFloor).forEach(floor => {
+      occupied[floor] = roomsByFloor[floor].filter(room => 
+        room.status === 'occupied'
+      )
+    })
+    
+    return occupied
+  }
+
+  // Actualizar datos en tiempo real
+  const refreshData = () => {
+    loadInitialData()
+  }
 
   return {
-    floorRooms,
+    // Estado
+    roomsByFloor,
     snackTypes,
     snackItems,
     roomPrices,
     savedOrders,
+    loading,
+    error,
+    
+    // Acciones
+    processCheckIn,
+    processCheckOut,
+    refreshData,
+    
+    // Utilidades
+    getAvailableRooms,
+    getOccupiedRooms,
+    
+    // Para compatibilidad con componente existente
+    floorRooms: roomsByFloor,
     setSavedOrders
-  };
-};
+  }
+}
