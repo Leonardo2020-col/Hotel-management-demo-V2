@@ -1,6 +1,9 @@
+// ============================================
+// CleaningManagement.jsx - CORREGIDO
+// ============================================
 import React, { useState, useMemo } from 'react';
 import { 
-  Sparkles, // Cambiar CleaningServices por Sparkles
+  Sparkles,
   Users, 
   Clock, 
   CheckCircle, 
@@ -15,17 +18,32 @@ import {
   Trash2
 } from 'lucide-react';
 import Button from '../common/Button';
-import { CLEANING_STATUS, ROOM_STATUS } from '../../utils/roomMockData';
 import { getRelativeTime } from '../../utils/formatters';
 import classNames from 'classnames';
 
+// Constants for cleaning and room status
+const CLEANING_STATUS = {
+  CLEAN: 'clean',
+  DIRTY: 'dirty',
+  IN_PROGRESS: 'in_progress',
+  INSPECTED: 'inspected'
+};
+
+const ROOM_STATUS = {
+  AVAILABLE: 'available',
+  OCCUPIED: 'occupied',
+  CLEANING: 'cleaning',
+  MAINTENANCE: 'maintenance',
+  OUT_OF_ORDER: 'out_of_order'
+};
+
 const CleaningManagement = ({ 
-  rooms, 
-  cleaningStaff, 
-  roomsNeedingCleaning, 
+  rooms = [], 
+  cleaningStaff = [], 
+  roomsNeedingCleaning = [], 
   onAssignCleaning, 
   onCleaningStatusChange, 
-  loading 
+  loading = false
 }) => {
   // Estados necesarios
   const [selectedRooms, setSelectedRooms] = useState([]);
@@ -59,8 +77,8 @@ const CleaningManagement = ({
 
     return rooms.filter(room => {
       // Filtro por término de búsqueda
-      const matchesSearch = room.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           room.type.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = String(room.number).toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           (room.type || '').toLowerCase().includes(searchTerm.toLowerCase());
 
       // Filtro por estado de limpieza
       const matchesStatus = filterStatus === 'all' || room.cleaningStatus === filterStatus;

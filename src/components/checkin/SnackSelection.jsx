@@ -1,6 +1,8 @@
-// src/components/checkin/SnackSelection.jsx
+// ============================================
+// SnackSelection.jsx - CORREGIDO
+// ============================================
 import React from 'react';
-import { ChevronLeft, Check, ShoppingCart } from 'lucide-react';
+import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X } from 'lucide-react';
 import Button from '../common/Button';
 
 const SnackSelection = ({ 
@@ -24,14 +26,28 @@ const SnackSelection = ({
   };
 
   const getTotalOrder = () => {
-    return currentOrder?.roomPrice + getTotalSnacks();
+    return (currentOrder?.roomPrice || 0) + getTotalSnacks();
   };
+
+  // Validate data
+  if (!currentOrder) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <p className="text-gray-500">No hay datos de la habitación</p>
+          <Button variant="outline" onClick={onBack} className="mt-4">
+            Volver
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-800">
-          Habitación {currentOrder?.room.number} - Snacks (Opcional)
+          Habitación {currentOrder?.room?.number} - Snacks (Opcional)
         </h2>
         <div className="flex items-center space-x-3">
           <div className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full">
@@ -48,13 +64,13 @@ const SnackSelection = ({
       </div>
 
       {/* 3 Columnas Grid */}
-      <div className="grid grid-cols-3 gap-6 h-[600px]">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
         
         {/* Columna 1: Tipos de Snack */}
         <div className="bg-gray-50 rounded-lg p-4">
           <h3 className="text-lg font-semibold mb-4 text-center">TIPOS DE SNACK</h3>
-          <div className="space-y-4">
-            {snackTypes.map((type) => (
+          <div className="space-y-3">
+            {snackTypes?.map((type) => (
               <button
                 key={type.id}
                 onClick={() => onSnackTypeSelect(type.id)}
@@ -67,22 +83,26 @@ const SnackSelection = ({
                 <h4 className="font-bold text-sm mb-1">{type.name}</h4>
                 <p className="text-xs text-gray-600">{type.description}</p>
               </button>
-            ))}
+            )) || (
+              <div className="text-center text-gray-500 py-8">
+                <p>No hay tipos de snack disponibles</p>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Columna 2: Lista de Snacks */}
         <div className="bg-gray-50 rounded-lg p-4">
           <h3 className="text-lg font-semibold mb-4 text-center">
-            {selectedSnackType 
+            {selectedSnackType && snackTypes 
               ? snackTypes.find(t => t.id === selectedSnackType)?.name 
               : 'LISTA DE SNACKS'
             }
           </h3>
           
-          {selectedSnackType ? (
+          {selectedSnackType && snackItems?.[selectedSnackType] ? (
             <div className="space-y-3 overflow-y-auto h-[500px]">
-              {snackItems[selectedSnackType]?.map((item) => (
+              {snackItems[selectedSnackType].map((item) => (
                 <button
                   key={item.id}
                   onClick={() => onSnackSelect(item)}
@@ -91,7 +111,7 @@ const SnackSelection = ({
                   <div className="flex justify-between items-center">
                     <div>
                       <h4 className="font-semibold text-sm">{item.name}</h4>
-                      <p className="text-green-600 font-bold text-sm">${item.price.toFixed(2)}</p>
+                      <p className="text-green-600 font-bold text-sm">S/ {item.price.toFixed(2)}</p>
                     </div>
                     {selectedSnacks.find(s => s.id === item.id) && (
                       <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
@@ -119,18 +139,19 @@ const SnackSelection = ({
           <div className="bg-white rounded-lg p-4 h-[500px] overflow-y-auto">
             {/* Header de la habitación */}
             <div className="text-center mb-4 p-3 bg-blue-600 text-white rounded-lg">
-              <h4 className="font-bold">Habitación {currentOrder?.room.number}</h4>
+              <h4 className="font-bold">Habitación {currentOrder?.room?.number}</h4>
+              <p className="text-xs text-blue-100">{currentOrder?.room?.type || 'Estándar'}</p>
             </div>
 
             {/* Precio de la habitación */}
             <div className="space-y-3 mb-4">
               <div className="flex justify-between items-center py-2 border-b">
                 <span className="font-medium text-sm">Precio habitación</span>
-                <span className="font-bold">${currentOrder?.roomPrice.toFixed(2)}</span>
+                <span className="font-bold">S/ {(currentOrder?.roomPrice || 0).toFixed(2)}</span>
               </div>
 
               {/* Snacks seleccionados */}
-              {selectedSnacks.length > 0 ? (
+              {selectedSnacks && selectedSnacks.length > 0 ? (
                 selectedSnacks.map((snack) => (
                   <div key={snack.id} className="flex justify-between items-center py-2 border-b border-gray-100">
                     <div className="flex-1">
@@ -138,29 +159,29 @@ const SnackSelection = ({
                         <span className="text-sm font-medium">{snack.name}</span>
                         <button
                           onClick={() => onSnackRemove(snack.id)}
-                          className="text-red-500 hover:text-red-700 text-xs"
+                          className="text-red-500 hover:text-red-700 text-xs p-1"
                         >
-                          ✕
+                          <X size={14} />
                         </button>
                       </div>
                       <div className="flex items-center space-x-2">
                         <button
-                          onClick={() => onQuantityUpdate(snack.id, snack.quantity - 1)}
-                          className="w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center"
+                          onClick={() => onQuantityUpdate(snack.id, Math.max(1, snack.quantity - 1))}
+                          className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
                         >
-                          -
+                          <Minus size={12} />
                         </button>
-                        <span className="text-xs w-6 text-center">{snack.quantity}</span>
+                        <span className="text-sm w-8 text-center font-medium">{snack.quantity}</span>
                         <button
                           onClick={() => onQuantityUpdate(snack.id, snack.quantity + 1)}
-                          className="w-5 h-5 bg-green-500 text-white rounded-full text-xs flex items-center justify-center"
+                          className="w-6 h-6 bg-green-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-green-600"
                         >
-                          +
+                          <Plus size={12} />
                         </button>
                       </div>
                     </div>
                     <span className="text-sm font-bold ml-2">
-                      ${(snack.price * snack.quantity).toFixed(2)}
+                      S/ {(snack.price * snack.quantity).toFixed(2)}
                     </span>
                   </div>
                 ))
@@ -177,7 +198,7 @@ const SnackSelection = ({
               <div className="flex justify-between items-center text-lg font-bold">
                 <span>Total:</span>
                 <span className="text-green-600">
-                  ${getTotalOrder().toFixed(2)}
+                  S/ {getTotalOrder().toFixed(2)}
                 </span>
               </div>
             </div>
@@ -191,11 +212,11 @@ const SnackSelection = ({
                 className="w-full text-sm py-3"
               >
                 ✅ Confirmar Solo Habitación
-                <div className="text-xs opacity-90">${currentOrder?.roomPrice.toFixed(2)}</div>
+                <div className="text-xs opacity-90">S/ {(currentOrder?.roomPrice || 0).toFixed(2)}</div>
               </Button>
               
               {/* Botón para habitación + snacks - solo si hay snacks */}
-              {selectedSnacks.length > 0 && (
+              {selectedSnacks && selectedSnacks.length > 0 && (
                 <Button
                   variant="primary"
                   onClick={onConfirmOrder}
@@ -203,7 +224,7 @@ const SnackSelection = ({
                   className="w-full text-sm py-3"
                 >
                   🛒 Confirmar con Snacks
-                  <div className="text-xs opacity-90">${getTotalOrder().toFixed(2)} total</div>
+                  <div className="text-xs opacity-90">S/ {getTotalOrder().toFixed(2)} total</div>
                 </Button>
               )}
               
@@ -223,4 +244,4 @@ const SnackSelection = ({
   );
 };
 
-export default SnackSelection;
+export { CheckoutSummary, CheckinRoomGrid, SnackSelection };

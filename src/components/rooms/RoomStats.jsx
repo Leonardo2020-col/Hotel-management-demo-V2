@@ -1,9 +1,12 @@
+// ============================================
+// RoomStats.jsx - CORREGIDO
+// ============================================
 import React from 'react';
 import { Bed, Users, Sparkles, Wrench, AlertTriangle, TrendingUp } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 
-const RoomStats = ({ stats, roomsByType, loading }) => {
-  // AGREGAR VALIDACIÓN PARA STATS UNDEFINED
+const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
+  // Validación para stats undefined o null
   const safeStats = stats || {
     total: 0,
     available: 0,

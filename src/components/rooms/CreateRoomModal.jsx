@@ -1,10 +1,31 @@
+// ============================================
+// CreateRoomModal.jsx - VERSIÓN FINAL CORREGIDA
+// ============================================
 import React, { useState } from 'react';
 import { X, Bed, Users, Maximize, DollarSign, MapPin, Plus, Trash2 } from 'lucide-react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import Button from '../common/Button';
-import { ROOM_FEATURES } from '../../utils/roomMockData';
+
+// Mock room features si no están definidas en roomMockData
+const ROOM_FEATURES = {
+  WIFI: 'WiFi Gratis',
+  AC: 'Aire Acondicionado',
+  TV: 'TV Cable',
+  MINIBAR: 'Minibar',
+  BALCONY: 'Balcón',
+  BATHROOM: 'Baño Privado',
+  SAFE: 'Caja Fuerte',
+  PHONE: 'Teléfono',
+  ROOM_SERVICE: 'Room Service',
+  LAUNDRY: 'Servicio de Lavandería',
+  JACUZZI: 'Jacuzzi',
+  KITCHEN: 'Kitchenette',
+  TERRACE: 'Terraza',
+  SEA_VIEW: 'Vista al Mar',
+  CITY_VIEW: 'Vista a la Ciudad'
+};
 
 const schema = yup.object().shape({
   number: yup.string().required('El número de habitación es obligatorio'),
@@ -23,7 +44,7 @@ const schema = yup.object().shape({
   features: yup.array().min(1, 'Debe seleccionar al menos una característica')
 });
 
-const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes }) => {
+const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
   const [selectedFeatures, setSelectedFeatures] = useState([]);
 
   const {
@@ -51,15 +72,16 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes }) => {
 
   // Auto-completar campos basado en tipo seleccionado
   React.useEffect(() => {
-    if (watchedType && roomTypes) {
+    if (watchedType && roomTypes && roomTypes.length > 0) {
       const selectedType = roomTypes.find(type => type.name === watchedType);
       if (selectedType) {
-        setValue('capacity', selectedType.capacity);
-        setValue('size', selectedType.size);
-        setValue('rate', selectedType.baseRate);
-        setValue('description', selectedType.description);
-        setSelectedFeatures(selectedType.features);
-        setValue('features', selectedType.features);
+        setValue('capacity', selectedType.capacity || 2);
+        setValue('size', selectedType.size || 25);
+        setValue('rate', selectedType.baseRate || 100);
+        setValue('description', selectedType.description || '');
+        const typeFeatures = selectedType.features || [];
+        setSelectedFeatures(typeFeatures);
+        setValue('features', typeFeatures);
       }
     }
   }, [watchedType, roomTypes, setValue]);
@@ -77,7 +99,9 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes }) => {
     try {
       const roomData = {
         ...data,
-        features: selectedFeatures
+        features: selectedFeatures,
+        status: 'available', // Estado inicial
+        cleaningStatus: 'clean' // Estado de limpieza inicial
       };
       await onSubmit(roomData);
       handleClose();

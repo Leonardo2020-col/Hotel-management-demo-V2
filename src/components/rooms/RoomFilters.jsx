@@ -1,31 +1,53 @@
+// ============================================
+// RoomFilters.jsx - VERSIÓN FINAL CORREGIDA
+// ============================================
 import React from 'react';
 import { Search, Filter, X, Grid, List } from 'lucide-react';
-import { ROOM_STATUS, CLEANING_STATUS } from '../../utils/roomMockData';
 import Button from '../common/Button';
 
+// Constants for room and cleaning status
+const ROOM_STATUS = {
+  AVAILABLE: 'available',
+  OCCUPIED: 'occupied',
+  CLEANING: 'cleaning',
+  MAINTENANCE: 'maintenance',
+  OUT_OF_ORDER: 'out_of_order'
+};
+
+const CLEANING_STATUS = {
+  CLEAN: 'clean',
+  DIRTY: 'dirty',
+  IN_PROGRESS: 'in_progress',
+  INSPECTED: 'inspected'
+};
+
 const RoomFilters = ({ 
-  filters, 
+  filters = {}, 
   onFiltersChange, 
-  roomTypes, 
-  viewMode, 
+  roomTypes = [], 
+  viewMode = 'grid', 
   onViewModeChange, 
-  loading 
+  loading = false
 }) => {
   const handleFilterChange = (key, value) => {
-    onFiltersChange(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    if (onFiltersChange) {
+      onFiltersChange(prev => ({
+        ...prev,
+        [key]: value
+      }));
+    }
   };
 
   const clearFilters = () => {
-    onFiltersChange({
-      status: 'all',
-      type: 'all',
-      floor: 'all',
-      cleaningStatus: 'all',
-      search: ''
-    });
+    if (onFiltersChange) {
+      onFiltersChange({
+        status: 'all',
+        type: 'all',
+        floor: 'all',
+        cleaningStatus: 'all',
+        search: ''
+      });
+    }
   };
 
   const hasActiveFilters = Object.entries(filters).some(([key, value]) => {
@@ -35,10 +57,11 @@ const RoomFilters = ({
 
   const statusOptions = [
     { value: 'all', label: 'Todos los estados' },
-    ...Object.values(ROOM_STATUS).map(status => ({
-      value: status,
-      label: status
-    }))
+    { value: ROOM_STATUS.AVAILABLE, label: 'Disponible' },
+    { value: ROOM_STATUS.OCCUPIED, label: 'Ocupada' },
+    { value: ROOM_STATUS.CLEANING, label: 'Limpieza' },
+    { value: ROOM_STATUS.MAINTENANCE, label: 'Mantenimiento' },
+    { value: ROOM_STATUS.OUT_OF_ORDER, label: 'Fuera de Servicio' }
   ];
 
   const typeOptions = [
@@ -60,10 +83,10 @@ const RoomFilters = ({
 
   const cleaningStatusOptions = [
     { value: 'all', label: 'Todos los estados de limpieza' },
-    ...Object.values(CLEANING_STATUS).map(status => ({
-      value: status,
-      label: status
-    }))
+    { value: CLEANING_STATUS.CLEAN, label: 'Limpia' },
+    { value: CLEANING_STATUS.DIRTY, label: 'Sucia' },
+    { value: CLEANING_STATUS.IN_PROGRESS, label: 'En Proceso' },
+    { value: CLEANING_STATUS.INSPECTED, label: 'Inspeccionada' }
   ];
 
   if (loading) {

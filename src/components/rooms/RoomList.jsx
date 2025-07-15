@@ -1,3 +1,6 @@
+// ============================================
+// RoomList.jsx - CORREGIDO
+// ============================================
 import React from 'react';
 import { 
   Edit, 
@@ -12,14 +15,22 @@ import {
   Clock
 } from 'lucide-react';
 import Button from '../common/Button';
-import { ROOM_STATUS } from '../../utils/roomMockData';
 import { formatCurrency } from '../../utils/formatters';
 import classNames from 'classnames';
 
+// Constants for room status
+const ROOM_STATUS = {
+  AVAILABLE: 'available',
+  OCCUPIED: 'occupied',
+  CLEANING: 'cleaning',
+  MAINTENANCE: 'maintenance',
+  OUT_OF_ORDER: 'out_of_order'
+};
+
 const RoomList = ({ 
-  rooms, 
-  loading, 
-  selectedRooms, 
+  rooms = [], 
+  loading = false, 
+  selectedRooms = [], 
   onSelectRoom,
   onStatusChange,
   onEdit,
@@ -60,19 +71,23 @@ const RoomList = ({
   };
 
   const handleSelectAll = () => {
-    onSelectRoom(
-      selectedRooms.length === rooms.length 
-        ? [] 
-        : rooms.map(r => r.id)
-    );
+    if (onSelectRoom) {
+      onSelectRoom(
+        selectedRooms.length === rooms.length 
+          ? [] 
+          : rooms.map(r => r.id)
+      );
+    }
   };
 
   const handleSelectRoom = (roomId) => {
-    onSelectRoom(prev => 
-      prev.includes(roomId)
-        ? prev.filter(id => id !== roomId)
-        : [...prev, roomId]
-    );
+    if (onSelectRoom) {
+      onSelectRoom(prev => 
+        prev.includes(roomId)
+          ? prev.filter(id => id !== roomId)
+          : [...prev, roomId]
+      );
+    }
   };
 
   if (loading) {
@@ -94,6 +109,22 @@ const RoomList = ({
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!rooms || rooms.length === 0) {
+    return (
+      <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-12">
+        <div className="text-center">
+          <Users className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            No hay habitaciones disponibles
+          </h3>
+          <p className="text-gray-600">
+            Ajusta los filtros o agrega nuevas habitaciones
+          </p>
         </div>
       </div>
     );
@@ -230,7 +261,7 @@ const RoomList = ({
                         size="sm"
                         variant="outline"
                         icon={Edit}
-                        onClick={() => onEdit(room.id)}
+                        onClick={() => onEdit && onEdit(room.id)}
                       >
                         Editar
                       </Button>
@@ -238,7 +269,7 @@ const RoomList = ({
                         size="sm"
                         variant="danger"
                         icon={Trash2}
-                        onClick={() => onDelete(room.id)}
+                        onClick={() => onDelete && onDelete(room.id)}
                       >
                         Eliminar
                       </Button>
@@ -253,5 +284,6 @@ const RoomList = ({
     </div>
   );
 };
+
 
 export default RoomList;

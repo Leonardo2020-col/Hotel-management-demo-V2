@@ -1,3 +1,6 @@
+// ============================================
+// RoomGrid.jsx - VERSIÓN FINAL CORREGIDA
+// ============================================
 import React from 'react';
 import { 
   Edit, 
@@ -11,14 +14,22 @@ import {
   Users
 } from 'lucide-react';
 import Button from '../common/Button';
-import { ROOM_STATUS } from '../../utils/roomMockData';
 import { formatCurrency } from '../../utils/formatters';
 import classNames from 'classnames';
 
+// Constants para room status
+const ROOM_STATUS = {
+  AVAILABLE: 'available',
+  OCCUPIED: 'occupied',
+  CLEANING: 'cleaning',
+  MAINTENANCE: 'maintenance',
+  OUT_OF_ORDER: 'out_of_order'
+};
+
 const RoomGrid = ({ 
-  rooms, 
-  loading, 
-  selectedRooms, 
+  rooms = [], 
+  loading = false, 
+  selectedRooms = [], 
   onSelectRoom,
   onStatusChange,
   onEdit,
@@ -59,11 +70,13 @@ const RoomGrid = ({
   };
 
   const handleSelectRoom = (roomId) => {
-    onSelectRoom(prev => 
-      prev.includes(roomId)
-        ? prev.filter(id => id !== roomId)
-        : [...prev, roomId]
-    );
+    if (onSelectRoom) {
+      onSelectRoom(prev => 
+        prev.includes(roomId)
+          ? prev.filter(id => id !== roomId)
+          : [...prev, roomId]
+      );
+    }
   };
 
   const StatusActions = ({ room }) => {
@@ -74,12 +87,12 @@ const RoomGrid = ({
         availableActions.push(
           { 
             label: 'Ocupar', 
-            action: () => onStatusChange(room.id, ROOM_STATUS.OCCUPIED),
+            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.OCCUPIED),
             color: 'primary'
           },
           { 
             label: 'Limpieza', 
-            action: () => onStatusChange(room.id, ROOM_STATUS.CLEANING),
+            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.CLEANING),
             color: 'warning'
           }
         );
@@ -88,7 +101,7 @@ const RoomGrid = ({
         availableActions.push(
           { 
             label: 'Liberar', 
-            action: () => onStatusChange(room.id, ROOM_STATUS.AVAILABLE),
+            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.AVAILABLE),
             color: 'success'
           }
         );
@@ -97,7 +110,7 @@ const RoomGrid = ({
         availableActions.push(
           { 
             label: 'Finalizar', 
-            action: () => onStatusChange(room.id, ROOM_STATUS.AVAILABLE),
+            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.AVAILABLE),
             color: 'success'
           }
         );
@@ -106,7 +119,7 @@ const RoomGrid = ({
         availableActions.push(
           { 
             label: 'Finalizar', 
-            action: () => onStatusChange(room.id, ROOM_STATUS.AVAILABLE),
+            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.AVAILABLE),
             color: 'success'
           }
         );
@@ -151,6 +164,20 @@ const RoomGrid = ({
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (!rooms || rooms.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Users className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">
+          No hay habitaciones disponibles
+        </h3>
+        <p className="text-gray-600">
+          Ajusta los filtros o agrega nuevas habitaciones
+        </p>
       </div>
     );
   }
@@ -205,7 +232,7 @@ const RoomGrid = ({
               {/* Rate */}
               <div className="text-center">
                 <span className="text-2xl font-bold text-blue-600">
-                  {formatCurrency(room.rate)}/noche
+                  {formatCurrency(room.rate || 0)}/noche
                 </span>
               </div>
 
@@ -244,7 +271,7 @@ const RoomGrid = ({
                   size="sm"
                   variant="outline"
                   icon={Edit}
-                  onClick={() => onEdit(room.id)}
+                  onClick={() => onEdit && onEdit(room.id)}
                   className="flex-1"
                 >
                   Editar
@@ -253,7 +280,7 @@ const RoomGrid = ({
                   size="sm"
                   variant="danger"
                   icon={Trash2}
-                  onClick={() => onDelete(room.id)}
+                  onClick={() => onDelete && onDelete(room.id)}
                   className="flex-1"
                 >
                   Eliminar
@@ -267,4 +294,4 @@ const RoomGrid = ({
   );
 };
 
-export default RoomGrid;
+export { CreateRoomModal, RoomFilters, RoomGrid };
