@@ -1,11 +1,11 @@
 // ============================================
-// RoomGrid.jsx (Check-in) - CORREGIDO
+// src/components/checkin/RoomGrid.jsx - CORREGIDO
 // ============================================
 import React from 'react';
 import { Bed, ShoppingCart, ChevronRight, Users, MapPin } from 'lucide-react';
 import Button from '../common/Button';
 
-const CheckinRoomGrid = ({ 
+const RoomGrid = ({ 
   floorRooms, 
   selectedFloor, 
   selectedRoom, 
@@ -161,4 +161,4 @@ const CheckinRoomGrid = ({
   );
 };
 
-export default CheckinRoomGrid;
+export default RoomGrid;

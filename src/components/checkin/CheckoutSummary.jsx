@@ -1,5 +1,5 @@
 // ============================================
-// CheckoutSummary.jsx - CORREGIDO
+// src/components/checkin/CheckoutSummary.jsx - EXPORT CORREGIDO
 // ============================================
 import React, { useState } from 'react';
 import { ChevronLeft, Check, CreditCard, DollarSign, Smartphone } from 'lucide-react';

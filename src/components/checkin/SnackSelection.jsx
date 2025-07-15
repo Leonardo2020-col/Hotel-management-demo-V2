@@ -1,5 +1,5 @@
 // ============================================
-// SnackSelection.jsx - CORREGIDO
+// src/components/checkin/SnackSelection.jsx - EXPORT CORREGIDO
 // ============================================
 import React from 'react';
 import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X } from 'lucide-react';
@@ -244,4 +244,4 @@ const SnackSelection = ({
   );
 };
 
-export { CheckoutSummary, CheckinRoomGrid, SnackSelection };
+export default SnackSelection;

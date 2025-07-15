@@ -1,5 +1,5 @@
 // ============================================
-// CreateRoomModal.jsx - VERSIÓN FINAL CORREGIDA
+// src/components/rooms/CreateRoomModal.jsx - EXPORT CORREGIDO
 // ============================================
 import React, { useState } from 'react';
 import { X, Bed, Users, Maximize, DollarSign, MapPin, Plus, Trash2 } from 'lucide-react';
@@ -100,8 +100,8 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
       const roomData = {
         ...data,
         features: selectedFeatures,
-        status: 'available', // Estado inicial
-        cleaningStatus: 'clean' // Estado de limpieza inicial
+        status: 'available',
+        cleaningStatus: 'clean'
       };
       await onSubmit(roomData);
       handleClose();

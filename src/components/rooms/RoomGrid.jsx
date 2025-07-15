@@ -1,5 +1,5 @@
 // ============================================
-// RoomGrid.jsx - VERSIÓN FINAL CORREGIDA
+// src/components/rooms/RoomGrid.jsx - EXPORT CORREGIDO
 // ============================================
 import React from 'react';
 import { 
@@ -17,7 +17,6 @@ import Button from '../common/Button';
 import { formatCurrency } from '../../utils/formatters';
 import classNames from 'classnames';
 
-// Constants para room status
 const ROOM_STATUS = {
   AVAILABLE: 'available',
   OCCUPIED: 'occupied',
@@ -294,4 +293,4 @@ const RoomGrid = ({
   );
 };
 
-export { CreateRoomModal, RoomFilters, RoomGrid };
+export default RoomGrid;
