@@ -16,11 +16,13 @@ import {
   Calendar,
   Phone,
   Mail,
-  CreditCard
+  CreditCard,
+  X  
 } from 'lucide-react';
 import Button from '../common/Button';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import classNames from 'classnames';
+import toast from 'react-hot-toast'; 
 
 const ROOM_STATUS = {
   AVAILABLE: 'available',
