@@ -16,6 +16,60 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 })
 
+// AGREGAR FUNCIÓN FALTANTE getRoomsByFloor
+export const getRoomsByFloor = async (branchId = null) => {
+  try {
+    console.log('Loading rooms by floor...')
+    
+    // Obtener habitaciones con información de reservas
+    const { data: enrichedRooms, error } = await db.getRooms({ branchId })
+    
+    if (error) {
+      console.error('Error loading rooms:', error)
+      throw error
+    }
+
+    // Agrupar habitaciones por piso
+    const roomsByFloor = enrichedRooms.reduce((acc, room) => {
+      const floor = room.floor
+      if (!acc[floor]) {
+        acc[floor] = []
+      }
+      acc[floor].push({
+        id: room.id,
+        number: room.number,
+        status: room.status,
+        cleaning_status: room.cleaning_status,
+        type: room.room_type,
+        capacity: room.capacity,
+        rate: room.base_rate,
+        beds: room.beds,
+        features: room.features,
+        room_id: room.id,
+        floor: room.floor,
+        // Información de reservas
+        currentGuest: room.currentGuest,
+        nextReservation: room.nextReservation,
+        activeReservation: room.activeReservation
+      })
+      return acc
+    }, {})
+
+    // Convertir a formato esperado por el frontend
+    const result = Object.entries(roomsByFloor).map(([floor, rooms]) => ({
+      floor: parseInt(floor),
+      rooms: rooms
+    })).sort((a, b) => a.floor - b.floor)
+
+    console.log(`Loaded ${result.length} floors with rooms`)
+    return result
+
+  } catch (error) {
+    console.error('Error in getRoomsByFloor:', error)
+    throw error
+  }
+}
+
 // Database helpers - CORREGIDO CON RESERVAS
 export const db = {
   // =============================================
@@ -35,6 +89,9 @@ export const db = {
         .order('number')
 
       // Aplicar filtros a habitaciones
+      if (filters.branchId) {
+        roomQuery = roomQuery.eq('branch_id', filters.branchId)
+      }
       if (filters.status && filters.status !== 'all') {
         roomQuery = roomQuery.eq('status', filters.status)
       }
@@ -132,6 +189,11 @@ export const db = {
       console.error('Error in getRooms:', error)
       return { data: null, error }
     }
+  },
+
+  // AGREGAR MÉTODO getRoomsByFloor al objeto db también
+  async getRoomsByFloor(branchId = null) {
+    return await getRoomsByFloor(branchId)
   },
 
   // Create room function - MEJORADA
@@ -869,64 +931,3 @@ export const db = {
   }
 }
 
-// =============================================
-// SUBSCRIPTIONS PARA TIEMPO REAL
-// =============================================
-
-export const subscriptions = {
-  rooms: (callback) => {
-    return supabase
-      .channel('rooms_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'rooms' }, 
-        callback
-      )
-      .subscribe()
-  },
-
-  reservations: (callback) => {
-    return supabase
-      .channel('reservations_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'reservations' }, 
-        callback
-      )
-      .subscribe()
-  }
-}
-
-// =============================================
-// AUTH HELPERS
-// =============================================
-
-export const auth = {
-  async signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
-    return { data, error }
-  },
-
-  async signOut() {
-    const { error } = await supabase.auth.signOut()
-    return { error }
-  },
-
-  async getSession() {
-    const { data: { session }, error } = await supabase.auth.getSession()
-    return { session, error }
-  },
-
-  onAuthStateChange(callback) {
-    return supabase.auth.onAuthStateChange(callback)
-  }
-}
-
-// Export default
-export default {
-  supabase,
-  db,
-  subscriptions,
-  auth
-}
