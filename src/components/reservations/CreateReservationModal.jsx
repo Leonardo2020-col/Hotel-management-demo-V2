@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { X, User, Calendar, FileText } from 'lucide-react';
+import { X, User, Calendar, FileText, Search } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import Button from '../common/Button';
-import { RESERVATION_STATUS } from '../../utils/reservationMockData';
+import { db } from '../../lib/supabase';
+import toast from 'react-hot-toast';
 
 const schema = yup.object().shape({
   // Guest Information
@@ -17,24 +18,97 @@ const schema = yup.object().shape({
   roomId: yup.number().required('Selecciona una habitación'),
   checkIn: yup.date().required('La fecha de entrada es obligatoria'),
   checkOut: yup.date().required('La fecha de salida es obligatoria')
-    .min(yup.ref('checkIn'), 'La fecha de salida debe ser posterior a la entrada')
+    .min(yup.ref('checkIn'), 'La fecha de salida debe ser posterior a la entrada'),
+  
+  adults: yup.number().min(1, 'Debe haber al menos 1 adulto').required(),
+  children: yup.number().min(0, 'Número de niños inválido').nullable()
 });
 
-const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) => {
+const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedRoom, setSelectedRoom] = useState(null);
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [searchingGuest, setSearchingGuest] = useState(false);
+  const [existingGuests, setExistingGuests] = useState([]);
+  const [selectedGuest, setSelectedGuest] = useState(null);
+  const [loadingRooms, setLoadingRooms] = useState(false);
 
   const {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
     reset
   } = useForm({
-    resolver: yupResolver(schema)
+    resolver: yupResolver(schema),
+    defaultValues: {
+      adults: 1,
+      children: 0
+    }
   });
 
   const watchedValues = watch();
+
+  // Buscar huéspedes existentes
+  const searchGuests = async (searchTerm) => {
+    if (searchTerm.length < 2) {
+      setExistingGuests([]);
+      return;
+    }
+
+    setSearchingGuest(true);
+    try {
+      const { data, error } = await db.searchGuests(searchTerm);
+      if (error) {
+        console.error('Error searching guests:', error);
+        return;
+      }
+      setExistingGuests(data || []);
+    } catch (error) {
+      console.error('Error searching guests:', error);
+    } finally {
+      setSearchingGuest(false);
+    }
+  };
+
+  // Seleccionar huésped existente
+  const selectExistingGuest = (guest) => {
+    setSelectedGuest(guest);
+    setValue('guestName', guest.full_name);
+    setValue('guestEmail', guest.email || '');
+    setValue('guestPhone', guest.phone || '');
+    setValue('guestDocument', guest.document_number || '');
+    setExistingGuests([]);
+  };
+
+  // Buscar habitaciones disponibles
+  const searchAvailableRooms = async () => {
+    if (!watchedValues.checkIn || !watchedValues.checkOut) {
+      return;
+    }
+
+    setLoadingRooms(true);
+    try {
+      const { data, error } = await db.getAvailableRooms(
+        watchedValues.checkIn,
+        watchedValues.checkOut
+      );
+
+      if (error) {
+        console.error('Error loading available rooms:', error);
+        toast.error('Error al buscar habitaciones disponibles');
+        return;
+      }
+
+      setAvailableRooms(data || []);
+    } catch (error) {
+      console.error('Error loading available rooms:', error);
+      toast.error('Error al buscar habitaciones disponibles');
+    } finally {
+      setLoadingRooms(false);
+    }
+  };
 
   // Actualizar habitación seleccionada
   React.useEffect(() => {
@@ -46,33 +120,87 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) =
     }
   }, [watchedValues.roomId, availableRooms]);
 
+  // Buscar habitaciones cuando cambien las fechas
+  React.useEffect(() => {
+    if (watchedValues.checkIn && watchedValues.checkOut) {
+      searchAvailableRooms();
+    }
+  }, [watchedValues.checkIn, watchedValues.checkOut]);
+
   const onFormSubmit = async (data) => {
     try {
       const checkIn = new Date(data.checkIn);
       const checkOut = new Date(data.checkOut);
       const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
-      const reservationData = {
-        guest: {
-          name: data.guestName,
+      let guestData;
+      
+      // Si hay un huésped seleccionado, usar ese
+      if (selectedGuest) {
+        guestData = selectedGuest;
+      } else {
+        // Crear nuevo huésped
+        const newGuestData = {
+          first_name: data.guestName.split(' ')[0] || '',
+          last_name: data.guestName.split(' ').slice(1).join(' ') || '',
           email: data.guestEmail || '',
           phone: data.guestPhone || '',
-          document: data.guestDocument
-        },
-        room: selectedRoom,
-        checkIn: data.checkIn,
-        checkOut: data.checkOut,
-        nights,
-        guests: 1, // Valor por defecto
-        status: RESERVATION_STATUS.PENDING
+          document_type: 'DNI',
+          document_number: data.guestDocument,
+          status: 'active'
+        };
+
+        const { data: createdGuest, error: guestError } = await db.createGuest(newGuestData);
+        
+        if (guestError) {
+          toast.error('Error al crear el huésped: ' + guestError.message);
+          return;
+        }
+        
+        guestData = createdGuest;
+      }
+
+      // Crear reserva
+      const reservationData = {
+        guest_id: guestData.id,
+        room_id: selectedRoom.id,
+        branch_id: 1, // Por defecto
+        check_in: data.checkIn,
+        check_out: data.checkOut,
+        adults: data.adults,
+        children: data.children || 0,
+        rate: selectedRoom.base_rate,
+        total_amount: nights * selectedRoom.base_rate,
+        source: 'direct',
+        special_requests: data.specialRequests || '',
+        status: 'pending'
       };
 
-      await onSubmit(reservationData);
+      const { data: reservation, error: reservationError } = await db.createReservation(reservationData);
+
+      if (reservationError) {
+        toast.error('Error al crear la reserva: ' + reservationError.message);
+        return;
+      }
+
+      toast.success('Reserva creada exitosamente');
+      
+      // Llamar callback del padre
+      if (onSubmit) {
+        onSubmit(reservation);
+      }
+
+      // Resetear formulario
       reset();
       setCurrentStep(1);
       setSelectedRoom(null);
+      setSelectedGuest(null);
+      setAvailableRooms([]);
+      onClose();
+      
     } catch (error) {
       console.error('Error creating reservation:', error);
+      toast.error('Error al crear la reserva');
     }
   };
 
@@ -88,6 +216,9 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) =
     reset();
     setCurrentStep(1);
     setSelectedRoom(null);
+    setSelectedGuest(null);
+    setAvailableRooms([]);
+    setExistingGuests([]);
     onClose();
   };
 
@@ -169,6 +300,49 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) =
                   <h3 className="text-lg font-semibold text-gray-900">Información del Huésped</h3>
                 </div>
 
+                {/* Guest Search */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Buscar Huésped Existente (opcional)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Buscar por nombre, email o documento..."
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      onChange={(e) => searchGuests(e.target.value)}
+                    />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  </div>
+                  
+                  {/* Search Results */}
+                  {existingGuests.length > 0 && (
+                    <div className="mt-2 border border-gray-200 rounded-lg max-h-40 overflow-y-auto">
+                      {existingGuests.map(guest => (
+                        <button
+                          key={guest.id}
+                          type="button"
+                          onClick={() => selectExistingGuest(guest)}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                        >
+                          <div className="font-medium">{guest.full_name}</div>
+                          <div className="text-sm text-gray-500">
+                            {guest.email} • {guest.document_number}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {selectedGuest && (
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm text-green-800">
+                      <strong>Huésped seleccionado:</strong> {selectedGuest.full_name}
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -208,11 +382,8 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) =
                       type="tel"
                       {...register('guestPhone')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="+34 600 123 456"
+                      placeholder="+51 987 654 321"
                     />
-                    {errors.guestPhone && (
-                      <p className="text-red-600 text-sm mt-1">{errors.guestPhone.message}</p>
-                    )}
                   </div>
 
                   <div>
@@ -242,18 +413,88 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) =
                 </div>
 
                 <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Fecha de Entrada *
+                      </label>
+                      <input
+                        type="date"
+                        {...register('checkIn')}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {errors.checkIn && (
+                        <p className="text-red-600 text-sm mt-1">{errors.checkIn.message}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Fecha de Salida *
+                      </label>
+                      <input
+                        type="date"
+                        {...register('checkOut')}
+                        min={watchedValues.checkIn || new Date().toISOString().split('T')[0]}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {errors.checkOut && (
+                        <p className="text-red-600 text-sm mt-1">{errors.checkOut.message}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Adultos *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        {...register('adults')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {errors.adults && (
+                        <p className="text-red-600 text-sm mt-1">{errors.adults.message}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Niños
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        {...register('children')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Habitación *
+                      Habitación * 
+                      {loadingRooms && <span className="text-blue-500 ml-2">Buscando...</span>}
                     </label>
                     <select
                       {...register('roomId')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      disabled={loadingRooms || availableRooms.length === 0}
                     >
-                      <option value="">Seleccionar habitación</option>
+                      <option value="">
+                        {loadingRooms 
+                          ? 'Buscando habitaciones...' 
+                          : availableRooms.length === 0
+                          ? 'No hay habitaciones disponibles'
+                          : 'Seleccionar habitación'
+                        }
+                      </option>
                       {availableRooms.map(room => (
                         <option key={room.id} value={room.id}>
-                          Habitación {room.number} - {room.type}
+                          Habitación {room.number} - {room.room_type} - S/ {room.base_rate}/noche
                         </option>
                       ))}
                     </select>
@@ -264,32 +505,14 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) =
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Fecha de Entrada *
+                      Solicitudes Especiales
                     </label>
-                    <input
-                      type="date"
-                      {...register('checkIn')}
-                      min={new Date().toISOString().split('T')[0]}
+                    <textarea
+                      {...register('specialRequests')}
+                      rows="3"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Camas adicionales, dieta especial, etc."
                     />
-                    {errors.checkIn && (
-                      <p className="text-red-600 text-sm mt-1">{errors.checkIn.message}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Fecha de Salida *
-                    </label>
-                    <input
-                      type="date"
-                      {...register('checkOut')}
-                      min={watchedValues.checkIn || new Date().toISOString().split('T')[0]}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    {errors.checkOut && (
-                      <p className="text-red-600 text-sm mt-1">{errors.checkOut.message}</p>
-                    )}
                   </div>
                 </div>
               </div>
@@ -321,11 +544,15 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) =
                   <div className="border-t border-gray-200 pt-4">
                     <h4 className="font-semibold text-gray-900 mb-3">Detalles de la Reserva</h4>
                     <div className="space-y-2 text-sm">
-                      <p><span className="text-gray-600">Habitación:</span> <span className="font-medium">{selectedRoom?.number} - {selectedRoom?.type}</span></p>
+                      <p><span className="text-gray-600">Habitación:</span> <span className="font-medium">{selectedRoom?.number} - {selectedRoom?.room_type}</span></p>
                       <p><span className="text-gray-600">Check-in:</span> <span className="font-medium">{watchedValues.checkIn && new Date(watchedValues.checkIn).toLocaleDateString('es-ES')}</span></p>
                       <p><span className="text-gray-600">Check-out:</span> <span className="font-medium">{watchedValues.checkOut && new Date(watchedValues.checkOut).toLocaleDateString('es-ES')}</span></p>
+                      <p><span className="text-gray-600">Huéspedes:</span> <span className="font-medium">{watchedValues.adults} adulto(s) {watchedValues.children > 0 && `, ${watchedValues.children} niño(s)`}</span></p>
                       {watchedValues.checkIn && watchedValues.checkOut && (
-                        <p><span className="text-gray-600">Noches:</span> <span className="font-medium">{Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24))}</span></p>
+                        <>
+                          <p><span className="text-gray-600">Noches:</span> <span className="font-medium">{Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24))}</span></p>
+                          <p><span className="text-gray-600">Total:</span> <span className="font-medium text-lg text-green-600">S/ {selectedRoom ? (Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24)) * selectedRoom.base_rate).toFixed(2) : '0.00'}</span></p>
+                        </>
                       )}
                     </div>
                   </div>
@@ -362,6 +589,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit, availableRooms }) =
                   type="button"
                   variant="primary"
                   onClick={nextStep}
+                  disabled={currentStep === 2 && !selectedRoom}
                 >
                   Siguiente
                 </Button>

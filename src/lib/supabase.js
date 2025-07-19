@@ -1,4 +1,4 @@
-// src/lib/supabase.js - SIN ROOM_TYPES
+// src/lib/supabase.js - COMPLETO CON TODAS LAS FUNCIONES DE RESERVAS
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -295,13 +295,529 @@ export const db = {
       const availableRooms = Object.values(roomAvailability)
         .filter(room => room.available_days >= daysNeeded)
         .map(room => ({
-          ...room,
+          id: room.room_id,
+          number: room.number,
+          room_type: room.room_type,
+          floor: room.floor,
+          base_rate: room.rate,
+          capacity: room.capacity,
           total_days_needed: daysNeeded
         }))
 
       return { data: availableRooms, error: null }
     } catch (error) {
       return { data: null, error }
+    }
+  },
+
+  // =============================================
+  // RESERVATION MANAGEMENT FUNCTIONS
+  // =============================================
+
+  // Get reservations with complete information
+  async getReservations(filters = {}) {
+    try {
+      let query = supabase
+        .from('reservations')
+        .select(`
+          *,
+          guest:guests(
+            id,
+            first_name,
+            last_name,
+            full_name,
+            email,
+            phone,
+            document_number,
+            vip_level,
+            status
+          ),
+          room:rooms(
+            id,
+            number,
+            floor,
+            room_type,
+            capacity,
+            base_rate,
+            status,
+            cleaning_status,
+            features
+          ),
+          branch:branches(
+            id,
+            name,
+            code
+          )
+        `)
+        .order('created_at', { ascending: false })
+
+      // Apply filters
+      if (filters.status) {
+        query = query.eq('status', filters.status)
+      }
+      if (filters.guest_id) {
+        query = query.eq('guest_id', filters.guest_id)
+      }
+      if (filters.room_id) {
+        query = query.eq('room_id', filters.room_id)
+      }
+      if (filters.branch_id) {
+        query = query.eq('branch_id', filters.branch_id)
+      }
+      if (filters.check_in_from) {
+        query = query.gte('check_in', filters.check_in_from)
+      }
+      if (filters.check_in_to) {
+        query = query.lte('check_in', filters.check_in_to)
+      }
+      if (filters.limit) {
+        query = query.limit(filters.limit)
+      }
+      if (filters.offset) {
+        query = query.range(filters.offset, filters.offset + (filters.limit || 50) - 1)
+      }
+
+      const { data, error } = await query
+      return { data, error }
+    } catch (error) {
+      console.error('Error in getReservations:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Create reservation
+  async createReservation(reservationData) {
+    try {
+      // Generate confirmation code if not provided
+      const confirmationCode = reservationData.confirmation_code || 
+        `HTP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`
+
+      // Validate required fields
+      if (!reservationData.guest_id || !reservationData.room_id) {
+        return { 
+          data: null, 
+          error: { message: 'guest_id and room_id are required' }
+        }
+      }
+
+      // Check room availability
+      const { data: conflicts } = await supabase
+        .from('reservations')
+        .select('id')
+        .eq('room_id', reservationData.room_id)
+        .lt('check_in', reservationData.check_out)
+        .gt('check_out', reservationData.check_in)
+        .not('status', 'in', '(cancelled,no_show)')
+
+      if (conflicts && conflicts.length > 0) {
+        return {
+          data: null,
+          error: { message: 'Room not available for selected dates' }
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('reservations')
+        .insert({
+          confirmation_code: confirmationCode,
+          ...reservationData
+        })
+        .select(`
+          *,
+          guest:guests(*),
+          room:rooms(*),
+          branch:branches(*)
+        `)
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in createReservation:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Update reservation
+  async updateReservation(reservationId, updates) {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', reservationId)
+        .select(`
+          *,
+          guest:guests(*),
+          room:rooms(*),
+          branch:branches(*)
+        `)
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in updateReservation:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Delete reservation (soft delete by changing status)
+  async deleteReservation(reservationId) {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancellation_reason: 'Deleted by user'
+        })
+        .eq('id', reservationId)
+        .select()
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in deleteReservation:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Get reservation by ID
+  async getReservationById(reservationId) {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select(`
+          *,
+          guest:guests(*),
+          room:rooms(*),
+          branch:branches(*),
+          payments:reservation_payments(*)
+        `)
+        .eq('id', reservationId)
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in getReservationById:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Get today's arrivals
+  async getTodaysArrivals(branchId = null) {
+    try {
+      let query = supabase
+        .from('reservations')
+        .select(`
+          *,
+          guest:guests(*),
+          room:rooms(*)
+        `)
+        .eq('check_in', new Date().toISOString().split('T')[0])
+        .in('status', ['confirmed', 'pending'])
+        .order('created_at')
+
+      if (branchId) {
+        query = query.eq('branch_id', branchId)
+      }
+
+      const { data, error } = await query
+      return { data, error }
+    } catch (error) {
+      console.error('Error in getTodaysArrivals:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Get today's departures
+  async getTodaysDepartures(branchId = null) {
+    try {
+      let query = supabase
+        .from('reservations')
+        .select(`
+          *,
+          guest:guests(*),
+          room:rooms(*)
+        `)
+        .eq('check_out', new Date().toISOString().split('T')[0])
+        .eq('status', 'checked_in')
+        .order('created_at')
+
+      if (branchId) {
+        query = query.eq('branch_id', branchId)
+      }
+
+      const { data, error } = await query
+      return { data, error }
+    } catch (error) {
+      console.error('Error in getTodaysDepartures:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Get current in-house guests
+  async getInHouseGuests(branchId = null) {
+    try {
+      let query = supabase
+        .from('reservations')
+        .select(`
+          *,
+          guest:guests(*),
+          room:rooms(*)
+        `)
+        .eq('status', 'checked_in')
+        .order('room.number')
+
+      if (branchId) {
+        query = query.eq('branch_id', branchId)
+      }
+
+      const { data, error } = await query
+      return { data, error }
+    } catch (error) {
+      console.error('Error in getInHouseGuests:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Process check-in using database function
+  async processCheckIn(reservationId, userId = null) {
+    try {
+      const { data, error } = await supabase.rpc('process_checkin', {
+        reservation_id_param: reservationId,
+        user_id_param: userId
+      })
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in processCheckIn:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Process check-out using database function
+  async processCheckOut(reservationId, paymentMethod = 'cash', userId = null) {
+    try {
+      const { data, error } = await supabase.rpc('process_checkout', {
+        reservation_id_param: reservationId,
+        payment_method_param: paymentMethod,
+        user_id_param: userId
+      })
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in processCheckOut:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Get reservation statistics
+  async getReservationStatistics(branchId = null) {
+    try {
+      const { data, error } = await supabase.rpc('get_reservation_statistics', {
+        branch_id_param: branchId
+      })
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in getReservationStatistics:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Search reservations
+  async searchReservations(searchTerm, filters = {}) {
+    try {
+      let query = supabase
+        .from('reservations')
+        .select(`
+          *,
+          guest:guests(*),
+          room:rooms(*),
+          branch:branches(*)
+        `)
+
+      // Apply search to confirmation code
+      if (searchTerm) {
+        query = query.or(`confirmation_code.ilike.%${searchTerm}%`)
+      }
+
+      // Apply additional filters
+      if (filters.status) {
+        query = query.eq('status', filters.status)
+      }
+      if (filters.branch_id) {
+        query = query.eq('branch_id', filters.branch_id)
+      }
+
+      query = query.order('created_at', { ascending: false })
+
+      const { data, error } = await query
+      
+      // Additional client-side filtering for guest information
+      if (data && searchTerm) {
+        const filteredData = data.filter(reservation => {
+          const term = searchTerm.toLowerCase()
+          return (
+            reservation.confirmation_code?.toLowerCase().includes(term) ||
+            reservation.guest?.full_name?.toLowerCase().includes(term) ||
+            reservation.guest?.email?.toLowerCase().includes(term) ||
+            reservation.guest?.phone?.includes(term) ||
+            reservation.guest?.document_number?.toLowerCase().includes(term) ||
+            reservation.room?.number?.toString().includes(term)
+          )
+        })
+        return { data: filteredData, error }
+      }
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in searchReservations:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Add payment to reservation
+  async addReservationPayment(reservationId, paymentData) {
+    try {
+      const { data, error } = await supabase
+        .from('reservation_payments')
+        .insert({
+          reservation_id: reservationId,
+          ...paymentData
+        })
+        .select()
+        .single()
+
+      if (!error) {
+        // Update reservation paid amount
+        const { data: payments } = await supabase
+          .from('reservation_payments')
+          .select('amount')
+          .eq('reservation_id', reservationId)
+
+        const totalPaid = payments?.reduce((sum, p) => sum + parseFloat(p.amount), 0) || 0
+
+        await supabase
+          .from('reservations')
+          .update({
+            paid_amount: totalPaid,
+            payment_status: totalPaid >= paymentData.total_amount ? 'paid' : 'partial'
+          })
+          .eq('id', reservationId)
+      }
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in addReservationPayment:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Get reservation payments
+  async getReservationPayments(reservationId) {
+    try {
+      const { data, error } = await supabase
+        .from('reservation_payments')
+        .select('*')
+        .eq('reservation_id', reservationId)
+        .order('created_at', { ascending: false })
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in getReservationPayments:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Cancel reservation
+  async cancelReservation(reservationId, reason = null) {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancellation_reason: reason
+        })
+        .eq('id', reservationId)
+        .select()
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in cancelReservation:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Mark as no-show
+  async markAsNoShow(reservationId) {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .update({
+          status: 'no_show',
+          cancelled_at: new Date().toISOString(),
+          cancellation_reason: 'No show'
+        })
+        .eq('id', reservationId)
+        .select()
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error in markAsNoShow:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Search guests
+  async searchGuests(searchTerm, limit = 10) {
+    try {
+      const { data, error } = await supabase
+        .from('guests')
+        .select('*')
+        .or(`full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,document_number.ilike.%${searchTerm}%`)
+        .limit(limit)
+        .order('full_name')
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error searching guests:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Get reservation sources
+  getReservationSources() {
+    return [
+      'direct',
+      'website', 
+      'booking.com',
+      'expedia',
+      'airbnb',
+      'phone',
+      'email',
+      'walk-in'
+    ]
+  },
+
+  // Check room availability
+  async checkRoomAvailability(roomId, checkIn, checkOut) {
+    try {
+      const { data, error } = await supabase.rpc('check_room_availability', {
+        p_room_id: roomId,
+        p_check_in: checkIn,
+        p_check_out: checkOut
+      })
+
+      return { data, error }
+    } catch (error) {
+      console.error('Error checking room availability:', error)
+      return { data: false, error }
     }
   },
 
@@ -354,45 +870,6 @@ export const db = {
         }, 
         error: null 
       }
-    } catch (error) {
-      return { data: null, error }
-    }
-  },
-
-  // Get unique room types - NUEVA FUNCIÓN
-  async getRoomTypes() {
-    try {
-      const { data, error } = await supabase
-        .from('rooms')
-        .select('room_type, base_rate')
-        .not('room_type', 'is', null)
-
-      if (error) return { data: null, error }
-
-      // Crear lista única de tipos
-      const uniqueTypes = {}
-      data.forEach((room, index) => {
-        if (!uniqueTypes[room.room_type]) {
-          uniqueTypes[room.room_type] = {
-            id: index + 1,
-            name: room.room_type,
-            base_rate: room.base_rate || 100,
-            active: true
-          }
-        }
-      })
-
-      // Si no hay tipos, crear uno por defecto
-      if (Object.keys(uniqueTypes).length === 0) {
-        uniqueTypes['Habitación Estándar'] = {
-          id: 1,
-          name: 'Habitación Estándar',
-          base_rate: 100,
-          active: true
-        }
-      }
-
-      return { data: Object.values(uniqueTypes), error: null }
     } catch (error) {
       return { data: null, error }
     }
@@ -577,93 +1054,11 @@ export const db = {
     return { data, error }
   },
 
-  // Reservations
-  async getReservations(filters = {}) {
-    let query = supabase
-      .from('reservations')
-      .select(`
-        *,
-        guest:guests(*),
-        room:rooms(*)
-      `)
-      .order('created_at', { ascending: false })
-
-    if (filters.status) {
-      query = query.eq('status', filters.status)
-    }
-    if (filters.checkIn) {
-      query = query.gte('check_in', filters.checkIn)
-    }
-    if (filters.checkOut) {
-      query = query.lte('check_out', filters.checkOut)
-    }
-    if (filters.guestId) {
-      query = query.eq('guest_id', filters.guestId)
-    }
-    if (filters.search) {
-      query = query.or(`confirmation_code.ilike.%${filters.search}%`)
-    }
-
-    const { data, error } = await query
-    return { data, error }
-  },
-
   async getTodaysReservations() {
     const { data, error } = await supabase
       .from('todays_reservations')
       .select('*')
       .order('check_in')
-    return { data, error }
-  },
-
-  async createReservation(reservationData) {
-    // Check availability first
-    const { data: isAvailable } = await supabase
-      .rpc('check_room_availability', {
-        p_room_id: reservationData.room_id,
-        p_check_in: reservationData.check_in,
-        p_check_out: reservationData.check_out
-      })
-
-    if (!isAvailable) {
-      return { 
-        data: null, 
-        error: { 
-          message: 'Room not available for selected dates',
-          code: 'ROOM_NOT_AVAILABLE'
-        } 
-      }
-    }
-
-    // Generate confirmation code
-    const confirmationCode = `HTP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`
-    
-    const { data, error } = await supabase
-      .from('reservations')
-      .insert({
-        ...reservationData,
-        confirmation_code: confirmationCode
-      })
-      .select(`
-        *,
-        guest:guests(*),
-        room:rooms(*)
-      `)
-      .single()
-    return { data, error }
-  },
-
-  async updateReservation(reservationId, updates) {
-    const { data, error } = await supabase
-      .from('reservations')
-      .update(updates)
-      .eq('id', reservationId)
-      .select(`
-        *,
-        guest:guests(*),
-        room:rooms(*)
-      `)
-      .single()
     return { data, error }
   },
 
