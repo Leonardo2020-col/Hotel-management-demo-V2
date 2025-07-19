@@ -1,4 +1,4 @@
-// src/lib/supabase.js
+// src/lib/supabase.js - CORREGIDO
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -18,6 +18,482 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Database helpers
 export const db = {
+  // =============================================
+  // ROOM TYPES FUNCTIONS - CORREGIDAS
+  // =============================================
+  async getRoomTypes() {
+    const { data, error } = await supabase
+      .from('room_types')
+      .select('*')
+      .eq('active', true)  // Usar 'active' en lugar de 'is_active'
+      .order('name')
+    return { data, error }
+  },
+
+  // =============================================
+  // ROOMS MANAGEMENT FUNCTIONS - CORREGIDAS
+  // =============================================
+
+  // Create room function - CORREGIDA
+  async createRoom(roomData) {
+    try {
+      // 1. Primero obtener el room_type_id si se proporciona el nombre del tipo
+      let room_type_id = roomData.room_type_id;
+      
+      if (roomData.type && !room_type_id) {
+        const { data: roomType, error: typeError } = await supabase
+          .from('room_types')
+          .select('id')
+          .eq('name', roomData.type)
+          .single();
+        
+        if (typeError || !roomType) {
+          // Si no se encuentra el tipo, usar el primer tipo disponible
+          const { data: defaultType, error: defaultError } = await supabase
+            .from('room_types')
+            .select('id')
+            .eq('active', true)
+            .order('id')
+            .limit(1)
+            .single();
+          
+          if (defaultError || !defaultType) {
+            return { 
+              data: null, 
+              error: { message: 'No hay tipos de habitación disponibles. Por favor, crea un tipo primero.' }
+            };
+          }
+          
+          room_type_id = defaultType.id;
+        } else {
+          room_type_id = roomType.id;
+        }
+      }
+
+      // 2. Si aún no hay room_type_id, usar 1 por defecto
+      if (!room_type_id) {
+        room_type_id = 1;
+      }
+
+      // 3. Preparar datos para inserción
+      const insertData = {
+        number: roomData.number,
+        floor: roomData.floor,
+        room_type_id: room_type_id,
+        branch_id: roomData.branch_id || 1, // Default branch
+        status: roomData.status || 'available',
+        cleaning_status: roomData.cleaningStatus || 'clean',
+        beds: JSON.stringify(roomData.beds || [{ type: 'Doble', count: 1 }]),
+        size: roomData.size || 25,
+        features: roomData.features || ['WiFi Gratis'],
+        description: roomData.description || `Habitación ${roomData.number}`
+      };
+
+      // 4. Verificar que el número no esté duplicado
+      const { data: existingRoom } = await supabase
+        .from('rooms')
+        .select('id')
+        .eq('number', roomData.number)
+        .eq('branch_id', insertData.branch_id)
+        .single();
+
+      if (existingRoom) {
+        return { 
+          data: null, 
+          error: { message: `Ya existe una habitación con el número ${roomData.number}` }
+        };
+      }
+
+      // 5. Insertar la habitación
+      const { data, error } = await supabase
+        .from('rooms')
+        .insert(insertData)
+        .select(`
+          *,
+          room_type:room_types(*)
+        `)
+        .single();
+
+      if (error) {
+        console.error('Error inserting room:', error);
+        return { data: null, error };
+      }
+
+      // 6. Crear registros de disponibilidad para los próximos 90 días
+      await this.createRoomAvailability(data.id);
+
+      return { data, error: null };
+
+    } catch (error) {
+      console.error('Error in createRoom:', error);
+      return { 
+        data: null, 
+        error: { message: 'Error interno al crear la habitación: ' + error.message }
+      };
+    }
+  },
+
+  // Función auxiliar para crear disponibilidad de habitación
+  async createRoomAvailability(roomId) {
+    try {
+      // Obtener información de la habitación
+      const { data: room } = await supabase
+        .from('rooms')
+        .select(`
+          *,
+          room_type:room_types(base_rate)
+        `)
+        .eq('id', roomId)
+        .single();
+
+      if (!room) return;
+
+      // Crear registros de disponibilidad para los próximos 90 días
+      const availabilityRecords = [];
+      const today = new Date();
+      
+      for (let i = 0; i < 90; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() + i);
+        
+        availabilityRecords.push({
+          room_id: roomId,
+          date: date.toISOString().split('T')[0],
+          is_available: room.status === 'available',
+          rate: room.room_type?.base_rate || 100,
+          number: room.number,
+          floor: room.floor,
+          room_type: room.room_type?.name || 'Habitación Estándar',
+          status: room.status,
+          cleaning_status: room.cleaning_status,
+          capacity: room.room_type?.capacity || 2,
+          branch_id: room.branch_id
+        });
+      }
+
+      // Insertar en lotes de 50 para evitar límites
+      const batchSize = 50;
+      for (let i = 0; i < availabilityRecords.length; i += batchSize) {
+        const batch = availabilityRecords.slice(i, i + batchSize);
+        await supabase
+          .from('room_availability')
+          .insert(batch);
+      }
+
+    } catch (error) {
+      console.error('Error creating room availability:', error);
+    }
+  },
+
+  // Update room function - CORREGIDA
+  async updateRoom(roomId, updates) {
+    try {
+      // Si se actualiza el tipo, obtener el room_type_id
+      if (updates.type && !updates.room_type_id) {
+        const { data: roomType } = await supabase
+          .from('room_types')
+          .select('id')
+          .eq('name', updates.type)
+          .single();
+        
+        if (roomType) {
+          updates.room_type_id = roomType.id;
+        }
+        delete updates.type; // Remover el nombre del tipo
+      }
+
+      const { data, error } = await supabase
+        .from('rooms')
+        .update(updates)
+        .eq('id', roomId)
+        .select(`
+          *,
+          room_type:room_types(*)
+        `)
+        .single();
+
+      // Actualizar room_availability si es necesario
+      if (updates.status || updates.cleaning_status) {
+        await supabase
+          .from('room_availability')
+          .update({
+            status: updates.status,
+            cleaning_status: updates.cleaning_status,
+            is_available: updates.status === 'available'
+          })
+          .eq('room_id', roomId);
+      }
+
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Delete room function - CORREGIDA
+  async deleteRoom(roomId) {
+    try {
+      // Primero eliminar registros de disponibilidad
+      await supabase
+        .from('room_availability')
+        .delete()
+        .eq('room_id', roomId);
+
+      // Luego eliminar la habitación
+      const { data, error } = await supabase
+        .from('rooms')
+        .delete()
+        .eq('id', roomId)
+        .select()
+        .single();
+
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // =============================================
+  // ROOMS QUERY FUNCTIONS - CORREGIDAS
+  // =============================================
+
+  // Get rooms with proper filtering
+  async getRooms(filters = {}) {
+    try {
+      let query = supabase
+        .from('rooms')
+        .select(`
+          *,
+          room_type:room_types(*)
+        `)
+        .order('floor')
+        .order('number');
+
+      if (filters.status && filters.status !== 'all') {
+        query = query.eq('status', filters.status);
+      }
+      if (filters.floor && filters.floor !== 'all') {
+        query = query.eq('floor', filters.floor);
+      }
+      if (filters.type && filters.type !== 'all') {
+        query = query.eq('room_type.name', filters.type);
+      }
+      if (filters.cleaningStatus && filters.cleaningStatus !== 'all') {
+        query = query.eq('cleaning_status', filters.cleaningStatus);
+      }
+      if (filters.search) {
+        query = query.or(`number.ilike.%${filters.search}%,description.ilike.%${filters.search}%`);
+      }
+
+      const { data, error } = await query;
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Get room availability - CORREGIDA
+  async getRoomAvailability(startDate, endDate, filters = {}) {
+    try {
+      let query = supabase
+        .from('room_availability')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('floor')
+        .order('number')
+        .order('date');
+
+      if (filters.available_only) {
+        query = query.eq('is_available', true);
+      }
+      if (filters.room_type) {
+        query = query.eq('room_type', filters.room_type);
+      }
+      if (filters.floor) {
+        query = query.eq('floor', filters.floor);
+      }
+
+      const { data, error } = await query;
+      return { data, error };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // Get available rooms for dates
+  async getAvailableRooms(checkIn, checkOut, roomTypeId = null) {
+    try {
+      let query = supabase
+        .from('room_availability')
+        .select('*')
+        .eq('is_available', true)
+        .gte('date', checkIn)
+        .lt('date', checkOut);
+
+      if (roomTypeId) {
+        const { data: roomType } = await supabase
+          .from('room_types')
+          .select('name')
+          .eq('id', roomTypeId)
+          .single();
+        
+        if (roomType) {
+          query = query.eq('room_type', roomType.name);
+        }
+      }
+
+      const { data, error } = await query;
+      
+      if (error) return { data: null, error };
+
+      // Agrupar por habitación y verificar que esté disponible todos los días
+      const roomAvailability = {};
+      data.forEach(record => {
+        if (!roomAvailability[record.room_id]) {
+          roomAvailability[record.room_id] = {
+            room_id: record.room_id,
+            number: record.number,
+            room_type: record.room_type,
+            floor: record.floor,
+            rate: record.rate,
+            capacity: record.capacity,
+            available_days: 0,
+            total_days_needed: 0
+          };
+        }
+        roomAvailability[record.room_id].available_days++;
+      });
+
+      // Calcular días necesarios
+      const start = new Date(checkIn);
+      const end = new Date(checkOut);
+      const daysNeeded = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+
+      // Filtrar habitaciones que están disponibles todos los días necesarios
+      const availableRooms = Object.values(roomAvailability)
+        .filter(room => room.available_days >= daysNeeded)
+        .map(room => ({
+          ...room,
+          total_days_needed: daysNeeded
+        }));
+
+      return { data: availableRooms, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // =============================================
+  // ROOM STATISTICS - CORREGIDAS
+  // =============================================
+
+  async getRoomStats() {
+    try {
+      const { data: rooms, error } = await supabase
+        .from('rooms')
+        .select(`
+          status,
+          cleaning_status,
+          room_type:room_types(name, base_rate)
+        `);
+
+      if (error) return { data: null, error };
+
+      const stats = {
+        total: rooms.length,
+        available: rooms.filter(r => r.status === 'available').length,
+        occupied: rooms.filter(r => r.status === 'occupied').length,
+        cleaning: rooms.filter(r => r.status === 'cleaning').length,
+        maintenance: rooms.filter(r => r.status === 'maintenance').length,
+        outOfOrder: rooms.filter(r => r.status === 'out_of_order').length,
+        needsCleaning: rooms.filter(r => r.cleaning_status === 'dirty').length,
+        occupancyRate: rooms.length > 0 ? 
+          Math.round((rooms.filter(r => r.status === 'occupied').length / rooms.length) * 100) : 0
+      };
+
+      // Estadísticas por tipo
+      const roomsByType = {};
+      rooms.forEach(room => {
+        const typeName = room.room_type?.name || 'Sin tipo';
+        if (!roomsByType[typeName]) {
+          roomsByType[typeName] = {
+            name: typeName,
+            total: 0,
+            available: 0,
+            occupied: 0,
+            baseRate: room.room_type?.base_rate || 0
+          };
+        }
+        roomsByType[typeName].total++;
+        if (room.status === 'available') roomsByType[typeName].available++;
+        if (room.status === 'occupied') roomsByType[typeName].occupied++;
+      });
+
+      return { 
+        data: {
+          ...stats,
+          roomsByType: Object.values(roomsByType)
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  // =============================================
+  // CLEANING MANAGEMENT - CORREGIDAS
+  // =============================================
+
+  async getCleaningStaff() {
+    const { data, error } = await supabase
+      .from('cleaning_staff')
+      .select('*')
+      .eq('is_active', true)
+      .order('name');
+    return { data, error };
+  },
+
+  async getRoomsNeedingCleaning() {
+    const { data, error } = await supabase
+      .from('rooms')
+      .select(`
+        *,
+        room_type:room_types(name)
+      `)
+      .in('cleaning_status', ['dirty', 'in_progress'])
+      .order('floor')
+      .order('number');
+    return { data, error };
+  },
+
+  async assignCleaning(roomIds, staffName) {
+    const { data, error } = await supabase
+      .from('rooms')
+      .update({
+        cleaning_status: 'in_progress',
+        assigned_cleaner: staffName,
+        cleaning_start_time: new Date().toISOString()
+      })
+      .in('id', roomIds)
+      .select();
+
+    // También actualizar room_availability
+    if (!error) {
+      await supabase
+        .from('room_availability')
+        .update({ cleaning_status: 'in_progress' })
+        .in('room_id', roomIds);
+    }
+
+    return { data, error };
+  },
+
+  // =============================================
+  // RESTO DE FUNCIONES ORIGINALES (sin cambios)
+  // =============================================
+
   // Profiles
   async getProfile(userId) {
     const { data, error } = await supabase
@@ -38,37 +514,6 @@ export const db = {
     return { data, error }
   },
 
-  // Rooms
-  async getRooms(filters = {}) {
-    let query = supabase
-      .from('room_availability')
-      .select('*')
-      .order('number')
-
-    if (filters.status) {
-      query = query.eq('status', filters.status)
-    }
-    if (filters.floor) {
-      query = query.eq('floor', filters.floor)
-    }
-    if (filters.roomType) {
-      query = query.eq('room_type_id', filters.roomType)
-    }
-
-    const { data, error } = await query
-    return { data, error }
-  },
-
-  async getAvailableRooms(checkIn, checkOut, roomTypeId = null) {
-    const { data, error } = await supabase
-      .rpc('get_available_rooms', {
-        p_check_in: checkIn,
-        p_check_out: checkOut,
-        p_room_type_id: roomTypeId
-      })
-    return { data, error }
-  },
-
   async updateRoomStatus(roomId, status, cleaningStatus = null) {
     const updates = { status }
     if (cleaningStatus) {
@@ -84,6 +529,19 @@ export const db = {
       .eq('id', roomId)
       .select()
       .single()
+
+    // Actualizar también room_availability
+    if (!error) {
+      await supabase
+        .from('room_availability')
+        .update({
+          status: status,
+          cleaning_status: cleaningStatus,
+          is_available: status === 'available'
+        })
+        .eq('room_id', roomId);
+    }
+
     return { data, error }
   },
 
@@ -107,19 +565,6 @@ export const db = {
     }, {})
     
     return { data: roomsByFloor, error: null }
-  },
-
-  async assignCleaning(roomIds, staffName) {
-    const { data, error } = await supabase
-      .from('rooms')
-      .update({
-        cleaning_status: 'in_progress',
-        cleaned_by: staffName,
-        last_cleaned: new Date().toISOString()
-      })
-      .in('id', roomIds)
-      .select()
-    return { data, error }
   },
 
   // Guests
@@ -399,15 +844,6 @@ export const db = {
     return { data, error }
   },
 
-  async getRoomTypes() {
-    const { data, error } = await supabase
-      .from('room_types')
-      .select('*')
-      .eq('active', true)
-      .order('name')
-    return { data, error }
-  },
-
   // Activity logs
   async getActivityLogs(filters = {}) {
     let query = supabase
@@ -455,83 +891,61 @@ export const db = {
 
   // Snack selection (for check-in functionality)
   async getSnackItems() {
-    // This function could get data from a products/snacks table
-    // For now we return structured mock data
-    return {
-      data: {
-        frutas: [
-          { id: 1, name: 'Manzana', price: 2.50 },
-          { id: 2, name: 'Plátano', price: 1.50 },
-          { id: 3, name: 'Naranja', price: 2.00 },
-          { id: 4, name: 'Uvas', price: 4.00 },
-          { id: 5, name: 'Ensalada de frutas', price: 6.00 }
-        ],
-        bebidas: [
-          { id: 6, name: 'Agua', price: 1.00 },
-          { id: 7, name: 'Coca Cola', price: 2.50 },
-          { id: 8, name: 'Jugo de naranja', price: 3.00 },
-          { id: 9, name: 'Café', price: 2.00 },
-          { id: 10, name: 'Té', price: 1.50 }
-        ],
-        snacks: [
-          { id: 11, name: 'Papas fritas', price: 3.50 },
-          { id: 12, name: 'Galletas', price: 2.00 },
-          { id: 13, name: 'Nueces', price: 4.50 },
-          { id: 14, name: 'Chocolate', price: 3.00 },
-          { id: 15, name: 'Chips', price: 2.50 }
-        ],
-        postres: [
-          { id: 16, name: 'Helado', price: 4.00 },
-          { id: 17, name: 'Torta', price: 5.50 },
-          { id: 18, name: 'Flan', price: 3.50 },
-          { id: 19, name: 'Brownie', price: 4.50 },
-          { id: 20, name: 'Gelatina', price: 2.50 }
-        ]
-      },
-      error: null
+    const { data, error } = await supabase
+      .from('snack_items')
+      .select(`
+        *,
+        category:snack_categories(name, display_order)
+      `)
+      .eq('is_available', true)
+      .order('category.display_order')
+      .order('name');
+
+    if (error) {
+      // Fallback a datos mock si no existe la tabla
+      return {
+        data: {
+          FRUTAS: [
+            { id: 1, name: 'Manzana', price: 2.50 },
+            { id: 2, name: 'Plátano', price: 1.50 },
+            { id: 3, name: 'Naranja', price: 2.00 }
+          ],
+          BEBIDAS: [
+            { id: 6, name: 'Agua', price: 1.00 },
+            { id: 7, name: 'Coca Cola', price: 2.50 },
+            { id: 8, name: 'Jugo de naranja', price: 3.00 }
+          ],
+          SNACKS: [
+            { id: 11, name: 'Papas fritas', price: 3.50 },
+            { id: 12, name: 'Galletas', price: 2.00 },
+            { id: 13, name: 'Nueces', price: 4.50 }
+          ],
+          POSTRES: [
+            { id: 16, name: 'Helado', price: 4.00 },
+            { id: 17, name: 'Torta', price: 5.50 },
+            { id: 18, name: 'Flan', price: 3.50 }
+          ]
+        },
+        error: null
+      };
     }
-  },
 
-  // =============================================
-  // ROOMS MANAGEMENT FUNCTIONS
-  // =============================================
+    // Agrupar por categoría
+    const groupedData = {};
+    data.forEach(item => {
+      const categoryName = item.category?.name || 'OTROS';
+      if (!groupedData[categoryName]) {
+        groupedData[categoryName] = [];
+      }
+      groupedData[categoryName].push({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        price: item.price
+      });
+    });
 
-  // Create room function
-  async createRoom(roomData) {
-    const { data, error } = await supabase
-      .from('rooms')
-      .insert(roomData)
-      .select(`
-        *,
-        room_type:room_types(*)
-      `)
-      .single()
-    return { data, error }
-  },
-
-  // Update room function
-  async updateRoom(roomId, updates) {
-    const { data, error } = await supabase
-      .from('rooms')
-      .update(updates)
-      .eq('id', roomId)
-      .select(`
-        *,
-        room_type:room_types(*)
-      `)
-      .single()
-    return { data, error }
-  },
-
-  // Delete room function
-  async deleteRoom(roomId) {
-    const { data, error } = await supabase
-      .from('rooms')
-      .delete()
-      .eq('id', roomId)
-      .select()
-      .single()
-    return { data, error }
+    return { data: groupedData, error: null };
   },
 
   // =============================================
