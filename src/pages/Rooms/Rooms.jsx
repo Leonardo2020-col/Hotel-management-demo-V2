@@ -1,7 +1,8 @@
-// src/pages/Rooms/Rooms.jsx - SIN ROOM_TYPES
+// src/pages/Rooms/Rooms.jsx - CORREGIDO CON MANEJO DE RESERVAS
 import React, { useState } from 'react'
-import { Plus, Calendar, Sparkles, RefreshCw, AlertCircle } from 'lucide-react'
+import { Plus, Calendar, Sparkles, RefreshCw, AlertCircle, LogIn, LogOut } from 'lucide-react'
 import { useRooms } from '../../hooks/useRooms'
+import { useNavigate } from 'react-router-dom'
 import Button from '../../components/common/Button'
 import RoomStats from '../../components/rooms/RoomStats'
 import RoomFilters from '../../components/rooms/RoomFilters'
@@ -12,6 +13,8 @@ import CreateRoomModal from '../../components/rooms/CreateRoomModal'
 import toast from 'react-hot-toast'
 
 const Rooms = () => {
+  const navigate = useNavigate()
+  
   // Estados principales
   const [activeTab, setActiveTab] = useState('rooms')
   const [viewMode, setViewMode] = useState('grid')
@@ -28,13 +31,13 @@ const Rooms = () => {
     search: ''
   })
 
-  // Hook simplificado sin room_types
+  // Hook corregido con reservas
   const {
     rooms,
-    roomTypes, // Generados dinámicamente
+    roomTypes,
     cleaningStaff,
+    reservations,
     roomStats,
-    roomsByType,
     loading,
     error,
     ROOM_STATUS,
@@ -48,8 +51,11 @@ const Rooms = () => {
     getRoomsNeedingCleaning,
     getAvailableRooms,
     getCleaningStats,
-    refetch,
-    debugData
+    // NUEVAS FUNCIONES para manejo de reservas
+    getRoomReservationInfo,
+    processCheckIn,
+    processCheckOut,
+    refetch
   } = useRooms()
 
   // Configuración de tabs
@@ -58,7 +64,7 @@ const Rooms = () => {
     { id: 'cleaning', label: 'Gestión de Limpieza', icon: Sparkles }
   ]
 
-  // Handlers
+  // Handlers básicos
   const handleCreateRoom = async (roomData) => {
     try {
       console.log('Creating room with data:', roomData)
@@ -95,6 +101,12 @@ const Rooms = () => {
   const handleDeleteRoom = async (roomId) => {
     const room = rooms.find(r => r.id === roomId)
     const roomNumber = room?.number || 'desconocida'
+    
+    // Verificar si la habitación está ocupada
+    if (room?.status === ROOM_STATUS.OCCUPIED) {
+      toast.error('No se puede eliminar una habitación ocupada. Realiza el check-out primero.')
+      return
+    }
     
     if (!window.confirm(`¿Estás seguro de que quieres eliminar la habitación ${roomNumber}?`)) {
       return
@@ -157,6 +169,87 @@ const Rooms = () => {
     }
   }
 
+  // NUEVOS HANDLERS para manejo de reservas
+  const handleViewReservation = (reservationId) => {
+    // Navegar a la página de reservas con el ID específico
+    navigate(`/reservations?id=${reservationId}`)
+  }
+
+  const handleProcessCheckIn = async (roomId, reservationId) => {
+    try {
+      const room = rooms.find(r => r.id === roomId)
+      
+      if (!reservationId) {
+        toast.error('ID de reserva no encontrado')
+        return
+      }
+      
+      const confirmed = window.confirm(
+        `¿Realizar check-in para la habitación ${room?.number}?`
+      )
+      
+      if (!confirmed) return
+      
+      const { data, error } = await processCheckIn(roomId, reservationId)
+      
+      if (error) {
+        toast.error(error.message || 'Error en el check-in')
+        return
+      }
+      
+      toast.success(`Check-in realizado exitosamente en habitación ${room?.number}`)
+    } catch (error) {
+      console.error('Error in handleProcessCheckIn:', error)
+      toast.error('Error inesperado en el check-in')
+    }
+  }
+
+  const handleProcessCheckOut = async (roomId, paymentMethod = 'cash') => {
+    try {
+      const room = rooms.find(r => r.id === roomId)
+      
+      if (!room?.currentGuest) {
+        toast.error('No se encontró información de huésped para esta habitación')
+        return
+      }
+      
+      const confirmed = window.confirm(
+        `¿Realizar check-out para ${room.currentGuest.name} de la habitación ${room.number}?`
+      )
+      
+      if (!confirmed) return
+      
+      const { data, error } = await processCheckOut(roomId, paymentMethod)
+      
+      if (error) {
+        toast.error(error.message || 'Error en el check-out')
+        return
+      }
+      
+      toast.success(`Check-out realizado exitosamente para habitación ${room.number}`)
+    } catch (error) {
+      console.error('Error in handleProcessCheckOut:', error)
+      toast.error('Error inesperado en el check-out')
+    }
+  }
+
+  const handleViewRoomReservationInfo = (roomId) => {
+    try {
+      const info = getRoomReservationInfo(roomId)
+      
+      if (info.error) {
+        toast.warning(info.error)
+        return
+      }
+      
+      // Mostrar información detallada (ya se maneja en RoomGrid)
+      console.log('Room reservation info:', info)
+    } catch (error) {
+      toast.error('Error al obtener información de la reserva')
+    }
+  }
+
+  // Handler para acciones en lote
   const handleBulkAssignCleaning = () => {
     if (selectedRooms.length === 0) {
       toast.warning('Selecciona al menos una habitación')
@@ -170,12 +263,7 @@ const Rooms = () => {
     toast.success('Datos actualizados')
   }
 
-  // Debug function for development
-  const handleDebug = () => {
-    debugData()
-  }
-
-  // Filtrar habitaciones - SIMPLIFICADO
+  // Filtrar habitaciones
   const filteredRooms = React.useMemo(() => {
     if (!rooms) return []
 
@@ -186,14 +274,15 @@ const Rooms = () => {
         const matchesSearch = 
           room.number.toString().toLowerCase().includes(searchTerm) ||
           (room.room_type || '').toLowerCase().includes(searchTerm) ||
-          room.status.toLowerCase().includes(searchTerm)
+          room.status.toLowerCase().includes(searchTerm) ||
+          (room.currentGuest?.name || '').toLowerCase().includes(searchTerm)
         if (!matchesSearch) return false
       }
 
       // Filtro por estado
       if (filters.status !== 'all' && room.status !== filters.status) return false
       
-      // Filtro por tipo - SIMPLIFICADO
+      // Filtro por tipo
       if (filters.type !== 'all' && room.room_type !== filters.type) return false
       
       // Filtro por piso
@@ -242,8 +331,13 @@ const Rooms = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Gestión de Habitaciones</h1>
           <p className="text-gray-600 mt-1">
-            Administra habitaciones, limpieza y mantenimiento (Sistema simplificado)
+            Administra habitaciones, reservas, limpieza y mantenimiento
           </p>
+          {reservations && reservations.length > 0 && (
+            <p className="text-sm text-blue-600 mt-1">
+              {reservations.length} reserva{reservations.length !== 1 ? 's' : ''} activa{reservations.length !== 1 ? 's' : ''}
+            </p>
+          )}
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 mt-4 lg:mt-0">
@@ -263,17 +357,6 @@ const Rooms = () => {
                 Asignar Limpieza
               </Button>
             </div>
-          )}
-          
-          {/* Botón de debug (solo en desarrollo) */}
-          {process.env.NODE_ENV === 'development' && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDebug}
-            >
-              Debug
-            </Button>
           )}
           
           {/* Botón de actualizar */}
@@ -328,7 +411,7 @@ const Rooms = () => {
           {/* Statistics */}
           <RoomStats 
             stats={roomStats} 
-            roomsByType={roomsByType}
+            roomsByType={[]} // Simplificado
             loading={loading} 
           />
 
@@ -360,9 +443,12 @@ const Rooms = () => {
                   selectedRooms={selectedRooms}
                   onSelectRoom={setSelectedRooms}
                   onStatusChange={handleStatusChange}
-                  onCleaningStatusChange={handleCleaningStatusChange}
                   onEdit={handleEditRoom}
                   onDelete={handleDeleteRoom}
+                  // NUEVAS PROPS para manejo de reservas
+                  onViewReservation={handleViewReservation}
+                  onProcessCheckIn={handleProcessCheckIn}
+                  onProcessCheckOut={handleProcessCheckOut}
                 />
               ) : (
                 <RoomList
@@ -371,9 +457,12 @@ const Rooms = () => {
                   selectedRooms={selectedRooms}
                   onSelectRoom={setSelectedRooms}
                   onStatusChange={handleStatusChange}
-                  onCleaningStatusChange={handleCleaningStatusChange}
                   onEdit={handleEditRoom}
                   onDelete={handleDeleteRoom}
+                  // NUEVAS PROPS para manejo de reservas
+                  onViewReservation={handleViewReservation}
+                  onProcessCheckIn={handleProcessCheckIn}
+                  onProcessCheckOut={handleProcessCheckOut}
                 />
               )}
             </>
@@ -439,13 +528,13 @@ const Rooms = () => {
         />
       )}
 
-      {/* Modal para crear habitación - SIMPLIFICADO */}
+      {/* Modal para crear habitación */}
       {showCreateModal && (
         <CreateRoomModal
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateRoom}
-          roomTypes={roomTypes || []} // Tipos generados dinámicamente
+          roomTypes={roomTypes || []}
           loading={loading}
         />
       )}
@@ -531,11 +620,47 @@ const Rooms = () => {
               <span>Ocupadas: {roomStats.occupied}</span>
               <span>Limpieza: {roomStats.cleaning}</span>
               <span>Mantenimiento: {roomStats.maintenance}</span>
+              {reservations && reservations.length > 0 && (
+                <span className="text-blue-600 font-medium">
+                  {reservations.length} reserva{reservations.length !== 1 ? 's' : ''} activa{reservations.length !== 1 ? 's' : ''}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-4 text-xs text-gray-400">
               <span>Ocupación: {roomStats.occupancyRate}%</span>
-              <span>Sistema simplificado (sin room_types)</span>
+              <span>Ingresos hoy: {roomStats.revenue ? `S/ ${roomStats.revenue.today.toFixed(2)}` : 'S/ 0.00'}</span>
               <span>Última actualización: {new Date().toLocaleTimeString()}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Estadísticas adicionales de reservas */}
+      {!loading && reservations && reservations.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-lg font-semibold text-blue-900 mb-2">
+            Resumen de Reservas Activas
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-600">
+                {reservations.filter(r => r.status === 'checked_in').length}
+              </div>
+              <div className="text-blue-700">Check-in realizados</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">
+                {reservations.filter(r => r.status === 'confirmed' && 
+                  new Date(r.check_in).toDateString() === new Date().toDateString()).length}
+              </div>
+              <div className="text-blue-700">Llegadas hoy</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-orange-600">
+                {reservations.filter(r => r.status === 'checked_in' && 
+                  new Date(r.check_out).toDateString() === new Date().toDateString()).length}
+              </div>
+              <div className="text-blue-700">Salidas hoy</div>
             </div>
           </div>
         </div>

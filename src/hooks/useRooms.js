@@ -1,4 +1,4 @@
-// src/hooks/useRooms.js - SIN ROOM_TYPES
+// src/hooks/useRooms.js - CORREGIDO CON RESERVAS
 import { useState, useEffect, useMemo } from 'react'
 import { db, subscriptions } from '../lib/supabase'
 import toast from 'react-hot-toast'
@@ -7,10 +7,11 @@ export const useRooms = () => {
   const [rooms, setRooms] = useState([])
   const [roomTypes, setRoomTypes] = useState([])
   const [cleaningStaff, setCleaningStaff] = useState([])
+  const [reservations, setReservations] = useState([]) // NUEVO: Estado para reservas
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // Estados de limpieza y habitaciones (para compatibilidad)
+  // Estados de limpieza y habitaciones
   const ROOM_STATUS = {
     AVAILABLE: 'available',
     OCCUPIED: 'occupied', 
@@ -31,43 +32,12 @@ export const useRooms = () => {
     loadData()
   }, [])
 
-  // Suscripción en tiempo real - SIMPLIFICADA
-  useEffect(() => {
-    if (rooms.length === 0) return
-
-    const subscription = subscriptions.rooms((payload) => {
-      const { eventType, new: newRecord, old: oldRecord } = payload
-      
-      switch (eventType) {
-        case 'INSERT':
-          loadData() // Recargar todo para mantener consistencia
-          toast.success('Nueva habitación agregada')
-          break
-        case 'UPDATE':
-          setRooms(prev => 
-            prev.map(room => room.id === newRecord.id ? { ...room, ...newRecord } : room)
-          )
-          break
-        case 'DELETE':
-          setRooms(prev => prev.filter(room => room.id !== oldRecord.id))
-          toast.info('Habitación eliminada')
-          break
-        default:
-          break
-      }
-    })
-
-    return () => {
-      subscription?.unsubscribe()
-    }
-  }, [rooms.length])
-
   const loadData = async () => {
     try {
       setLoading(true)
       setError(null)
       
-      console.log('Loading rooms data without room_types...')
+      console.log('Loading rooms data with reservations...')
       
       // 1. Cargar habitaciones
       const roomsResult = await db.getRooms()
@@ -76,20 +46,39 @@ export const useRooms = () => {
         throw new Error('Error al cargar habitaciones: ' + roomsResult.error.message)
       }
       
-      console.log('Rooms loaded:', roomsResult.data)
-      setRooms(roomsResult.data || [])
+      // 2. Cargar reservas activas (checked_in y confirmed para hoy)
+      const reservationsResult = await db.getReservations({
+        status: ['checked_in', 'confirmed'],
+        limit: 200 // Suficiente para todas las reservas activas
+      })
       
-      // 2. Generar tipos únicos desde las habitaciones existentes
+      if (reservationsResult.error) {
+        console.error('Error loading reservations:', reservationsResult.error)
+        // No fallar completamente si no se pueden cargar reservas
+        setReservations([])
+      } else {
+        setReservations(reservationsResult.data || [])
+      }
+      
+      // 3. Combinar habitaciones con información de reservas
+      const enrichedRooms = await enrichRoomsWithReservations(
+        roomsResult.data || [], 
+        reservationsResult.data || []
+      )
+      
+      console.log('Enriched rooms with reservations:', enrichedRooms)
+      setRooms(enrichedRooms)
+      
+      // 4. Generar tipos únicos desde las habitaciones existentes
       const uniqueTypes = await db.getRoomTypes()
       if (uniqueTypes.data) {
         setRoomTypes(uniqueTypes.data)
       } else {
-        // Fallback: crear tipos desde habitaciones existentes
         const types = generateTypesFromRooms(roomsResult.data || [])
         setRoomTypes(types)
       }
       
-      // 3. Cargar personal de limpieza (mock data)
+      // 5. Cargar personal de limpieza
       const staffResult = await db.getCleaningStaff()
       setCleaningStaff(staffResult.data || [])
       
@@ -100,6 +89,55 @@ export const useRooms = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  // NUEVA FUNCIÓN: Enriquecer habitaciones con información de reservas
+  const enrichRoomsWithReservations = async (roomsData, reservationsData) => {
+    return roomsData.map(room => {
+      // Buscar reserva activa para esta habitación
+      const activeReservation = reservationsData.find(reservation => {
+        return reservation.room_id === room.id && reservation.status === 'checked_in'
+      })
+
+      // Buscar próxima reserva confirmada
+      const nextReservation = reservationsData.find(reservation => {
+        return reservation.room_id === room.id && 
+               reservation.status === 'confirmed' &&
+               new Date(reservation.check_in) >= new Date()
+      })
+
+      // Enriquecer la habitación con información de reservas
+      const enrichedRoom = {
+        ...room,
+        // Información del huésped actual
+        currentGuest: activeReservation ? {
+          id: activeReservation.guest_id,
+          name: activeReservation.guest?.full_name || 
+                `${activeReservation.guest?.first_name} ${activeReservation.guest?.last_name}`,
+          email: activeReservation.guest?.email,
+          phone: activeReservation.guest?.phone,
+          checkIn: activeReservation.check_in,
+          checkOut: activeReservation.check_out,
+          confirmationCode: activeReservation.confirmation_code,
+          reservationId: activeReservation.id
+        } : null,
+
+        // Información de la próxima reserva
+        nextReservation: nextReservation ? {
+          id: nextReservation.id,
+          guest: nextReservation.guest?.full_name || 
+                `${nextReservation.guest?.first_name} ${nextReservation.guest?.last_name}`,
+          checkIn: nextReservation.check_in,
+          checkOut: nextReservation.check_out,
+          confirmationCode: nextReservation.confirmation_code
+        } : null,
+
+        // Información adicional de la reserva activa
+        activeReservation: activeReservation || null
+      }
+
+      return enrichedRoom
+    })
   }
 
   // Generar tipos únicos desde habitaciones existentes
@@ -119,7 +157,6 @@ export const useRooms = () => {
       }
     })
 
-    // Si no hay tipos, crear uno por defecto
     if (Object.keys(uniqueTypes).length === 0) {
       uniqueTypes['Habitación Estándar'] = {
         id: 1,
@@ -133,7 +170,7 @@ export const useRooms = () => {
     return Object.values(uniqueTypes)
   }
 
-  // Calcular estadísticas de habitaciones - SIMPLIFICADO
+  // Calcular estadísticas de habitaciones - MEJORADO
   const roomStats = useMemo(() => {
     if (!rooms || rooms.length === 0) {
       return {
@@ -163,10 +200,10 @@ export const useRooms = () => {
     
     const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0
 
-    // Calcular ingresos estimados
+    // Calcular ingresos reales basados en reservas activas
     const todayRevenue = rooms.reduce((sum, room) => {
-      if (room.status === ROOM_STATUS.OCCUPIED) {
-        return sum + (room.base_rate || 100)
+      if (room.currentGuest && room.activeReservation) {
+        return sum + (parseFloat(room.activeReservation.rate) || room.base_rate || 100)
       }
       return sum
     }, 0)
@@ -191,35 +228,40 @@ export const useRooms = () => {
     }
   }, [rooms])
 
-  // Calcular habitaciones por tipo - SIMPLIFICADO
-  const roomsByType = useMemo(() => {
-    if (!rooms || rooms.length === 0) return []
+  // Función para obtener información detallada de una habitación ocupada
+  const getRoomReservationInfo = (roomId) => {
+    const room = rooms.find(r => r.id === roomId)
+    if (!room) {
+      return { error: 'Habitación no encontrada' }
+    }
 
-    const typeStats = {}
-    
-    rooms.forEach(room => {
-      const typeName = room.room_type || 'Habitación Estándar'
-      if (!typeStats[typeName]) {
-        typeStats[typeName] = {
-          name: typeName,
-          total: 0,
-          available: 0,
-          occupied: 0,
-          averageRate: room.base_rate || 100
-        }
-      }
-      typeStats[typeName].total++
-      if (room.status === ROOM_STATUS.AVAILABLE) typeStats[typeName].available++
-      if (room.status === ROOM_STATUS.OCCUPIED) typeStats[typeName].occupied++
-    })
+    if (room.status !== ROOM_STATUS.OCCUPIED) {
+      return { error: 'La habitación no está ocupada' }
+    }
 
-    return Object.values(typeStats)
-  }, [rooms])
+    if (!room.currentGuest) {
+      return { error: 'No se encontró información de reserva para esta habitación' }
+    }
 
-  // Crear nueva habitación - SIMPLIFICADO
+    return {
+      room: {
+        id: room.id,
+        number: room.number,
+        floor: room.floor,
+        type: room.room_type,
+        status: room.status,
+        cleaningStatus: room.cleaning_status
+      },
+      guest: room.currentGuest,
+      reservation: room.activeReservation,
+      nextReservation: room.nextReservation
+    }
+  }
+
+  // Crear nueva habitación - MEJORADO
   const createRoom = async (roomData) => {
     try {
-      console.log('Creating room without room_types:', roomData)
+      console.log('Creating room with data:', roomData)
       
       const newRoomData = {
         number: roomData.number,
@@ -237,16 +279,12 @@ export const useRooms = () => {
         branch_id: 1
       }
 
-      console.log('Sending room data to create:', newRoomData)
-
       const { data, error } = await db.createRoom(newRoomData)
       
       if (error) {
         console.error('Error from createRoom:', error)
         throw error
       }
-      
-      console.log('Room created successfully:', data)
       
       // Recargar datos para mantener consistencia
       await loadData()
@@ -262,17 +300,72 @@ export const useRooms = () => {
     }
   }
 
-  // Actualizar habitación - SIMPLIFICADO
+  // Función para procesar check-in desde habitaciones
+  const processCheckIn = async (roomId, reservationId) => {
+    try {
+      // Llamar función de Supabase para check-in
+      const { data, error } = await db.processCheckIn(reservationId)
+      
+      if (error) {
+        throw new Error(error.message || 'Error en el check-in')
+      }
+
+      // Actualizar estado de la habitación
+      await updateRoomStatus(roomId, ROOM_STATUS.OCCUPIED, CLEANING_STATUS.DIRTY)
+      
+      // Recargar datos para actualizar información
+      await loadData()
+      
+      toast.success('Check-in realizado exitosamente')
+      return { data, error: null }
+      
+    } catch (error) {
+      console.error('Error in processCheckIn:', error)
+      toast.error(error.message || 'Error en el check-in')
+      return { data: null, error }
+    }
+  }
+
+  // Función para procesar check-out desde habitaciones
+  const processCheckOut = async (roomId, paymentMethod = 'cash') => {
+    try {
+      const room = rooms.find(r => r.id === roomId)
+      if (!room || !room.activeReservation) {
+        throw new Error('No se encontró reserva activa para esta habitación')
+      }
+
+      // Llamar función de Supabase para check-out
+      const { data, error } = await db.processCheckOut(room.activeReservation.id, paymentMethod)
+      
+      if (error) {
+        throw new Error(error.message || 'Error en el check-out')
+      }
+
+      // Actualizar estado de la habitación
+      await updateRoomStatus(roomId, ROOM_STATUS.CLEANING, CLEANING_STATUS.DIRTY)
+      
+      // Recargar datos para actualizar información
+      await loadData()
+      
+      toast.success('Check-out realizado exitosamente')
+      return { data, error: null }
+      
+    } catch (error) {
+      console.error('Error in processCheckOut:', error)
+      toast.error(error.message || 'Error en el check-out')
+      return { data: null, error }
+    }
+  }
+
+  // Resto de funciones existentes...
   const updateRoom = async (roomId, updateData) => {
     try {
       const { data, error } = await db.updateRoom(roomId, updateData)
       
       if (error) throw error
       
-      // Actualizar estado local inmediatamente
-      setRooms(prev => 
-        prev.map(room => room.id === roomId ? { ...room, ...data } : room)
-      )
+      // Recargar datos para mantener sincronización
+      await loadData()
       
       toast.success('Habitación actualizada exitosamente')
       return { data, error: null }
@@ -284,7 +377,6 @@ export const useRooms = () => {
     }
   }
 
-  // Eliminar habitación
   const deleteRoom = async (roomId) => {
     try {
       const { data, error } = await db.deleteRoom(roomId)
@@ -304,16 +396,19 @@ export const useRooms = () => {
     }
   }
 
-  // Actualizar estado de habitación
-  const updateRoomStatus = async (roomId, newStatus) => {
+  const updateRoomStatus = async (roomId, newStatus, cleaningStatus = null) => {
     try {
-      const { data, error } = await db.updateRoomStatus(roomId, newStatus)
+      const { data, error } = await db.updateRoomStatus(roomId, newStatus, cleaningStatus)
       
       if (error) throw error
       
       // Actualizar estado local inmediatamente
       setRooms(prev => 
-        prev.map(room => room.id === roomId ? { ...room, status: newStatus } : room)
+        prev.map(room => room.id === roomId ? { 
+          ...room, 
+          status: newStatus,
+          ...(cleaningStatus && { cleaning_status: cleaningStatus })
+        } : room)
       )
       
       const statusMessages = {
@@ -334,10 +429,9 @@ export const useRooms = () => {
     }
   }
 
-  // Actualizar estado de limpieza
+  // Funciones auxiliares existentes...
   const updateCleaningStatus = async (roomId, newStatus) => {
     try {
-      // Determinar si también cambiar el estado de la habitación
       let roomStatus = null
       if (newStatus === CLEANING_STATUS.CLEAN) {
         roomStatus = ROOM_STATUS.AVAILABLE
@@ -349,7 +443,6 @@ export const useRooms = () => {
       
       if (error) throw error
       
-      // Actualizar estado local inmediatamente
       setRooms(prev => 
         prev.map(room => room.id === roomId ? { 
           ...room, 
@@ -375,7 +468,6 @@ export const useRooms = () => {
     }
   }
 
-  // Asignar limpieza a habitaciones
   const assignCleaning = async (roomIds, staffId) => {
     try {
       const staff = cleaningStaff.find(s => s.id === staffId)
@@ -385,7 +477,6 @@ export const useRooms = () => {
       
       if (error) throw error
       
-      // Actualizar estado local inmediatamente
       setRooms(prev => 
         prev.map(room => 
           roomIds.includes(room.id) ? {
@@ -407,57 +498,13 @@ export const useRooms = () => {
     }
   }
 
-  // Obtener habitaciones que necesitan limpieza
-  const getRoomsNeedingCleaning = () => {
-    return rooms.filter(room => 
-      room.status === ROOM_STATUS.CLEANING || 
-      room.cleaning_status === CLEANING_STATUS.DIRTY ||
-      room.cleaning_status === CLEANING_STATUS.IN_PROGRESS
-    )
-  }
-
-  // Obtener habitaciones disponibles
-  const getAvailableRooms = () => {
-    return rooms.filter(room => 
-      room.status === ROOM_STATUS.AVAILABLE && 
-      room.cleaning_status === CLEANING_STATUS.CLEAN
-    )
-  }
-
-  // Obtener estadísticas de limpieza
-  const getCleaningStats = () => {
-    const needsCleaning = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.DIRTY).length
-    const inProgress = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.IN_PROGRESS).length
-    const clean = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.CLEAN).length
-    const inspected = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.INSPECTED).length
-
-    return {
-      needsCleaning,
-      inProgress,
-      clean,
-      inspected,
-      total: rooms.length
-    }
-  }
-
-  // Función de depuración para verificar datos
-  const debugData = () => {
-    console.log('=== DEBUG DATA (WITHOUT ROOM_TYPES) ===')
-    console.log('Rooms:', rooms)
-    console.log('Room Types (generated):', roomTypes)
-    console.log('Cleaning Staff:', cleaningStaff)
-    console.log('Room Stats:', roomStats)
-    console.log('Rooms by Type:', roomsByType)
-    console.log('=======================================')
-  }
-
   return {
     // Datos
     rooms,
-    roomTypes, // Generados dinámicamente desde habitaciones
+    roomTypes,
     cleaningStaff,
+    reservations, // NUEVO: Reservas cargadas
     roomStats,
-    roomsByType,
     loading,
     error,
     
@@ -473,13 +520,31 @@ export const useRooms = () => {
     updateCleaningStatus,
     assignCleaning,
     
-    // Métodos de consulta
-    getRoomsNeedingCleaning,
-    getAvailableRooms,
-    getCleaningStats,
+    // NUEVOS: Métodos para manejo de reservas desde habitaciones
+    getRoomReservationInfo,
+    processCheckIn,
+    processCheckOut,
+    
+    // Métodos de consulta existentes
+    getRoomsNeedingCleaning: () => rooms.filter(room => 
+      room.status === ROOM_STATUS.CLEANING || 
+      room.cleaning_status === CLEANING_STATUS.DIRTY ||
+      room.cleaning_status === CLEANING_STATUS.IN_PROGRESS
+    ),
+    getAvailableRooms: () => rooms.filter(room => 
+      room.status === ROOM_STATUS.AVAILABLE && 
+      room.cleaning_status === CLEANING_STATUS.CLEAN
+    ),
+    getCleaningStats: () => {
+      const needsCleaning = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.DIRTY).length
+      const inProgress = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.IN_PROGRESS).length
+      const clean = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.CLEAN).length
+      const inspected = rooms.filter(r => r.cleaning_status === CLEANING_STATUS.INSPECTED).length
+
+      return { needsCleaning, inProgress, clean, inspected, total: rooms.length }
+    },
     
     // Utilidades
-    refetch: loadData,
-    debugData
+    refetch: loadData
   }
 }
