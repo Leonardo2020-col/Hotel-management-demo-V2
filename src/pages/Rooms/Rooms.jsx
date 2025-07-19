@@ -1,7 +1,7 @@
-// src/pages/Rooms/Rooms.jsx - CORREGIDO PARA MANEJAR TIPOS DE HABITACIÓN
-import React, { useState, useEffect } from 'react'
+// src/pages/Rooms/Rooms.jsx - SIN ROOM_TYPES
+import React, { useState } from 'react'
 import { Plus, Calendar, Sparkles, RefreshCw, AlertCircle } from 'lucide-react'
-import { db } from '../../lib/supabase'
+import { useRooms } from '../../hooks/useRooms'
 import Button from '../../components/common/Button'
 import RoomStats from '../../components/rooms/RoomStats'
 import RoomFilters from '../../components/rooms/RoomFilters'
@@ -19,23 +19,6 @@ const Rooms = () => {
   const [selectedRooms, setSelectedRooms] = useState([])
   const [showAssignCleaning, setShowAssignCleaning] = useState(false)
   
-  // Estados de datos
-  const [rooms, setRooms] = useState([])
-  const [roomTypes, setRoomTypes] = useState([])
-  const [cleaningStaff, setCleaningStaff] = useState([])
-  const [roomStats, setRoomStats] = useState({
-    total: 0,
-    available: 0,
-    occupied: 0,
-    cleaning: 0,
-    maintenance: 0,
-    outOfOrder: 0,
-    needsCleaning: 0,
-    occupancyRate: 0
-  })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  
   // Filtros
   const [filters, setFilters] = useState({
     status: 'all',
@@ -45,157 +28,64 @@ const Rooms = () => {
     search: ''
   })
 
+  // Hook simplificado sin room_types
+  const {
+    rooms,
+    roomTypes, // Generados dinámicamente
+    cleaningStaff,
+    roomStats,
+    roomsByType,
+    loading,
+    error,
+    ROOM_STATUS,
+    CLEANING_STATUS,
+    createRoom,
+    updateRoom,
+    deleteRoom,
+    updateRoomStatus,
+    updateCleaningStatus,
+    assignCleaning,
+    getRoomsNeedingCleaning,
+    getAvailableRooms,
+    getCleaningStats,
+    refetch,
+    debugData
+  } = useRooms()
+
   // Configuración de tabs
   const tabs = [
     { id: 'rooms', label: 'Habitaciones', icon: Calendar },
     { id: 'cleaning', label: 'Gestión de Limpieza', icon: Sparkles }
   ]
 
-  // Cargar datos iniciales
-  const loadData = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-
-      console.log('Cargando datos...')
-
-      // 1. Cargar tipos de habitación primero
-      const { data: roomTypesData, error: roomTypesError } = await db.getRoomTypes()
-      if (roomTypesError) {
-        console.error('Error loading room types:', roomTypesError)
-        throw new Error('Error al cargar tipos de habitación: ' + roomTypesError.message)
-      }
-
-      console.log('Room types loaded:', roomTypesData)
-      setRoomTypes(roomTypesData || [])
-
-      // 2. Cargar habitaciones
-      const { data: roomsData, error: roomsError } = await db.getRooms()
-      if (roomsError) {
-        console.error('Error loading rooms:', roomsError)
-        throw new Error('Error al cargar habitaciones: ' + roomsError.message)
-      }
-
-      console.log('Rooms loaded:', roomsData)
-      setRooms(roomsData || [])
-
-      // 3. Calcular estadísticas
-      const stats = calculateRoomStats(roomsData || [])
-      setRoomStats(stats)
-
-      // 4. Cargar personal de limpieza
-      try {
-        const { data: staffData, error: staffError } = await db.getCleaningStaff()
-        if (!staffError && staffData) {
-          setCleaningStaff(staffData)
-        } else {
-          // Fallback para personal de limpieza
-          setCleaningStaff([
-            { id: 1, name: 'María González', shift: 'morning', active: true },
-            { id: 2, name: 'Ana López', shift: 'afternoon', active: true },
-            { id: 3, name: 'Pedro Martín', shift: 'morning', active: true }
-          ])
-        }
-      } catch (staffError) {
-        console.warn('Could not load cleaning staff, using fallback')
-        setCleaningStaff([
-          { id: 1, name: 'María González', shift: 'morning', active: true },
-          { id: 2, name: 'Ana López', shift: 'afternoon', active: true }
-        ])
-      }
-
-    } catch (err) {
-      console.error('Error loading data:', err)
-      setError(err.message || 'Error al cargar los datos')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Calcular estadísticas de habitaciones
-  const calculateRoomStats = (roomsData) => {
-    if (!roomsData || roomsData.length === 0) {
-      return {
-        total: 0,
-        available: 0,
-        occupied: 0,
-        cleaning: 0,
-        maintenance: 0,
-        outOfOrder: 0,
-        needsCleaning: 0,
-        occupancyRate: 0
-      }
-    }
-
-    const total = roomsData.length
-    const available = roomsData.filter(r => r.status === 'available').length
-    const occupied = roomsData.filter(r => r.status === 'occupied').length
-    const cleaning = roomsData.filter(r => r.status === 'cleaning').length
-    const maintenance = roomsData.filter(r => r.status === 'maintenance').length
-    const outOfOrder = roomsData.filter(r => r.status === 'out_of_order').length
-    const needsCleaning = roomsData.filter(r => r.cleaning_status === 'dirty').length
-    const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0
-
-    return {
-      total,
-      available,
-      occupied,
-      cleaning,
-      maintenance,
-      outOfOrder,
-      needsCleaning,
-      occupancyRate
-    }
-  }
-
-  // Efecto para cargar datos al montar el componente
-  useEffect(() => {
-    loadData()
-  }, [])
-
   // Handlers
   const handleCreateRoom = async (roomData) => {
     try {
       console.log('Creating room with data:', roomData)
       
-      // Asegurar que tenemos un tipo de habitación válido
-      if (!roomData.type && roomTypes.length > 0) {
-        roomData.type = roomTypes[0].name
-        roomData.room_type_id = roomTypes[0].id
-      }
-
-      const { data, error } = await db.createRoom(roomData)
+      const { data, error } = await createRoom(roomData)
       
       if (error) {
-        console.error('Error creating room:', error)
         toast.error(error.message || 'Error al crear habitación')
         return
       }
       
-      console.log('Room created successfully:', data)
-      
-      // Recargar datos después de crear
-      await loadData()
       setShowCreateModal(false)
       toast.success(`Habitación ${roomData.number} creada exitosamente`)
-      
     } catch (error) {
-      console.error('Unexpected error creating room:', error)
       toast.error('Error inesperado al crear habitación')
     }
   }
 
   const handleEditRoom = async (roomId, roomData) => {
     try {
-      const { data, error } = await db.updateRoom(roomId, roomData)
+      const { data, error } = await updateRoom(roomId, roomData)
       
       if (error) {
         toast.error(error.message || 'Error al actualizar habitación')
         return
       }
       
-      // Recargar datos después de actualizar
-      await loadData()
       toast.success('Habitación actualizada exitosamente')
     } catch (error) {
       toast.error('Error inesperado al actualizar habitación')
@@ -211,18 +101,14 @@ const Rooms = () => {
     }
 
     try {
-      const { data, error } = await db.deleteRoom(roomId)
+      const { data, error } = await deleteRoom(roomId)
       
       if (error) {
         toast.error(error.message || 'Error al eliminar habitación')
         return
       }
       
-      // Remover de selección si estaba seleccionada
       setSelectedRooms(prev => prev.filter(id => id !== roomId))
-      
-      // Recargar datos después de eliminar
-      await loadData()
       toast.success(`Habitación ${roomNumber} eliminada exitosamente`)
     } catch (error) {
       toast.error('Error inesperado al eliminar habitación')
@@ -231,25 +117,12 @@ const Rooms = () => {
 
   const handleStatusChange = async (roomId, newStatus) => {
     try {
-      const { data, error } = await db.updateRoomStatus(roomId, newStatus)
+      const { data, error } = await updateRoomStatus(roomId, newStatus)
       
       if (error) {
         toast.error(error.message || 'Error al actualizar estado')
         return
       }
-      
-      // Actualizar estado local inmediatamente
-      setRooms(prev => prev.map(room => 
-        room.id === roomId ? { ...room, status: newStatus } : room
-      ))
-      
-      // Recalcular estadísticas
-      const updatedRooms = rooms.map(room => 
-        room.id === roomId ? { ...room, status: newStatus } : room
-      )
-      setRoomStats(calculateRoomStats(updatedRooms))
-      
-      toast.success('Estado actualizado exitosamente')
     } catch (error) {
       toast.error('Error inesperado al actualizar estado')
     }
@@ -257,43 +130,12 @@ const Rooms = () => {
 
   const handleCleaningStatusChange = async (roomId, newStatus) => {
     try {
-      const cleaningStatus = newStatus
-      let roomStatus = null
-      
-      // Determinar si también necesitamos cambiar el estado de la habitación
-      if (newStatus === 'clean') {
-        roomStatus = 'available'
-      } else if (newStatus === 'in_progress') {
-        roomStatus = 'cleaning'
-      }
-      
-      const { data, error } = await db.updateRoomStatus(roomId, roomStatus, cleaningStatus)
+      const { data, error } = await updateCleaningStatus(roomId, newStatus)
       
       if (error) {
         toast.error(error.message || 'Error al actualizar estado de limpieza')
         return
       }
-      
-      // Actualizar estado local
-      setRooms(prev => prev.map(room => 
-        room.id === roomId ? { 
-          ...room, 
-          cleaning_status: cleaningStatus,
-          ...(roomStatus && { status: roomStatus })
-        } : room
-      ))
-      
-      // Recalcular estadísticas
-      const updatedRooms = rooms.map(room => 
-        room.id === roomId ? { 
-          ...room, 
-          cleaning_status: cleaningStatus,
-          ...(roomStatus && { status: roomStatus })
-        } : room
-      )
-      setRoomStats(calculateRoomStats(updatedRooms))
-      
-      toast.success('Estado de limpieza actualizado exitosamente')
     } catch (error) {
       toast.error('Error inesperado al actualizar estado de limpieza')
     }
@@ -301,33 +143,15 @@ const Rooms = () => {
 
   const handleAssignCleaning = async (roomIds, staffId) => {
     try {
-      const staff = cleaningStaff.find(s => s.id === staffId)
-      if (!staff) {
-        toast.error('Personal de limpieza no encontrado')
-        return
-      }
-
-      const { data, error } = await db.assignCleaning(roomIds, staff.name)
+      const { data, error } = await assignCleaning(roomIds, staffId)
       
       if (error) {
         toast.error(error.message || 'Error al asignar limpieza')
         return
       }
       
-      // Actualizar estado local
-      setRooms(prev => prev.map(room => 
-        roomIds.includes(room.id) ? { 
-          ...room, 
-          cleaning_status: 'in_progress',
-          assigned_cleaner: staff.name,
-          status: 'cleaning'
-        } : room
-      ))
-      
       setSelectedRooms([])
       setShowAssignCleaning(false)
-      
-      toast.success(`Limpieza asignada a ${staff.name} para ${roomIds.length} habitación${roomIds.length > 1 ? 'es' : ''}`)
     } catch (error) {
       toast.error('Error inesperado al asignar limpieza')
     }
@@ -342,11 +166,16 @@ const Rooms = () => {
   }
 
   const handleRefresh = () => {
-    loadData()
+    refetch()
     toast.success('Datos actualizados')
   }
 
-  // Filtrar habitaciones
+  // Debug function for development
+  const handleDebug = () => {
+    debugData()
+  }
+
+  // Filtrar habitaciones - SIMPLIFICADO
   const filteredRooms = React.useMemo(() => {
     if (!rooms) return []
 
@@ -356,7 +185,7 @@ const Rooms = () => {
         const searchTerm = filters.search.toLowerCase()
         const matchesSearch = 
           room.number.toString().toLowerCase().includes(searchTerm) ||
-          room.room_type?.name?.toLowerCase().includes(searchTerm) ||
+          (room.room_type || '').toLowerCase().includes(searchTerm) ||
           room.status.toLowerCase().includes(searchTerm)
         if (!matchesSearch) return false
       }
@@ -364,11 +193,8 @@ const Rooms = () => {
       // Filtro por estado
       if (filters.status !== 'all' && room.status !== filters.status) return false
       
-      // Filtro por tipo - CORREGIDO
-      if (filters.type !== 'all') {
-        // Buscar por nombre del tipo
-        if (room.room_type?.name !== filters.type) return false
-      }
+      // Filtro por tipo - SIMPLIFICADO
+      if (filters.type !== 'all' && room.room_type !== filters.type) return false
       
       // Filtro por piso
       if (filters.floor !== 'all' && room.floor.toString() !== filters.floor) return false
@@ -379,22 +205,6 @@ const Rooms = () => {
       return true
     })
   }, [rooms, filters])
-
-  // Calcular roomsByType para las estadísticas
-  const roomsByType = React.useMemo(() => {
-    if (!rooms || !roomTypes) return []
-
-    return roomTypes.map(type => {
-      const typeRooms = rooms.filter(room => room.room_type?.name === type.name)
-      return {
-        name: type.name,
-        count: typeRooms.length,
-        available: typeRooms.filter(r => r.status === 'available').length,
-        occupied: typeRooms.filter(r => r.status === 'occupied').length,
-        averageRate: type.base_rate || 0
-      }
-    }).filter(type => type.count > 0)
-  }, [rooms, roomTypes])
 
   // Manejar estado de error
   if (error) {
@@ -432,7 +242,7 @@ const Rooms = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Gestión de Habitaciones</h1>
           <p className="text-gray-600 mt-1">
-            Administra habitaciones, limpieza y mantenimiento
+            Administra habitaciones, limpieza y mantenimiento (Sistema simplificado)
           </p>
         </div>
         
@@ -453,6 +263,17 @@ const Rooms = () => {
                 Asignar Limpieza
               </Button>
             </div>
+          )}
+          
+          {/* Botón de debug (solo en desarrollo) */}
+          {process.env.NODE_ENV === 'development' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDebug}
+            >
+              Debug
+            </Button>
           )}
           
           {/* Botón de actualizar */}
@@ -610,20 +431,21 @@ const Rooms = () => {
         <CleaningManagement
           rooms={rooms || []}
           cleaningStaff={cleaningStaff || []}
-          roomsNeedingCleaning={rooms.filter(r => r.cleaning_status === 'dirty') || []}
+          cleaningStats={getCleaningStats()}
+          roomsNeedingCleaning={getRoomsNeedingCleaning()}
           onAssignCleaning={handleAssignCleaning}
           onCleaningStatusChange={handleCleaningStatusChange}
           loading={loading}
         />
       )}
 
-      {/* Modal para crear habitación */}
+      {/* Modal para crear habitación - SIMPLIFICADO */}
       {showCreateModal && (
         <CreateRoomModal
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateRoom}
-          roomTypes={roomTypes || []}
+          roomTypes={roomTypes || []} // Tipos generados dinámicamente
           loading={loading}
         />
       )}
@@ -648,7 +470,7 @@ const Rooms = () => {
                 >
                   <option value="" disabled>Seleccionar personal...</option>
                   {cleaningStaff
-                    ?.filter(staff => staff.active)
+                    ?.filter(staff => staff.is_active)
                     .map(staff => (
                       <option key={staff.id} value={staff.id}>
                         {staff.name} - {staff.shift}
@@ -712,6 +534,7 @@ const Rooms = () => {
             </div>
             <div className="flex items-center gap-4 text-xs text-gray-400">
               <span>Ocupación: {roomStats.occupancyRate}%</span>
+              <span>Sistema simplificado (sin room_types)</span>
               <span>Última actualización: {new Date().toLocaleTimeString()}</span>
             </div>
           </div>

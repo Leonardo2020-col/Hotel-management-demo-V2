@@ -1,6 +1,4 @@
-// ============================================
-// src/components/rooms/CreateRoomModal.jsx - SOLO NÚMERO Y PISO REQUERIDOS
-// ============================================
+// src/components/rooms/CreateRoomModal.jsx - SIN ROOM_TYPES
 import React, { useState } from 'react';
 import { X, Bed, Users, Maximize, DollarSign, MapPin, Plus, Trash2 } from 'lucide-react';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -8,7 +6,19 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import Button from '../common/Button';
 
-// Mock room features si no están definidas en roomMockData
+// Tipos de habitación comunes (predefinidos)
+const COMMON_ROOM_TYPES = [
+  'Habitación Estándar',
+  'Habitación Deluxe',
+  'Suite Ejecutiva',
+  'Junior Suite',
+  'Suite Presidencial',
+  'Habitación Familiar',
+  'Habitación Individual',
+  'Habitación Doble'
+];
+
+// Características de habitación
 const ROOM_FEATURES = {
   WIFI: 'WiFi Gratis',
   AC: 'Aire Acondicionado',
@@ -27,14 +37,14 @@ const ROOM_FEATURES = {
   CITY_VIEW: 'Vista a la Ciudad'
 };
 
-// SCHEMA ACTUALIZADO - Solo número y piso requeridos
+// SCHEMA SIMPLIFICADO - Solo número y piso requeridos
 const schema = yup.object().shape({
   number: yup.string().required('El número de habitación es obligatorio'),
   floor: yup.number().min(1, 'El piso debe ser mayor a 0').required('El piso es obligatorio'),
-  type: yup.string().optional(),
+  room_type: yup.string().optional(),
   capacity: yup.number().min(1, 'La capacidad debe ser mayor a 0').optional(),
   size: yup.number().min(1, 'El tamaño debe ser mayor a 0').optional(),
-  rate: yup.number().min(0, 'La tarifa debe ser positiva').optional(),
+  base_rate: yup.number().min(0, 'La tarifa debe ser positiva').optional(),
   description: yup.string().optional(),
   beds: yup.array().of(
     yup.object().shape({
@@ -63,8 +73,9 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
       features: [],
       capacity: 2,
       size: 25,
-      rate: 100,
-      description: ''
+      base_rate: 100,
+      description: '',
+      room_type: 'Habitación Estándar'
     }
   });
 
@@ -73,23 +84,47 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
     name: 'beds'
   });
 
-  const watchedType = watch('type');
+  const watchedType = watch('room_type');
 
-  // Auto-completar campos basado en tipo seleccionado
+  // Auto-completar campos basado en tipo seleccionado (usando tipos generados dinámicamente)
   React.useEffect(() => {
     if (watchedType && roomTypes && roomTypes.length > 0) {
       const selectedType = roomTypes.find(type => type.name === watchedType);
       if (selectedType) {
         setValue('capacity', selectedType.capacity || 2);
         setValue('size', selectedType.size || 25);
-        setValue('rate', selectedType.baseRate || 100);
-        setValue('description', selectedType.description || '');
-        const typeFeatures = selectedType.features || [];
+        setValue('base_rate', selectedType.base_rate || 100);
+        setValue('description', selectedType.description || `${watchedType} confortable y moderna`);
+        
+        // Características por defecto según el tipo
+        const typeFeatures = getDefaultFeaturesForType(watchedType);
         setSelectedFeatures(typeFeatures);
         setValue('features', typeFeatures);
       }
     }
   }, [watchedType, roomTypes, setValue]);
+
+  // Obtener características por defecto según el tipo
+  const getDefaultFeaturesForType = (roomType) => {
+    const baseFeatures = ['WiFi Gratis', 'TV Cable', 'Aire Acondicionado', 'Baño Privado'];
+    
+    switch (roomType) {
+      case 'Habitación Estándar':
+        return [...baseFeatures, 'Minibar'];
+      case 'Habitación Deluxe':
+        return [...baseFeatures, 'Minibar', 'Balcón', 'Caja Fuerte'];
+      case 'Suite Ejecutiva':
+        return [...baseFeatures, 'Minibar', 'Jacuzzi', 'Vista al Mar', 'Room Service', 'Caja Fuerte'];
+      case 'Junior Suite':
+        return [...baseFeatures, 'Minibar', 'Balcón', 'Kitchenette'];
+      case 'Suite Presidencial':
+        return [...baseFeatures, 'Minibar', 'Jacuzzi', 'Vista al Mar', 'Room Service', 'Terraza', 'Caja Fuerte'];
+      case 'Habitación Familiar':
+        return [...baseFeatures, 'Minibar', 'Room Service'];
+      default:
+        return baseFeatures;
+    }
+  };
 
   const handleFeatureToggle = (feature) => {
     const newFeatures = selectedFeatures.includes(feature)
@@ -110,10 +145,15 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
         // Valores por defecto si están vacíos
         capacity: data.capacity || 2,
         size: data.size || 25,
-        rate: data.rate || 100,
-        description: data.description || `Habitación ${data.number}`,
-        type: data.type || 'Habitación Estándar'
+        base_rate: data.base_rate || 100,
+        description: data.description || `${data.room_type || 'Habitación'} ${data.number}`,
+        room_type: data.room_type || 'Habitación Estándar',
+        // Convertir base_rate a rate para compatibilidad
+        rate: data.base_rate || 100,
+        type: data.room_type || 'Habitación Estándar'
       };
+      
+      console.log('Submitting room data:', roomData);
       await onSubmit(roomData);
       handleClose();
     } catch (error) {
@@ -136,6 +176,13 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
     'Litera'
   ];
 
+  // Combinar tipos dinámicos con tipos comunes
+  const allRoomTypes = React.useMemo(() => {
+    const existingTypes = roomTypes?.map(t => t.name) || [];
+    const combinedTypes = [...new Set([...COMMON_ROOM_TYPES, ...existingTypes])];
+    return combinedTypes;
+  }, [roomTypes]);
+
   if (!isOpen) return null;
 
   return (
@@ -146,7 +193,7 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Nueva Habitación</h2>
             <p className="text-gray-600 mt-1">
-              Solo número y piso son obligatorios. Los demás campos son opcionales.
+              Solo número y piso son obligatorios. Sistema simplificado sin room_types.
             </p>
           </div>
           <button
@@ -211,16 +258,18 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
                     Tipo de Habitación
                   </label>
                   <select
-                    {...register('type')}
+                    {...register('room_type')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option value="">Seleccionar tipo (opcional)</option>
-                    {roomTypes.map(type => (
-                      <option key={type.id} value={type.name}>
-                        {type.name}
+                    {allRoomTypes.map(type => (
+                      <option key={type} value={type}>
+                        {type}
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Los tipos se generan automáticamente desde las habitaciones existentes
+                  </p>
                 </div>
 
                 <div>
@@ -259,7 +308,7 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
                     type="number"
                     min="0"
                     step="0.01"
-                    {...register('rate')}
+                    {...register('base_rate')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="100.00"
                   />
@@ -410,14 +459,14 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
                     <div className="flex items-center space-x-2">
                       <DollarSign size={14} />
                       <span className="font-semibold text-blue-600">
-                        S/ {watch('rate') || '100'}/noche
+                        S/ {watch('base_rate') || '100'}/noche
                       </span>
                     </div>
                   </div>
                   
                   <div className="text-sm text-gray-600 mb-3">
                     <span className="font-medium">
-                      {watch('type') || 'Habitación Estándar'}
+                      {watch('room_type') || 'Habitación Estándar'}
                     </span>
                   </div>
                   

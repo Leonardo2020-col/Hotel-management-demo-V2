@@ -1,4 +1,4 @@
-// src/lib/supabase.js - CORREGIDO
+// src/lib/supabase.js - SIN ROOM_TYPES
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -19,225 +19,157 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // Database helpers
 export const db = {
   // =============================================
-  // ROOM TYPES FUNCTIONS - CORREGIDAS
-  // =============================================
-  async getRoomTypes() {
-    const { data, error } = await supabase
-      .from('room_types')
-      .select('*')
-      .eq('active', true)  // Usar 'active' en lugar de 'is_active'
-      .order('name')
-    return { data, error }
-  },
-
-  // =============================================
-  // ROOMS MANAGEMENT FUNCTIONS - CORREGIDAS
+  // ROOMS MANAGEMENT FUNCTIONS - SIN ROOM_TYPES
   // =============================================
 
-  // Create room function - CORREGIDA
+  // Create room function - SIMPLIFICADA
   async createRoom(roomData) {
     try {
-      // 1. Primero obtener el room_type_id si se proporciona el nombre del tipo
-      let room_type_id = roomData.room_type_id;
-      
-      if (roomData.type && !room_type_id) {
-        const { data: roomType, error: typeError } = await supabase
-          .from('room_types')
-          .select('id')
-          .eq('name', roomData.type)
-          .single();
-        
-        if (typeError || !roomType) {
-          // Si no se encuentra el tipo, usar el primer tipo disponible
-          const { data: defaultType, error: defaultError } = await supabase
-            .from('room_types')
-            .select('id')
-            .eq('active', true)
-            .order('id')
-            .limit(1)
-            .single();
-          
-          if (defaultError || !defaultType) {
-            return { 
-              data: null, 
-              error: { message: 'No hay tipos de habitación disponibles. Por favor, crea un tipo primero.' }
-            };
-          }
-          
-          room_type_id = defaultType.id;
-        } else {
-          room_type_id = roomType.id;
-        }
-      }
+      console.log('Creating room without room_types:', roomData)
 
-      // 2. Si aún no hay room_type_id, usar 1 por defecto
-      if (!room_type_id) {
-        room_type_id = 1;
-      }
-
-      // 3. Preparar datos para inserción
+      // Preparar datos para inserción
       const insertData = {
         number: roomData.number,
         floor: roomData.floor,
-        room_type_id: room_type_id,
-        branch_id: roomData.branch_id || 1, // Default branch
+        room_type: roomData.type || roomData.room_type || 'Habitación Estándar',
+        base_rate: roomData.rate || roomData.base_rate || 100.00,
+        capacity: roomData.capacity || 2,
+        branch_id: roomData.branch_id || 1,
         status: roomData.status || 'available',
         cleaning_status: roomData.cleaningStatus || 'clean',
         beds: JSON.stringify(roomData.beds || [{ type: 'Doble', count: 1 }]),
         size: roomData.size || 25,
         features: roomData.features || ['WiFi Gratis'],
-        description: roomData.description || `Habitación ${roomData.number}`
-      };
+        description: roomData.description || `${roomData.type || 'Habitación Estándar'} ${roomData.number}`,
+        bed_options: roomData.bed_options || ['Doble']
+      }
 
-      // 4. Verificar que el número no esté duplicado
+      console.log('Insert data prepared:', insertData)
+
+      // Verificar que el número no esté duplicado
       const { data: existingRoom } = await supabase
         .from('rooms')
         .select('id')
         .eq('number', roomData.number)
         .eq('branch_id', insertData.branch_id)
-        .single();
+        .single()
 
       if (existingRoom) {
         return { 
           data: null, 
           error: { message: `Ya existe una habitación con el número ${roomData.number}` }
-        };
+        }
       }
 
-      // 5. Insertar la habitación
+      // Insertar la habitación
       const { data, error } = await supabase
         .from('rooms')
         .insert(insertData)
-        .select(`
-          *,
-          room_type:room_types(*)
-        `)
-        .single();
+        .select()
+        .single()
 
       if (error) {
-        console.error('Error inserting room:', error);
-        return { data: null, error };
+        console.error('Error inserting room:', error)
+        return { data: null, error }
       }
 
-      // 6. Crear registros de disponibilidad para los próximos 90 días
-      await this.createRoomAvailability(data.id);
+      console.log('Room created successfully:', data)
 
-      return { data, error: null };
+      // Crear registros de disponibilidad para los próximos 90 días
+      await this.createRoomAvailability(data.id, insertData)
+
+      return { data, error: null }
 
     } catch (error) {
-      console.error('Error in createRoom:', error);
+      console.error('Error in createRoom:', error)
       return { 
         data: null, 
         error: { message: 'Error interno al crear la habitación: ' + error.message }
-      };
+      }
     }
   },
 
-  // Función auxiliar para crear disponibilidad de habitación
-  async createRoomAvailability(roomId) {
+  // Función auxiliar para crear disponibilidad de habitación - SIMPLIFICADA
+  async createRoomAvailability(roomId, roomData) {
     try {
-      // Obtener información de la habitación
-      const { data: room } = await supabase
-        .from('rooms')
-        .select(`
-          *,
-          room_type:room_types(base_rate)
-        `)
-        .eq('id', roomId)
-        .single();
-
-      if (!room) return;
+      console.log('Creating availability for room:', roomId)
 
       // Crear registros de disponibilidad para los próximos 90 días
-      const availabilityRecords = [];
-      const today = new Date();
+      const availabilityRecords = []
+      const today = new Date()
       
       for (let i = 0; i < 90; i++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() + i);
+        const date = new Date(today)
+        date.setDate(date.getDate() + i)
         
         availabilityRecords.push({
           room_id: roomId,
           date: date.toISOString().split('T')[0],
-          is_available: room.status === 'available',
-          rate: room.room_type?.base_rate || 100,
-          number: room.number,
-          floor: room.floor,
-          room_type: room.room_type?.name || 'Habitación Estándar',
-          status: room.status,
-          cleaning_status: room.cleaning_status,
-          capacity: room.room_type?.capacity || 2,
-          branch_id: room.branch_id
-        });
+          is_available: roomData.status === 'available',
+          rate: roomData.base_rate || 100,
+          number: roomData.number,
+          floor: roomData.floor,
+          room_type: roomData.room_type,
+          status: roomData.status,
+          cleaning_status: roomData.cleaning_status,
+          capacity: roomData.capacity,
+          branch_id: roomData.branch_id
+        })
       }
 
       // Insertar en lotes de 50 para evitar límites
-      const batchSize = 50;
+      const batchSize = 50
       for (let i = 0; i < availabilityRecords.length; i += batchSize) {
-        const batch = availabilityRecords.slice(i, i + batchSize);
+        const batch = availabilityRecords.slice(i, i + batchSize)
         await supabase
           .from('room_availability')
-          .insert(batch);
+          .insert(batch)
       }
 
+      console.log('Room availability created successfully')
+
     } catch (error) {
-      console.error('Error creating room availability:', error);
+      console.error('Error creating room availability:', error)
     }
   },
 
-  // Update room function - CORREGIDA
+  // Update room function - SIMPLIFICADA
   async updateRoom(roomId, updates) {
     try {
-      // Si se actualiza el tipo, obtener el room_type_id
-      if (updates.type && !updates.room_type_id) {
-        const { data: roomType } = await supabase
-          .from('room_types')
-          .select('id')
-          .eq('name', updates.type)
-          .single();
-        
-        if (roomType) {
-          updates.room_type_id = roomType.id;
-        }
-        delete updates.type; // Remover el nombre del tipo
-      }
-
       const { data, error } = await supabase
         .from('rooms')
         .update(updates)
         .eq('id', roomId)
-        .select(`
-          *,
-          room_type:room_types(*)
-        `)
-        .single();
+        .select()
+        .single()
 
       // Actualizar room_availability si es necesario
-      if (updates.status || updates.cleaning_status) {
+      if (updates.status || updates.cleaning_status || updates.base_rate) {
         await supabase
           .from('room_availability')
           .update({
             status: updates.status,
             cleaning_status: updates.cleaning_status,
+            rate: updates.base_rate,
             is_available: updates.status === 'available'
           })
-          .eq('room_id', roomId);
+          .eq('room_id', roomId)
       }
 
-      return { data, error };
+      return { data, error }
     } catch (error) {
-      return { data: null, error };
+      return { data: null, error }
     }
   },
 
-  // Delete room function - CORREGIDA
+  // Delete room function
   async deleteRoom(roomId) {
     try {
       // Primero eliminar registros de disponibilidad
       await supabase
         .from('room_availability')
         .delete()
-        .eq('room_id', roomId);
+        .eq('room_id', roomId)
 
       // Luego eliminar la habitación
       const { data, error } = await supabase
@@ -245,54 +177,51 @@ export const db = {
         .delete()
         .eq('id', roomId)
         .select()
-        .single();
+        .single()
 
-      return { data, error };
+      return { data, error }
     } catch (error) {
-      return { data: null, error };
+      return { data: null, error }
     }
   },
 
   // =============================================
-  // ROOMS QUERY FUNCTIONS - CORREGIDAS
+  // ROOMS QUERY FUNCTIONS - SIN ROOM_TYPES
   // =============================================
 
-  // Get rooms with proper filtering
+  // Get rooms with proper filtering - SIMPLIFICADA
   async getRooms(filters = {}) {
     try {
       let query = supabase
         .from('rooms')
-        .select(`
-          *,
-          room_type:room_types(*)
-        `)
+        .select('*')
         .order('floor')
-        .order('number');
+        .order('number')
 
       if (filters.status && filters.status !== 'all') {
-        query = query.eq('status', filters.status);
+        query = query.eq('status', filters.status)
       }
       if (filters.floor && filters.floor !== 'all') {
-        query = query.eq('floor', filters.floor);
+        query = query.eq('floor', filters.floor)
       }
       if (filters.type && filters.type !== 'all') {
-        query = query.eq('room_type.name', filters.type);
+        query = query.eq('room_type', filters.type)
       }
       if (filters.cleaningStatus && filters.cleaningStatus !== 'all') {
-        query = query.eq('cleaning_status', filters.cleaningStatus);
+        query = query.eq('cleaning_status', filters.cleaningStatus)
       }
       if (filters.search) {
-        query = query.or(`number.ilike.%${filters.search}%,description.ilike.%${filters.search}%`);
+        query = query.or(`number.ilike.%${filters.search}%,description.ilike.%${filters.search}%,room_type.ilike.%${filters.search}%`)
       }
 
-      const { data, error } = await query;
-      return { data, error };
+      const { data, error } = await query
+      return { data, error }
     } catch (error) {
-      return { data: null, error };
+      return { data: null, error }
     }
   },
 
-  // Get room availability - CORREGIDA
+  // Get room availability - SIMPLIFICADA
   async getRoomAvailability(startDate, endDate, filters = {}) {
     try {
       let query = supabase
@@ -302,53 +231,45 @@ export const db = {
         .lte('date', endDate)
         .order('floor')
         .order('number')
-        .order('date');
+        .order('date')
 
       if (filters.available_only) {
-        query = query.eq('is_available', true);
+        query = query.eq('is_available', true)
       }
       if (filters.room_type) {
-        query = query.eq('room_type', filters.room_type);
+        query = query.eq('room_type', filters.room_type)
       }
       if (filters.floor) {
-        query = query.eq('floor', filters.floor);
+        query = query.eq('floor', filters.floor)
       }
 
-      const { data, error } = await query;
-      return { data, error };
+      const { data, error } = await query
+      return { data, error }
     } catch (error) {
-      return { data: null, error };
+      return { data: null, error }
     }
   },
 
-  // Get available rooms for dates
-  async getAvailableRooms(checkIn, checkOut, roomTypeId = null) {
+  // Get available rooms for dates - SIMPLIFICADA
+  async getAvailableRooms(checkIn, checkOut, roomType = null) {
     try {
       let query = supabase
         .from('room_availability')
         .select('*')
         .eq('is_available', true)
         .gte('date', checkIn)
-        .lt('date', checkOut);
+        .lt('date', checkOut)
 
-      if (roomTypeId) {
-        const { data: roomType } = await supabase
-          .from('room_types')
-          .select('name')
-          .eq('id', roomTypeId)
-          .single();
-        
-        if (roomType) {
-          query = query.eq('room_type', roomType.name);
-        }
+      if (roomType) {
+        query = query.eq('room_type', roomType)
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query
       
-      if (error) return { data: null, error };
+      if (error) return { data: null, error }
 
       // Agrupar por habitación y verificar que esté disponible todos los días
-      const roomAvailability = {};
+      const roomAvailability = {}
       data.forEach(record => {
         if (!roomAvailability[record.room_id]) {
           roomAvailability[record.room_id] = {
@@ -360,15 +281,15 @@ export const db = {
             capacity: record.capacity,
             available_days: 0,
             total_days_needed: 0
-          };
+          }
         }
-        roomAvailability[record.room_id].available_days++;
-      });
+        roomAvailability[record.room_id].available_days++
+      })
 
       // Calcular días necesarios
-      const start = new Date(checkIn);
-      const end = new Date(checkOut);
-      const daysNeeded = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+      const start = new Date(checkIn)
+      const end = new Date(checkOut)
+      const daysNeeded = Math.ceil((end - start) / (1000 * 60 * 60 * 24))
 
       // Filtrar habitaciones que están disponibles todos los días necesarios
       const availableRooms = Object.values(roomAvailability)
@@ -376,29 +297,25 @@ export const db = {
         .map(room => ({
           ...room,
           total_days_needed: daysNeeded
-        }));
+        }))
 
-      return { data: availableRooms, error: null };
+      return { data: availableRooms, error: null }
     } catch (error) {
-      return { data: null, error };
+      return { data: null, error }
     }
   },
 
   // =============================================
-  // ROOM STATISTICS - CORREGIDAS
+  // ROOM STATISTICS - SIMPLIFICADAS
   // =============================================
 
   async getRoomStats() {
     try {
       const { data: rooms, error } = await supabase
         .from('rooms')
-        .select(`
-          status,
-          cleaning_status,
-          room_type:room_types(name, base_rate)
-        `);
+        .select('status, cleaning_status, room_type, base_rate')
 
-      if (error) return { data: null, error };
+      if (error) return { data: null, error }
 
       const stats = {
         total: rooms.length,
@@ -410,25 +327,25 @@ export const db = {
         needsCleaning: rooms.filter(r => r.cleaning_status === 'dirty').length,
         occupancyRate: rooms.length > 0 ? 
           Math.round((rooms.filter(r => r.status === 'occupied').length / rooms.length) * 100) : 0
-      };
+      }
 
-      // Estadísticas por tipo
-      const roomsByType = {};
+      // Estadísticas por tipo - SIMPLIFICADAS
+      const roomsByType = {}
       rooms.forEach(room => {
-        const typeName = room.room_type?.name || 'Sin tipo';
+        const typeName = room.room_type || 'Sin tipo'
         if (!roomsByType[typeName]) {
           roomsByType[typeName] = {
             name: typeName,
             total: 0,
             available: 0,
             occupied: 0,
-            baseRate: room.room_type?.base_rate || 0
-          };
+            baseRate: room.base_rate || 0
+          }
         }
-        roomsByType[typeName].total++;
-        if (room.status === 'available') roomsByType[typeName].available++;
-        if (room.status === 'occupied') roomsByType[typeName].occupied++;
-      });
+        roomsByType[typeName].total++
+        if (room.status === 'available') roomsByType[typeName].available++
+        if (room.status === 'occupied') roomsByType[typeName].occupied++
+      })
 
       return { 
         data: {
@@ -436,36 +353,74 @@ export const db = {
           roomsByType: Object.values(roomsByType)
         }, 
         error: null 
-      };
+      }
     } catch (error) {
-      return { data: null, error };
+      return { data: null, error }
+    }
+  },
+
+  // Get unique room types - NUEVA FUNCIÓN
+  async getRoomTypes() {
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('room_type, base_rate')
+        .not('room_type', 'is', null)
+
+      if (error) return { data: null, error }
+
+      // Crear lista única de tipos
+      const uniqueTypes = {}
+      data.forEach((room, index) => {
+        if (!uniqueTypes[room.room_type]) {
+          uniqueTypes[room.room_type] = {
+            id: index + 1,
+            name: room.room_type,
+            base_rate: room.base_rate || 100,
+            active: true
+          }
+        }
+      })
+
+      // Si no hay tipos, crear uno por defecto
+      if (Object.keys(uniqueTypes).length === 0) {
+        uniqueTypes['Habitación Estándar'] = {
+          id: 1,
+          name: 'Habitación Estándar',
+          base_rate: 100,
+          active: true
+        }
+      }
+
+      return { data: Object.values(uniqueTypes), error: null }
+    } catch (error) {
+      return { data: null, error }
     }
   },
 
   // =============================================
-  // CLEANING MANAGEMENT - CORREGIDAS
+  // CLEANING MANAGEMENT - SIMPLIFICADAS
   // =============================================
 
   async getCleaningStaff() {
-    const { data, error } = await supabase
-      .from('cleaning_staff')
-      .select('*')
-      .eq('is_active', true)
-      .order('name');
-    return { data, error };
+    // Devolver datos mock ya que eliminamos la tabla
+    const mockStaff = [
+      { id: 1, name: 'María García', is_active: true, shift: 'morning' },
+      { id: 2, name: 'Ana López', is_active: true, shift: 'afternoon' },
+      { id: 3, name: 'Pedro Martín', is_active: true, shift: 'morning' },
+      { id: 4, name: 'Carmen Ruiz', is_active: true, shift: 'afternoon' }
+    ]
+    return { data: mockStaff, error: null }
   },
 
   async getRoomsNeedingCleaning() {
     const { data, error } = await supabase
       .from('rooms')
-      .select(`
-        *,
-        room_type:room_types(name)
-      `)
+      .select('*')
       .in('cleaning_status', ['dirty', 'in_progress'])
       .order('floor')
-      .order('number');
-    return { data, error };
+      .order('number')
+    return { data, error }
   },
 
   async assignCleaning(roomIds, staffName) {
@@ -477,17 +432,17 @@ export const db = {
         cleaning_start_time: new Date().toISOString()
       })
       .in('id', roomIds)
-      .select();
+      .select()
 
     // También actualizar room_availability
     if (!error) {
       await supabase
         .from('room_availability')
         .update({ cleaning_status: 'in_progress' })
-        .in('room_id', roomIds);
+        .in('room_id', roomIds)
     }
 
-    return { data, error };
+    return { data, error }
   },
 
   // =============================================
@@ -539,7 +494,7 @@ export const db = {
           cleaning_status: cleaningStatus,
           is_available: status === 'available'
         })
-        .eq('room_id', roomId);
+        .eq('room_id', roomId)
     }
 
     return { data, error }
@@ -548,10 +503,7 @@ export const db = {
   async getRoomsByFloor() {
     const { data, error } = await supabase
       .from('rooms')
-      .select(`
-        *,
-        room_type:room_types(name, base_rate)
-      `)
+      .select('*')
       .order('floor')
       .order('number')
     
@@ -618,7 +570,7 @@ export const db = {
       .from('reservations')
       .select(`
         *,
-        room:rooms(number, room_type:room_types(name))
+        room:rooms(number, room_type)
       `)
       .eq('guest_id', guestId)
       .order('created_at', { ascending: false })
@@ -632,10 +584,7 @@ export const db = {
       .select(`
         *,
         guest:guests(*),
-        room:rooms(
-          *,
-          room_type:room_types(*)
-        )
+        room:rooms(*)
       `)
       .order('created_at', { ascending: false })
 
@@ -698,10 +647,7 @@ export const db = {
       .select(`
         *,
         guest:guests(*),
-        room:rooms(
-          *,
-          room_type:room_types(*)
-        )
+        room:rooms(*)
       `)
       .single()
     return { data, error }
@@ -715,10 +661,7 @@ export const db = {
       .select(`
         *,
         guest:guests(*),
-        room:rooms(
-          *,
-          room_type:room_types(*)
-        )
+        room:rooms(*)
       `)
       .single()
     return { data, error }
@@ -899,7 +842,7 @@ export const db = {
       `)
       .eq('is_available', true)
       .order('category.display_order')
-      .order('name');
+      .order('name')
 
     if (error) {
       // Fallback a datos mock si no existe la tabla
@@ -927,25 +870,25 @@ export const db = {
           ]
         },
         error: null
-      };
+      }
     }
 
     // Agrupar por categoría
-    const groupedData = {};
+    const groupedData = {}
     data.forEach(item => {
-      const categoryName = item.category?.name || 'OTROS';
+      const categoryName = item.category?.name || 'OTROS'
       if (!groupedData[categoryName]) {
-        groupedData[categoryName] = [];
+        groupedData[categoryName] = []
       }
       groupedData[categoryName].push({
         id: item.id,
         name: item.name,
         description: item.description,
         price: item.price
-      });
-    });
+      })
+    })
 
-    return { data: groupedData, error: null };
+    return { data: groupedData, error: null }
   },
 
   // =============================================
@@ -972,7 +915,8 @@ export const db = {
           floor,
           status,
           cleaning_status,
-          room_type:room_types(name, base_rate)
+          room_type,
+          base_rate
         )
       `)
       .eq('status', 'checked_in')
@@ -1004,10 +948,7 @@ export const db = {
       .select(`
         *,
         guest:guests(*),
-        room:rooms(
-          *,
-          room_type:room_types(*)
-        )
+        room:rooms(*)
       `)
       .single()
     
@@ -1058,10 +999,7 @@ export const db = {
       // 1. Get room information
       const { data: room, error: roomError } = await supabase
         .from('rooms')
-        .select(`
-          *,
-          room_type:room_types(base_rate, name)
-        `)
+        .select('*')
         .eq('id', roomId)
         .single()
 
@@ -1072,7 +1010,7 @@ export const db = {
       if (guestError) throw guestError
 
       // 3. Calculate totals
-      const roomPrice = room.room_type.base_rate
+      const roomPrice = room.base_rate || 100
       const snacksTotal = snacks.reduce((sum, snack) => sum + (snack.price * snack.quantity), 0)
       const totalAmount = roomPrice + snacksTotal
 
@@ -1221,10 +1159,7 @@ export const db = {
   async validateRoomForCheckIn(roomId) {
     const { data: room, error } = await supabase
       .from('rooms')
-      .select(`
-        *,
-        room_type:room_types(*)
-      `)
+      .select('*')
       .eq('id', roomId)
       .single()
 

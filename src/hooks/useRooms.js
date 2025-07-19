@@ -1,4 +1,4 @@
-// src/hooks/useRooms.js - CORREGIDO PARA MANEJAR TIPOS DE HABITACIÓN
+// src/hooks/useRooms.js - SIN ROOM_TYPES
 import { useState, useEffect, useMemo } from 'react'
 import { db, subscriptions } from '../lib/supabase'
 import toast from 'react-hot-toast'
@@ -31,17 +31,16 @@ export const useRooms = () => {
     loadData()
   }, [])
 
-  // Suscripción en tiempo real - CORREGIDA
+  // Suscripción en tiempo real - SIMPLIFICADA
   useEffect(() => {
-    if (rooms.length === 0) return // No suscribirse hasta que tengamos datos iniciales
+    if (rooms.length === 0) return
 
     const subscription = subscriptions.rooms((payload) => {
       const { eventType, new: newRecord, old: oldRecord } = payload
       
       switch (eventType) {
         case 'INSERT':
-          // Recargar datos para asegurar consistencia
-          loadData()
+          loadData() // Recargar todo para mantener consistencia
           toast.success('Nueva habitación agregada')
           break
         case 'UPDATE':
@@ -68,19 +67,9 @@ export const useRooms = () => {
       setLoading(true)
       setError(null)
       
-      console.log('Loading rooms data...')
+      console.log('Loading rooms data without room_types...')
       
-      // 1. Cargar tipos de habitación primero
-      const roomTypesResult = await db.getRoomTypes()
-      if (roomTypesResult.error) {
-        console.error('Error loading room types:', roomTypesResult.error)
-        throw new Error('Error al cargar tipos de habitación: ' + roomTypesResult.error.message)
-      }
-      
-      console.log('Room types loaded:', roomTypesResult.data)
-      setRoomTypes(roomTypesResult.data || [])
-      
-      // 2. Cargar habitaciones
+      // 1. Cargar habitaciones
       const roomsResult = await db.getRooms()
       if (roomsResult.error) {
         console.error('Error loading rooms:', roomsResult.error)
@@ -90,27 +79,19 @@ export const useRooms = () => {
       console.log('Rooms loaded:', roomsResult.data)
       setRooms(roomsResult.data || [])
       
-      // 3. Cargar personal de limpieza
-      try {
-        const staffResult = await db.getCleaningStaff()
-        if (staffResult.data && !staffResult.error) {
-          setCleaningStaff(staffResult.data)
-        } else {
-          // Fallback a datos mock
-          setCleaningStaff([
-            { id: 1, name: 'María García', is_active: true, shift: 'morning' },
-            { id: 2, name: 'Ana López', is_active: true, shift: 'afternoon' },
-            { id: 3, name: 'Pedro Martín', is_active: true, shift: 'morning' },
-            { id: 4, name: 'Carmen Ruiz', is_active: true, shift: 'afternoon' }
-          ])
-        }
-      } catch (staffError) {
-        console.warn('Could not load cleaning staff, using fallback')
-        setCleaningStaff([
-          { id: 1, name: 'María García', is_active: true, shift: 'morning' },
-          { id: 2, name: 'Ana López', is_active: true, shift: 'afternoon' }
-        ])
+      // 2. Generar tipos únicos desde las habitaciones existentes
+      const uniqueTypes = await db.getRoomTypes()
+      if (uniqueTypes.data) {
+        setRoomTypes(uniqueTypes.data)
+      } else {
+        // Fallback: crear tipos desde habitaciones existentes
+        const types = generateTypesFromRooms(roomsResult.data || [])
+        setRoomTypes(types)
       }
+      
+      // 3. Cargar personal de limpieza (mock data)
+      const staffResult = await db.getCleaningStaff()
+      setCleaningStaff(staffResult.data || [])
       
     } catch (err) {
       console.error('Error in loadData:', err)
@@ -121,7 +102,38 @@ export const useRooms = () => {
     }
   }
 
-  // Calcular estadísticas de habitaciones - CORREGIDO
+  // Generar tipos únicos desde habitaciones existentes
+  const generateTypesFromRooms = (roomsData) => {
+    const uniqueTypes = {}
+    
+    roomsData.forEach((room, index) => {
+      const typeName = room.room_type || 'Habitación Estándar'
+      if (!uniqueTypes[typeName]) {
+        uniqueTypes[typeName] = {
+          id: index + 1,
+          name: typeName,
+          base_rate: room.base_rate || 100,
+          capacity: room.capacity || 2,
+          active: true
+        }
+      }
+    })
+
+    // Si no hay tipos, crear uno por defecto
+    if (Object.keys(uniqueTypes).length === 0) {
+      uniqueTypes['Habitación Estándar'] = {
+        id: 1,
+        name: 'Habitación Estándar',
+        base_rate: 100,
+        capacity: 2,
+        active: true
+      }
+    }
+
+    return Object.values(uniqueTypes)
+  }
+
+  // Calcular estadísticas de habitaciones - SIMPLIFICADO
   const roomStats = useMemo(() => {
     if (!rooms || rooms.length === 0) {
       return {
@@ -151,12 +163,10 @@ export const useRooms = () => {
     
     const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0
 
-    // Calcular ingresos estimados basados en tipos de habitación
+    // Calcular ingresos estimados
     const todayRevenue = rooms.reduce((sum, room) => {
       if (room.status === ROOM_STATUS.OCCUPIED) {
-        // Usar base_rate del room_type o un valor por defecto
-        const rate = room.room_type?.base_rate || room.room_type?.baseRate || 100
-        return sum + rate
+        return sum + (room.base_rate || 100)
       }
       return sum
     }, 0)
@@ -181,65 +191,50 @@ export const useRooms = () => {
     }
   }, [rooms])
 
-  // Calcular habitaciones por tipo - CORREGIDO
+  // Calcular habitaciones por tipo - SIMPLIFICADO
   const roomsByType = useMemo(() => {
-    if (!rooms || rooms.length === 0 || !roomTypes || roomTypes.length === 0) return []
+    if (!rooms || rooms.length === 0) return []
 
-    return roomTypes.map(type => {
-      // Filtrar habitaciones por nombre del tipo o por room_type_id
-      const typeRooms = rooms.filter(room => 
-        room.room_type_id === type.id || room.room_type?.name === type.name
-      )
-      
-      return {
-        name: type.name,
-        total: typeRooms.length,
-        available: typeRooms.filter(r => r.status === ROOM_STATUS.AVAILABLE).length,
-        occupied: typeRooms.filter(r => r.status === ROOM_STATUS.OCCUPIED).length,
-        averageRate: type.base_rate || type.baseRate || 0
-      }
-    }).filter(type => type.total > 0) // Solo mostrar tipos que tienen habitaciones
-  }, [rooms, roomTypes])
-
-  // Crear nueva habitación - CORREGIDO
-  const createRoom = async (roomData) => {
-    try {
-      console.log('Creating room with data:', roomData)
-      
-      // Validar que existan tipos de habitación
-      if (!roomTypes || roomTypes.length === 0) {
-        throw new Error('No hay tipos de habitación disponibles. Por favor, configura los tipos primero.')
-      }
-
-      // Determinar el tipo de habitación
-      let roomType = null
-      
-      if (roomData.type) {
-        // Buscar por nombre
-        roomType = roomTypes.find(rt => rt.name === roomData.type)
-        if (!roomType) {
-          console.warn(`Room type "${roomData.type}" not found, using first available`)
+    const typeStats = {}
+    
+    rooms.forEach(room => {
+      const typeName = room.room_type || 'Habitación Estándar'
+      if (!typeStats[typeName]) {
+        typeStats[typeName] = {
+          name: typeName,
+          total: 0,
+          available: 0,
+          occupied: 0,
+          averageRate: room.base_rate || 100
         }
       }
-      
-      // Si no se encuentra o no se especifica, usar el primero
-      if (!roomType) {
-        roomType = roomTypes[0]
-        console.log('Using default room type:', roomType)
-      }
+      typeStats[typeName].total++
+      if (room.status === ROOM_STATUS.AVAILABLE) typeStats[typeName].available++
+      if (room.status === ROOM_STATUS.OCCUPIED) typeStats[typeName].occupied++
+    })
 
+    return Object.values(typeStats)
+  }, [rooms])
+
+  // Crear nueva habitación - SIMPLIFICADO
+  const createRoom = async (roomData) => {
+    try {
+      console.log('Creating room without room_types:', roomData)
+      
       const newRoomData = {
         number: roomData.number,
         floor: parseInt(roomData.floor),
-        room_type_id: roomType.id,
-        type: roomType.name, // También enviar el nombre para compatibilidad
+        room_type: roomData.type || roomData.room_type || 'Habitación Estándar',
+        base_rate: parseFloat(roomData.rate || roomData.base_rate || 100),
+        capacity: parseInt(roomData.capacity || 2),
         status: ROOM_STATUS.AVAILABLE,
         cleaning_status: CLEANING_STATUS.CLEAN,
         beds: roomData.beds || [{ type: 'Doble', count: 1 }],
         size: parseInt(roomData.size) || 25,
-        features: roomData.features || roomType.features || ['WiFi Gratis'],
-        description: roomData.description || `Habitación ${roomType.name} ${roomData.number}`,
-        branch_id: 1 // Usar branch por defecto
+        features: roomData.features || ['WiFi Gratis'],
+        description: roomData.description || `${roomData.type || 'Habitación Estándar'} ${roomData.number}`,
+        bed_options: roomData.bed_options || ['Doble'],
+        branch_id: 1
       }
 
       console.log('Sending room data to create:', newRoomData)
@@ -267,17 +262,9 @@ export const useRooms = () => {
     }
   }
 
-  // Actualizar habitación - CORREGIDO
+  // Actualizar habitación - SIMPLIFICADO
   const updateRoom = async (roomId, updateData) => {
     try {
-      // Si se está cambiando el tipo, buscar el room_type_id
-      if (updateData.type && !updateData.room_type_id) {
-        const roomType = roomTypes.find(rt => rt.name === updateData.type)
-        if (roomType) {
-          updateData.room_type_id = roomType.id
-        }
-      }
-
       const { data, error } = await db.updateRoom(roomId, updateData)
       
       if (error) throw error
@@ -297,7 +284,7 @@ export const useRooms = () => {
     }
   }
 
-  // Eliminar habitación - CORREGIDO
+  // Eliminar habitación
   const deleteRoom = async (roomId) => {
     try {
       const { data, error } = await db.deleteRoom(roomId)
@@ -317,7 +304,7 @@ export const useRooms = () => {
     }
   }
 
-  // Actualizar estado de habitación - CORREGIDO
+  // Actualizar estado de habitación
   const updateRoomStatus = async (roomId, newStatus) => {
     try {
       const { data, error } = await db.updateRoomStatus(roomId, newStatus)
@@ -347,7 +334,7 @@ export const useRooms = () => {
     }
   }
 
-  // Actualizar estado de limpieza - CORREGIDO
+  // Actualizar estado de limpieza
   const updateCleaningStatus = async (roomId, newStatus) => {
     try {
       // Determinar si también cambiar el estado de la habitación
@@ -388,7 +375,7 @@ export const useRooms = () => {
     }
   }
 
-  // Asignar limpieza a habitaciones - CORREGIDO
+  // Asignar limpieza a habitaciones
   const assignCleaning = async (roomIds, staffId) => {
     try {
       const staff = cleaningStaff.find(s => s.id === staffId)
@@ -455,19 +442,19 @@ export const useRooms = () => {
 
   // Función de depuración para verificar datos
   const debugData = () => {
-    console.log('=== DEBUG DATA ===')
+    console.log('=== DEBUG DATA (WITHOUT ROOM_TYPES) ===')
     console.log('Rooms:', rooms)
-    console.log('Room Types:', roomTypes)
+    console.log('Room Types (generated):', roomTypes)
     console.log('Cleaning Staff:', cleaningStaff)
     console.log('Room Stats:', roomStats)
     console.log('Rooms by Type:', roomsByType)
-    console.log('==================')
+    console.log('=======================================')
   }
 
   return {
     // Datos
     rooms,
-    roomTypes,
+    roomTypes, // Generados dinámicamente desde habitaciones
     cleaningStaff,
     roomStats,
     roomsByType,
