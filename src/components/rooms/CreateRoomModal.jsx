@@ -30,15 +30,15 @@ const ROOM_FEATURES = {
 const schema = yup.object().shape({
   number: yup.string().required('El número de habitación es obligatorio'),
   floor: yup.number().min(1, 'El piso debe ser mayor a 0').required('El piso es obligatorio'),
-  type: yup.string().required('El tipo es obligatorio'),
-  capacity: yup.number().min(1, 'La capacidad debe ser mayor a 0').required('La capacidad es obligatoria'),
-  size: yup.number().min(1, 'El tamaño debe ser mayor a 0').required('El tamaño es obligatorio'),
+  type: yup.string()('El tipo es obligatorio'),
+  capacity: yup.number().min(1, 'La capacidad debe ser mayor a 0')('La capacidad es obligatoria'),
+  size: yup.number().min(1, 'El tamaño debe ser mayor a 0')('El tamaño es obligatorio'),
   rate: yup.number().min(0, 'La tarifa debe ser positiva').required('La tarifa es obligatoria'),
-  description: yup.string().required('La descripción es obligatoria'),
+  description: yup.string()('La descripción es obligatoria'),
   beds: yup.array().of(
     yup.object().shape({
-      type: yup.string().required('Tipo de cama requerido'),
-      count: yup.number().min(1, 'Cantidad debe ser mayor a 0').required('Cantidad requerida')
+      type: yup.string()('Tipo de cama requerido'),
+      count: yup.number().min(1, 'Cantidad debe ser mayor a 0')('Cantidad requerida')
     })
   ).min(1, 'Debe tener al menos una cama'),
   features: yup.array().min(1, 'Debe seleccionar al menos una característica')
