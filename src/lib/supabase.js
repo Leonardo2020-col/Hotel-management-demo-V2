@@ -1,4 +1,4 @@
-// src/lib/supabase.js - COMPLETO CON TODAS LAS FUNCIONES DE RESERVAS
+// src/lib/supabase.js - VERSIÓN FINAL COMPLETA SIN ROOM_TYPES
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -22,7 +22,7 @@ export const db = {
   // ROOMS MANAGEMENT FUNCTIONS - SIN ROOM_TYPES
   // =============================================
 
-  // Create room function - SIMPLIFICADA
+  // Create room function - SIMPLIFICADA SIN ROOM_TYPES
   async createRoom(roomData) {
     try {
       console.log('Creating room without room_types:', roomData)
@@ -44,8 +44,6 @@ export const db = {
         bed_options: roomData.bed_options || ['Doble']
       }
 
-      console.log('Insert data prepared:', insertData)
-
       // Verificar que el número no esté duplicado
       const { data: existingRoom } = await supabase
         .from('rooms')
@@ -61,23 +59,30 @@ export const db = {
         }
       }
 
-      // Insertar la habitación
-      const { data, error } = await supabase
-        .from('rooms')
-        .insert(insertData)
-        .select()
-        .single()
+      // Insertar la habitación usando la función SQL
+      const { data, error } = await supabase.rpc('create_room_simple', {
+        number_param: insertData.number,
+        floor_param: insertData.floor,
+        room_type_param: insertData.room_type,
+        base_rate_param: insertData.base_rate,
+        capacity_param: insertData.capacity,
+        size_param: insertData.size,
+        description_param: insertData.description,
+        features_param: insertData.features,
+        beds_param: insertData.beds,
+        branch_id_param: insertData.branch_id
+      })
 
       if (error) {
-        console.error('Error inserting room:', error)
+        console.error('Error creating room:', error)
         return { data: null, error }
       }
 
+      if (data && !data.success) {
+        return { data: null, error: { message: data.error } }
+      }
+
       console.log('Room created successfully:', data)
-
-      // Crear registros de disponibilidad para los próximos 90 días
-      await this.createRoomAvailability(data.id, insertData)
-
       return { data, error: null }
 
     } catch (error) {
@@ -89,51 +94,7 @@ export const db = {
     }
   },
 
-  // Función auxiliar para crear disponibilidad de habitación - SIMPLIFICADA
-  async createRoomAvailability(roomId, roomData) {
-    try {
-      console.log('Creating availability for room:', roomId)
-
-      // Crear registros de disponibilidad para los próximos 90 días
-      const availabilityRecords = []
-      const today = new Date()
-      
-      for (let i = 0; i < 90; i++) {
-        const date = new Date(today)
-        date.setDate(date.getDate() + i)
-        
-        availabilityRecords.push({
-          room_id: roomId,
-          date: date.toISOString().split('T')[0],
-          is_available: roomData.status === 'available',
-          rate: roomData.base_rate || 100,
-          number: roomData.number,
-          floor: roomData.floor,
-          room_type: roomData.room_type,
-          status: roomData.status,
-          cleaning_status: roomData.cleaning_status,
-          capacity: roomData.capacity,
-          branch_id: roomData.branch_id
-        })
-      }
-
-      // Insertar en lotes de 50 para evitar límites
-      const batchSize = 50
-      for (let i = 0; i < availabilityRecords.length; i += batchSize) {
-        const batch = availabilityRecords.slice(i, i + batchSize)
-        await supabase
-          .from('room_availability')
-          .insert(batch)
-      }
-
-      console.log('Room availability created successfully')
-
-    } catch (error) {
-      console.error('Error creating room availability:', error)
-    }
-  },
-
-  // Update room function - SIMPLIFICADA
+  // Update room function - SIN ROOM_TYPES
   async updateRoom(roomId, updates) {
     try {
       const { data, error } = await supabase
@@ -144,13 +105,14 @@ export const db = {
         .single()
 
       // Actualizar room_availability si es necesario
-      if (updates.status || updates.cleaning_status || updates.base_rate) {
+      if (updates.status || updates.cleaning_status || updates.base_rate || updates.room_type) {
         await supabase
           .from('room_availability')
           .update({
             status: updates.status,
             cleaning_status: updates.cleaning_status,
             rate: updates.base_rate,
+            room_type: updates.room_type,
             is_available: updates.status === 'available'
           })
           .eq('room_id', roomId)
@@ -185,11 +147,7 @@ export const db = {
     }
   },
 
-  // =============================================
-  // ROOMS QUERY FUNCTIONS - SIN ROOM_TYPES
-  // =============================================
-
-  // Get rooms with proper filtering - SIMPLIFICADA
+  // Get rooms with proper filtering - SIN ROOM_TYPES
   async getRooms(filters = {}) {
     try {
       let query = supabase
@@ -221,7 +179,7 @@ export const db = {
     }
   },
 
-  // Get room availability - SIMPLIFICADA
+  // Get room availability - SIN ROOM_TYPES
   async getRoomAvailability(startDate, endDate, filters = {}) {
     try {
       let query = supabase
@@ -250,7 +208,7 @@ export const db = {
     }
   },
 
-  // Get available rooms for dates - SIMPLIFICADA
+  // Get available rooms for dates - SIN ROOM_TYPES
   async getAvailableRooms(checkIn, checkOut, roomType = null) {
     try {
       let query = supabase
@@ -308,6 +266,146 @@ export const db = {
     } catch (error) {
       return { data: null, error }
     }
+  },
+
+  // Get room statistics - SIN ROOM_TYPES
+  async getRoomStats() {
+    try {
+      const { data: rooms, error } = await supabase
+        .from('rooms')
+        .select('status, cleaning_status, room_type, base_rate')
+
+      if (error) return { data: null, error }
+
+      const stats = {
+        total: rooms.length,
+        available: rooms.filter(r => r.status === 'available').length,
+        occupied: rooms.filter(r => r.status === 'occupied').length,
+        cleaning: rooms.filter(r => r.status === 'cleaning').length,
+        maintenance: rooms.filter(r => r.status === 'maintenance').length,
+        outOfOrder: rooms.filter(r => r.status === 'out_of_order').length,
+        needsCleaning: rooms.filter(r => r.cleaning_status === 'dirty').length,
+        occupancyRate: rooms.length > 0 ? 
+          Math.round((rooms.filter(r => r.status === 'occupied').length / rooms.length) * 100) : 0
+      }
+
+      // Estadísticas por tipo - SIN ROOM_TYPES
+      const roomsByType = {}
+      rooms.forEach(room => {
+        const typeName = room.room_type || 'Sin tipo'
+        if (!roomsByType[typeName]) {
+          roomsByType[typeName] = {
+            name: typeName,
+            total: 0,
+            available: 0,
+            occupied: 0,
+            baseRate: room.base_rate || 0
+          }
+        }
+        roomsByType[typeName].total++
+        if (room.status === 'available') roomsByType[typeName].available++
+        if (room.status === 'occupied') roomsByType[typeName].occupied++
+      })
+
+      return { 
+        data: {
+          ...stats,
+          roomsByType: Object.values(roomsByType)
+        }, 
+        error: null 
+      }
+    } catch (error) {
+      return { data: null, error }
+    }
+  },
+
+  // Get unique room types - SIN TABLA room_types
+  async getRoomTypes() {
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('room_type, base_rate')
+        .not('room_type', 'is', null)
+
+      if (error) return { data: null, error }
+
+      // Crear lista única de tipos
+      const uniqueTypes = {}
+      data.forEach((room, index) => {
+        if (!uniqueTypes[room.room_type]) {
+          uniqueTypes[room.room_type] = {
+            id: index + 1,
+            name: room.room_type,
+            base_rate: room.base_rate || 100,
+            active: true
+          }
+        }
+      })
+
+      // Si no hay tipos, crear uno por defecto
+      if (Object.keys(uniqueTypes).length === 0) {
+        uniqueTypes['Habitación Estándar'] = {
+          id: 1,
+          name: 'Habitación Estándar',
+          base_rate: 100,
+          active: true
+        }
+      }
+
+      return { data: Object.values(uniqueTypes), error: null }
+    } catch (error) {
+      return { data: null, error }
+    }
+  },
+
+  async getRoomsByFloor() {
+    const { data, error } = await supabase
+      .from('rooms')
+      .select('*')
+      .order('floor')
+      .order('number')
+    
+    if (error) return { data: null, error }
+    
+    // Group by floor
+    const roomsByFloor = data.reduce((acc, room) => {
+      if (!acc[room.floor]) acc[room.floor] = []
+      acc[room.floor].push(room)
+      return acc
+    }, {})
+    
+    return { data: roomsByFloor, error: null }
+  },
+
+  async updateRoomStatus(roomId, status, cleaningStatus = null) {
+    const updates = { status }
+    if (cleaningStatus) {
+      updates.cleaning_status = cleaningStatus
+      if (cleaningStatus === 'clean') {
+        updates.last_cleaned = new Date().toISOString()
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('rooms')
+      .update(updates)
+      .eq('id', roomId)
+      .select()
+      .single()
+
+    // Actualizar también room_availability
+    if (!error) {
+      await supabase
+        .from('room_availability')
+        .update({
+          status: status,
+          cleaning_status: cleaningStatus,
+          is_available: status === 'available'
+        })
+        .eq('room_id', roomId)
+    }
+
+    return { data, error }
   },
 
   // =============================================
@@ -774,20 +872,19 @@ export const db = {
     }
   },
 
-  // Search guests
-  async searchGuests(searchTerm, limit = 10) {
+  // Check room availability
+  async checkRoomAvailability(roomId, checkIn, checkOut) {
     try {
-      const { data, error } = await supabase
-        .from('guests')
-        .select('*')
-        .or(`full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,document_number.ilike.%${searchTerm}%`)
-        .limit(limit)
-        .order('full_name')
+      const { data, error } = await supabase.rpc('check_room_availability', {
+        p_room_id: roomId,
+        p_check_in: checkIn,
+        p_check_out: checkOut
+      })
 
       return { data, error }
     } catch (error) {
-      console.error('Error searching guests:', error)
-      return { data: null, error }
+      console.error('Error checking room availability:', error)
+      return { data: false, error }
     }
   },
 
@@ -805,74 +902,87 @@ export const db = {
     ]
   },
 
-  // Check room availability
-  async checkRoomAvailability(roomId, checkIn, checkOut) {
+  // =============================================
+  // GUEST MANAGEMENT FUNCTIONS
+  // =============================================
+
+  // Get guests
+  async getGuests(filters = {}) {
+    let query = supabase
+      .from('guests')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (filters.search) {
+      query = query.or(`full_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,document_number.ilike.%${filters.search}%`)
+    }
+    if (filters.status) {
+      query = query.eq('status', filters.status)
+    }
+    if (filters.vipLevel && filters.vipLevel !== 'all') {
+      query = query.eq('vip_level', filters.vipLevel)
+    }
+
+    const { data, error } = await query
+    return { data, error }
+  },
+
+  // Create guest
+  async createGuest(guestData) {
+    const { data, error } = await supabase
+      .from('guests')
+      .insert(guestData)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Update guest
+  async updateGuest(guestId, updates) {
+    const { data, error } = await supabase
+      .from('guests')
+      .update(updates)
+      .eq('id', guestId)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Search guests
+  async searchGuests(searchTerm, limit = 10) {
     try {
-      const { data, error } = await supabase.rpc('check_room_availability', {
-        p_room_id: roomId,
-        p_check_in: checkIn,
-        p_check_out: checkOut
-      })
+      const { data, error } = await supabase
+        .from('guests')
+        .select('*')
+        .or(`full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,document_number.ilike.%${searchTerm}%`)
+        .limit(limit)
+        .order('full_name')
 
       return { data, error }
     } catch (error) {
-      console.error('Error checking room availability:', error)
-      return { data: false, error }
+      console.error('Error searching guests:', error)
+      return { data: null, error }
     }
   },
 
-  // =============================================
-  // ROOM STATISTICS - SIMPLIFICADAS
-  // =============================================
+  // Get guest stats
+  async getGuestStats() {
+    const { data, error } = await supabase
+      .rpc('get_guest_stats')
+    return { data, error }
+  },
 
-  async getRoomStats() {
-    try {
-      const { data: rooms, error } = await supabase
-        .from('rooms')
-        .select('status, cleaning_status, room_type, base_rate')
-
-      if (error) return { data: null, error }
-
-      const stats = {
-        total: rooms.length,
-        available: rooms.filter(r => r.status === 'available').length,
-        occupied: rooms.filter(r => r.status === 'occupied').length,
-        cleaning: rooms.filter(r => r.status === 'cleaning').length,
-        maintenance: rooms.filter(r => r.status === 'maintenance').length,
-        outOfOrder: rooms.filter(r => r.status === 'out_of_order').length,
-        needsCleaning: rooms.filter(r => r.cleaning_status === 'dirty').length,
-        occupancyRate: rooms.length > 0 ? 
-          Math.round((rooms.filter(r => r.status === 'occupied').length / rooms.length) * 100) : 0
-      }
-
-      // Estadísticas por tipo - SIMPLIFICADAS
-      const roomsByType = {}
-      rooms.forEach(room => {
-        const typeName = room.room_type || 'Sin tipo'
-        if (!roomsByType[typeName]) {
-          roomsByType[typeName] = {
-            name: typeName,
-            total: 0,
-            available: 0,
-            occupied: 0,
-            baseRate: room.base_rate || 0
-          }
-        }
-        roomsByType[typeName].total++
-        if (room.status === 'available') roomsByType[typeName].available++
-        if (room.status === 'occupied') roomsByType[typeName].occupied++
-      })
-
-      return { 
-        data: {
-          ...stats,
-          roomsByType: Object.values(roomsByType)
-        }, 
-        error: null 
-      }
-    } catch (error) {
-      return { data: null, error }
-    }
+  // Get guest reservations
+  async getGuestReservations(guestId) {
+    const { data, error } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        room:rooms(number, room_type)
+      `)
+      .eq('guest_id', guestId)
+      .order('created_at', { ascending: false })
+    return { data, error }
   },
 
   // =============================================
@@ -923,146 +1033,9 @@ export const db = {
   },
 
   // =============================================
-  // RESTO DE FUNCIONES ORIGINALES (sin cambios)
+  // SUPPLIES MANAGEMENT FUNCTIONS
   // =============================================
 
-  // Profiles
-  async getProfile(userId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    return { data, error }
-  },
-
-  async updateProfile(userId, updates) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', userId)
-      .select()
-      .single()
-    return { data, error }
-  },
-
-  async updateRoomStatus(roomId, status, cleaningStatus = null) {
-    const updates = { status }
-    if (cleaningStatus) {
-      updates.cleaning_status = cleaningStatus
-      if (cleaningStatus === 'clean') {
-        updates.last_cleaned = new Date().toISOString()
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('rooms')
-      .update(updates)
-      .eq('id', roomId)
-      .select()
-      .single()
-
-    // Actualizar también room_availability
-    if (!error) {
-      await supabase
-        .from('room_availability')
-        .update({
-          status: status,
-          cleaning_status: cleaningStatus,
-          is_available: status === 'available'
-        })
-        .eq('room_id', roomId)
-    }
-
-    return { data, error }
-  },
-
-  async getRoomsByFloor() {
-    const { data, error } = await supabase
-      .from('rooms')
-      .select('*')
-      .order('floor')
-      .order('number')
-    
-    if (error) return { data: null, error }
-    
-    // Group by floor
-    const roomsByFloor = data.reduce((acc, room) => {
-      if (!acc[room.floor]) acc[room.floor] = []
-      acc[room.floor].push(room)
-      return acc
-    }, {})
-    
-    return { data: roomsByFloor, error: null }
-  },
-
-  // Guests
-  async getGuests(filters = {}) {
-    let query = supabase
-      .from('guests')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (filters.search) {
-      query = query.or(`full_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,document_number.ilike.%${filters.search}%`)
-    }
-    if (filters.status) {
-      query = query.eq('status', filters.status)
-    }
-    if (filters.vipLevel && filters.vipLevel !== 'all') {
-      query = query.eq('vip_level', filters.vipLevel)
-    }
-
-    const { data, error } = await query
-    return { data, error }
-  },
-
-  async createGuest(guestData) {
-    const { data, error } = await supabase
-      .from('guests')
-      .insert(guestData)
-      .select()
-      .single()
-    return { data, error }
-  },
-
-  async updateGuest(guestId, updates) {
-    const { data, error } = await supabase
-      .from('guests')
-      .update(updates)
-      .eq('id', guestId)
-      .select()
-      .single()
-    return { data, error }
-  },
-
-  async getGuestStats() {
-    const { data, error } = await supabase
-      .rpc('get_guest_stats')
-    return { data, error }
-  },
-
-  async getGuestReservations(guestId) {
-    const { data, error } = await supabase
-      .from('reservations')
-      .select(`
-        *,
-        room:rooms(number, room_type)
-      `)
-      .eq('guest_id', guestId)
-      .order('created_at', { ascending: false })
-    return { data, error }
-  },
-
-  async getTodaysReservations() {
-    const { data, error } = await supabase
-      .from('todays_reservations')
-      .select('*')
-      .order('check_in')
-    return { data, error }
-  },
-
-  // Supplies
   async getSupplies(filters = {}) {
     let query = supabase
       .from('supplies')
@@ -1137,6 +1110,28 @@ export const db = {
     return { data, error }
   },
 
+  // Helper functions
+  async getSupplyCategories() {
+    const { data, error } = await supabase
+      .from('supply_categories')
+      .select('*')
+      .order('name')
+    return { data, error }
+  },
+
+  async getSuppliers() {
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('*')
+      .eq('active', true)
+      .order('name')
+    return { data, error }
+  },
+
+  // =============================================
+  // DASHBOARD & REPORTING FUNCTIONS
+  // =============================================
+
   // Dashboard stats
   async getDashboardStats() {
     const { data, error } = await supabase
@@ -1164,22 +1159,24 @@ export const db = {
     return { data, error }
   },
 
-  // Helper functions
-  async getSupplyCategories() {
-    const { data, error } = await supabase
-      .from('supply_categories')
-      .select('*')
-      .order('name')
-    return { data, error }
-  },
+  // Reports and analytics
+  async getMonthlyStats() {
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-  async getSuppliers() {
-    const { data, error } = await supabase
-      .from('suppliers')
-      .select('*')
-      .eq('active', true)
-      .order('name')
-    return { data, error }
+    const [occupancyReport, revenueData, guestStats] = await Promise.all([
+      this.getOccupancyReport(startOfMonth.toISOString().split('T')[0], endOfMonth.toISOString().split('T')[0]),
+      this.getRevenueByCategory(startOfMonth.toISOString().split('T')[0], endOfMonth.toISOString().split('T')[0]),
+      this.getGuestStats()
+    ])
+
+    return {
+      occupancy: occupancyReport.data,
+      revenue: revenueData.data,
+      guests: guestStats.data,
+      error: occupancyReport.error || revenueData.error || guestStats.error
+    }
   },
 
   // Activity logs
@@ -1207,25 +1204,33 @@ export const db = {
     return { data, error }
   },
 
-  // Reports and analytics
-  async getMonthlyStats() {
-    const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  // =============================================
+  // PROFILE MANAGEMENT FUNCTIONS
+  // =============================================
 
-    const [occupancyReport, revenueData, guestStats] = await Promise.all([
-      this.getOccupancyReport(startOfMonth.toISOString().split('T')[0], endOfMonth.toISOString().split('T')[0]),
-      this.getRevenueByCategory(startOfMonth.toISOString().split('T')[0], endOfMonth.toISOString().split('T')[0]),
-      this.getGuestStats()
-    ])
-
-    return {
-      occupancy: occupancyReport.data,
-      revenue: revenueData.data,
-      guests: guestStats.data,
-      error: occupancyReport.error || revenueData.error || guestStats.error
-    }
+  // Profiles
+  async getProfile(userId) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+    return { data, error }
   },
+
+  async updateProfile(userId, updates) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // =============================================
+  // CHECK-IN/OUT MANAGEMENT FUNCTIONS
+  // =============================================
 
   // Snack selection (for check-in functionality)
   async getSnackItems() {
@@ -1286,10 +1291,6 @@ export const db = {
     return { data: groupedData, error: null }
   },
 
-  // =============================================
-  // CHECK-IN MANAGEMENT FUNCTIONS
-  // =============================================
-
   // Get active reservations (checked-in)
   async getActiveReservations() {
     const { data, error } = await supabase
@@ -1349,10 +1350,6 @@ export const db = {
     
     return { data, error }
   },
-
-  // =============================================
-  // CHECK-IN UTILITY FUNCTIONS
-  // =============================================
 
   // Get or create anonymous guest for quick check-ins
   async getOrCreateGuestForQuickCheckin(roomNumber) {
@@ -1544,6 +1541,15 @@ export const db = {
       },
       error: checkInsResult.error || checkOutsResult.error
     }
+  },
+
+  // Get today's reservations
+  async getTodaysReservations() {
+    const { data, error } = await supabase
+      .from('todays_reservations')
+      .select('*')
+      .order('check_in')
+    return { data, error }
   },
 
   // =============================================

@@ -434,6 +434,47 @@ export const useReservations = (initialFilters = {}) => {
     }
   }, [getReservationById, changeReservationStatus]);
 
+  // Obtener habitaciones disponibles para fechas específicas
+  const getAvailableRoomsForDates = useCallback(async (checkIn, checkOut) => {
+    try {
+      const { data, error } = await db.getAvailableRooms(checkIn, checkOut);
+      
+      if (error) {
+        console.error('Error getting available rooms:', error);
+        return [];
+      }
+
+      return data.map(room => ({
+        id: room.id,
+        number: room.number,
+        floor: room.floor,
+        type: room.room_type || 'Habitación Estándar',
+        capacity: room.capacity || 2,
+        rate: parseFloat(room.base_rate || 100)
+      }));
+    } catch (error) {
+      console.error('Error in getAvailableRoomsForDates:', error);
+      return [];
+    }
+  }, []);
+
+  // Buscar huéspedes
+  const searchGuests = useCallback(async (searchTerm) => {
+    try {
+      const { data, error } = await db.searchGuests(searchTerm);
+      
+      if (error) {
+        console.error('Error searching guests:', error);
+        return [];
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in searchGuests:', error);
+      return [];
+    }
+  }, []);
+
   return {
     reservations: getPaginatedReservations(),
     allReservations: filteredReservations,
@@ -451,6 +492,8 @@ export const useReservations = (initialFilters = {}) => {
     availableRooms,
     processCheckIn,
     processCheckOut,
+    getAvailableRoomsForDates,
+    searchGuests,
     // Función para recargar datos
     refresh: loadReservations
   };
