@@ -1,4 +1,4 @@
-// src/pages/CheckIn/CheckIn.jsx - SINTAXIS CORREGIDA
+// src/pages/CheckIn/CheckIn.jsx - CÓDIGO COMPLETO CORREGIDO
 import React, { useState, useEffect } from 'react'
 import { LogIn, LogOut, RefreshCw } from 'lucide-react'
 import Button from '../../components/common/Button'
@@ -30,7 +30,8 @@ const CheckIn = () => {
     processCheckIn,
     processCheckOut,
     refreshData,
-    debugData
+    debugData,
+    setSavedOrders
   } = useCheckInData()
 
   // Debug al cargar
@@ -74,6 +75,7 @@ const CheckIn = () => {
     setSelectedRoom(null)
   }
 
+  // FUNCIÓN HANDLEROOM CLICK CORREGIDA
   const handleRoomClick = (room) => {
     if (loading) {
       toast.info('Cargando datos, por favor espera...')
@@ -81,20 +83,114 @@ const CheckIn = () => {
     }
 
     console.log('🔘 Room clicked:', room)
+    console.log('🔍 Current savedOrders:', savedOrders)
+    console.log('🔍 Looking for order in room:', room.number)
 
     if (checkoutMode) {
       // Modo Check-out: solo habitaciones ocupadas
       if (room.status === 'occupied') {
         setSelectedRoom(room)
-        // Buscar orden guardada para esta habitación
+        
+        // BÚSQUEDA MEJORADA de orden guardada
+        let orderFound = null
+        
+        // 1. Buscar por número de habitación en savedOrders
         if (savedOrders && savedOrders[room.number]) {
-          setCurrentOrder(savedOrders[room.number])
-          setOrderStep(2)
+          orderFound = savedOrders[room.number]
+          console.log('✅ Order found by room number:', orderFound)
+        }
+        
+        // 2. Si no se encuentra, buscar por reservationId en la habitación
+        if (!orderFound && room.reservationId) {
+          // Buscar en savedOrders por reservationId
+          const orderByReservationId = Object.values(savedOrders || {}).find(
+            order => order.reservationId === room.reservationId
+          )
+          if (orderByReservationId) {
+            orderFound = orderByReservationId
+            console.log('✅ Order found by reservationId:', orderFound)
+          }
+        }
+        
+        // 3. Si no se encuentra, crear orden temporal desde datos de la habitación
+        if (!orderFound && (room.currentGuest || room.guestName || room.activeReservation)) {
+          console.log('⚠️ Creating temporary order from room data')
+          
+          const floor = Math.floor(parseInt(room.number) / 100)
+          const roomPrice = roomPrices && roomPrices[floor] ? roomPrices[floor] : 100
+          
+          // Crear orden temporal desde datos de habitación
+          orderFound = {
+            id: room.reservationId || `temp-${room.number}`,
+            room: {
+              id: room.id,
+              number: room.number,
+              status: room.status,
+              floor: room.floor || floor,
+              room_type: room.room_type || 'Habitación Estándar'
+            },
+            roomPrice: roomPrice,
+            snacks: [],
+            total: roomPrice,
+            checkInDate: room.checkInDate || room.activeReservation?.check_in || new Date().toISOString().split('T')[0],
+            checkOutDate: room.checkOutDate || room.activeReservation?.check_out || new Date().toISOString().split('T')[0],
+            guestName: room.guestName || room.currentGuest?.name || 'Huésped Temporal',
+            guestId: room.currentGuest?.id || null,
+            reservationId: room.reservationId || room.activeReservation?.id || null,
+            confirmationCode: room.confirmationCode || room.activeReservation?.confirmation_code || `TEMP-${room.number}`,
+            // Información adicional si está disponible
+            guestEmail: room.currentGuest?.email || '',
+            guestPhone: room.currentGuest?.phone || '',
+            specialRequests: room.activeReservation?.special_requests || '',
+            paymentStatus: room.activeReservation?.payment_status || 'pending',
+            checkedInAt: room.activeReservation?.checked_in_at || new Date().toISOString()
+          }
+          
+          console.log('📋 Temporary order created:', orderFound)
+          
+          // Actualizar savedOrders para que esté disponible en próximas consultas
+          setSavedOrders(prev => ({
+            ...prev,
+            [room.number]: orderFound
+          }))
+        }
+        
+        if (orderFound) {
+          setCurrentOrder(orderFound)
+          setOrderStep(2) // Ir directamente al resumen de pago
+          console.log('✅ Proceeding to checkout with order:', orderFound)
         } else {
-          toast.error('No se encontró información de reserva para esta habitación')
+          // Último recurso: mostrar error con información de debug
+          console.error('❌ No order information found for room:', room.number)
+          console.error('Available savedOrders keys:', Object.keys(savedOrders || {}))
+          console.error('Room data:', room)
+          
+          toast.error(
+            `No se encontró información de reserva para la habitación ${room.number}. ` +
+            `Posibles causas: La reserva no está en estado "checked_in" o hubo un error al cargar los datos.`,
+            { duration: 6000 }
+          )
+          
+          // Mostrar botón de debug en desarrollo
+          if (process.env.NODE_ENV === 'development') {
+            toast((t) => (
+              <div>
+                <p>Error en habitación {room.number}</p>
+                <button 
+                  onClick={() => {
+                    debugData()
+                    toast.dismiss(t.id)
+                  }}
+                  className="mt-2 px-3 py-1 bg-blue-500 text-white rounded text-sm"
+                >
+                  Ver Debug Info
+                </button>
+              </div>
+            ), { duration: 10000 })
+          }
         }
       } else {
-        toast.warning('Solo puedes hacer check-out de habitaciones ocupadas')
+        toast.warning('Solo puedes hacer check-out de habitaciones ocupadas (rojas)')
       }
     } else {
       // Modo Check-in: solo habitaciones disponibles
@@ -275,6 +371,152 @@ const CheckIn = () => {
     setCheckoutMode(false)
   }
 
+  // Panel de Debug para desarrollo
+  const DebugPanel = () => {
+    const [showDebug, setShowDebug] = useState(false)
+
+    if (process.env.NODE_ENV !== 'development') {
+      return null
+    }
+
+    const roomsData = getRoomsData()
+    const occupiedRooms = Object.values(roomsData || {})
+      .flat()
+      .filter(room => room.status === 'occupied')
+
+    const roomsWithOrders = Object.keys(savedOrders || {})
+
+    return (
+      <div className="fixed bottom-4 right-4 z-50">
+        <button
+          onClick={() => setShowDebug(!showDebug)}
+          className="bg-red-500 text-white px-3 py-2 rounded-lg shadow-lg hover:bg-red-600"
+        >
+          🐛 Debug
+        </button>
+        
+        {showDebug && (
+          <div className="absolute bottom-12 right-0 bg-white border border-gray-300 rounded-lg shadow-xl p-4 w-96 max-h-96 overflow-y-auto">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-sm">Debug Panel</h3>
+              <button
+                onClick={() => setShowDebug(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-3 text-xs">
+              {/* Estado general */}
+              <div className="border-b pb-2">
+                <strong>Estado General:</strong>
+                <div className="ml-2">
+                  <div>Modo: {checkoutMode ? 'Check-out' : 'Check-in'}</div>
+                  <div>Piso seleccionado: {selectedFloor}</div>
+                  <div>Total pisos: {Object.keys(roomsData || {}).length}</div>
+                  <div>Total órdenes: {Object.keys(savedOrders || {}).length}</div>
+                </div>
+              </div>
+
+              {/* Habitaciones ocupadas */}
+              <div className="border-b pb-2">
+                <strong>Habitaciones Ocupadas ({occupiedRooms.length}):</strong>
+                <div className="ml-2 max-h-20 overflow-y-auto">
+                  {occupiedRooms.map(room => (
+                    <div key={room.number} className="flex justify-between">
+                      <span>{room.number}</span>
+                      <span className={savedOrders[room.number] ? 'text-green-600' : 'text-red-600'}>
+                        {savedOrders[room.number] ? '✅' : '❌'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Órdenes guardadas */}
+              <div className="border-b pb-2">
+                <strong>Órdenes Guardadas ({roomsWithOrders.length}):</strong>
+                <div className="ml-2 max-h-20 overflow-y-auto">
+                  {roomsWithOrders.map(roomNum => (
+                    <div key={roomNum} className="text-xs">
+                      <div className="flex justify-between">
+                        <span>{roomNum}:</span>
+                        <span className="text-blue-600">{savedOrders[roomNum].guestName}</span>
+                      </div>
+                      <div className="text-gray-500 truncate">
+                        ID: {savedOrders[roomNum].reservationId || 'N/A'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Problemas detectados */}
+              <div className="border-b pb-2">
+                <strong>Problemas Detectados:</strong>
+                <div className="ml-2">
+                  {occupiedRooms.filter(room => !savedOrders[room.number]).map(room => (
+                    <div key={room.number} className="text-red-600 text-xs">
+                      Room {room.number}: Ocupada pero sin orden
+                      {room.guestName && <div className="ml-2">Huésped: {room.guestName}</div>}
+                      {room.reservationId && <div className="ml-2">Reserva: {room.reservationId}</div>}
+                    </div>
+                  ))}
+                  {roomsWithOrders.filter(roomNum => 
+                    !occupiedRooms.find(room => room.number === roomNum)
+                  ).map(roomNum => (
+                    <div key={roomNum} className="text-orange-600 text-xs">
+                      Room {roomNum}: Orden sin habitación ocupada
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Acciones de debug */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => {
+                    debugData()
+                    console.log('🔍 Full debug executed')
+                  }}
+                  className="w-full bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
+                >
+                  Log Complete Debug Info
+                </button>
+                
+                <button
+                  onClick={() => {
+                    console.log('🏠 RoomsByFloor:', roomsData)
+                    console.log('📋 SavedOrders:', savedOrders)
+                  }}
+                  className="w-full bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600"
+                >
+                  Log Raw Data
+                </button>
+                
+                <button
+                  onClick={() => {
+                    const missingOrders = occupiedRooms.filter(room => !savedOrders[room.number])
+                    console.log('❌ Occupied rooms without orders:', missingOrders)
+                    if (missingOrders.length > 0) {
+                      alert(`Habitaciones ocupadas sin orden: ${missingOrders.map(r => r.number).join(', ')}`)
+                    } else {
+                      alert('Todas las habitaciones ocupadas tienen órdenes ✅')
+                    }
+                  }}
+                  className="w-full bg-yellow-500 text-white px-2 py-1 rounded text-xs hover:bg-yellow-600"
+                >
+                  Check Missing Orders
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Manejar errores de carga
   if (error) {
     return (
@@ -451,8 +693,11 @@ const CheckIn = () => {
           </div>
         )}
       </div>
+
+      {/* Panel de Debug - Solo en desarrollo */}
+      <DebugPanel />
     </div>
   )
 }
 
-export default CheckIn;
+export default CheckIn

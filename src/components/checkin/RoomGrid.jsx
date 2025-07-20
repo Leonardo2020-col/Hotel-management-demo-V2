@@ -40,6 +40,8 @@ const RoomGrid = ({
   console.log('🔍 RoomGrid Debug:')
   console.log('floorRooms:', floorRooms)
   console.log('selectedFloor:', selectedFloor)
+  console.log('checkoutMode:', checkoutMode)
+  console.log('savedOrders:', savedOrders)
   console.log('typeof floorRooms:', typeof floorRooms)
 
   // Verificar si floorRooms existe y es válido
@@ -174,6 +176,8 @@ const RoomGrid = ({
           <p>Piso seleccionado: {selectedFloor}</p>
           <p>Habitaciones en este piso: {currentFloorRooms.length}</p>
           <p>Tipo de datos: {Array.isArray(currentFloorRooms) ? 'Array ✅' : 'No es array ❌'}</p>
+          <p>Órdenes guardadas: {Object.keys(savedOrders || {}).length}</p>
+          <p>Habitaciones con órdenes: {Object.keys(savedOrders || {}).join(', ')}</p>
         </div>
       )}
 
@@ -191,11 +195,27 @@ const RoomGrid = ({
           const roomStatus = room.status || 'available'
           const roomCapacity = room.capacity || 2
           const roomRate = room.rate || room.base_rate || 100
-          // CORREGIDO: Usar room_type en lugar de type
           const roomType = room.room_type || 'Habitación Estándar'
 
+          // VERIFICACIÓN MEJORADA de disponibilidad para click
           const isClickable = checkoutMode ? roomStatus === 'occupied' : roomStatus === 'available'
+          
+          // VERIFICACIÓN MEJORADA de orden guardada
           const hasOrder = savedOrders && savedOrders[roomNumber]
+          
+          // Información del huésped para habitaciones ocupadas
+          const guestInfo = room.currentGuest || room.guestName || hasOrder?.guestName
+          
+          // Debug por habitación
+          if (checkoutMode && roomStatus === 'occupied') {
+            console.log(`🔍 Room ${roomNumber} debug:`, {
+              roomStatus,
+              hasOrder: !!hasOrder,
+              guestInfo,
+              savedOrderKeys: Object.keys(savedOrders || {}),
+              roomData: room
+            })
+          }
           
           return (
             <button
@@ -229,10 +249,33 @@ const RoomGrid = ({
                 )}
               </div>
               
+              {/* INFORMACIÓN DEL HUÉSPED para habitaciones ocupadas */}
+              {roomStatus === 'occupied' && guestInfo && (
+                <div className="absolute top-1 left-1 bg-white bg-opacity-90 rounded px-1 py-0.5 text-xs text-gray-800 max-w-[80%] truncate">
+                  {typeof guestInfo === 'string' ? guestInfo : guestInfo.name || 'Huésped'}
+                </div>
+              )}
+              
               {/* Indicador de orden guardada */}
               {hasOrder && (
                 <div className="absolute -top-2 -right-2 bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
                   <ShoppingCart size={12} />
+                </div>
+              )}
+
+              {/* Indicador especial para check-out */}
+              {checkoutMode && roomStatus === 'occupied' && !hasOrder && (
+                <div className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
+                  ⚠️
+                </div>
+              )}
+
+              {/* Estado de limpieza si es relevante */}
+              {room.cleaning_status && room.cleaning_status !== 'clean' && (
+                <div className="absolute bottom-1 left-1 bg-yellow-500 text-white rounded px-1 py-0.5 text-xs">
+                  {room.cleaning_status === 'dirty' ? 'Sucia' : 
+                   room.cleaning_status === 'in_progress' ? 'Limpiando' : 
+                   room.cleaning_status}
                 </div>
               )}
             </button>
@@ -259,6 +302,12 @@ const RoomGrid = ({
             <ShoppingCart className="w-4 h-4 mr-2 text-blue-600" />
             <span>Con orden</span>
           </div>
+          {checkoutMode && (
+            <div className="flex items-center">
+              <span className="w-4 h-4 mr-2 text-red-600">⚠️</span>
+              <span>Sin info de reserva</span>
+            </div>
+          )}
         </div>
 
         {/* Botón Siguiente */}
@@ -279,7 +328,39 @@ const RoomGrid = ({
         Habitaciones en piso {selectedFloor}: {currentFloorRooms.length} | 
         Disponibles: {currentFloorRooms.filter(r => r.status === 'available').length} | 
         Ocupadas: {currentFloorRooms.filter(r => r.status === 'occupied').length}
+        {checkoutMode && (
+          <span> | Con orden guardada: {currentFloorRooms.filter(r => savedOrders && savedOrders[r.number]).length}</span>
+        )}
       </div>
+
+      {/* Debug específico para checkout */}
+      {checkoutMode && process.env.NODE_ENV === 'development' && (
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-xs">
+          <strong>Debug Check-out:</strong>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div>
+              <strong>Habitaciones ocupadas:</strong>
+              {currentFloorRooms
+                .filter(r => r.status === 'occupied')
+                .map(r => (
+                  <div key={r.number} className="ml-2">
+                    {r.number}: {savedOrders && savedOrders[r.number] ? '✅ Con orden' : '❌ Sin orden'}
+                    {r.guestName && <span className="text-green-600"> - {r.guestName}</span>}
+                  </div>
+                ))
+              }
+            </div>
+            <div>
+              <strong>Órdenes guardadas:</strong>
+              {Object.keys(savedOrders || {}).map(roomNum => (
+                <div key={roomNum} className="ml-2">
+                  {roomNum}: {savedOrders[roomNum].guestName}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

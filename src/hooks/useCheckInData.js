@@ -1,4 +1,4 @@
-// src/hooks/useCheckInData.js - FORMATO DE DATOS CORREGIDO
+// src/hooks/useCheckInData.js - CÓDIGO COMPLETO CORREGIDO
 import { useState, useEffect } from 'react'
 import { db } from '../lib/supabase'
 import toast from 'react-hot-toast'
@@ -38,9 +38,9 @@ export const useCheckInData = () => {
       
       console.log('🔄 Loading initial data...')
       
-      // 1. Cargar habitaciones agrupadas por piso
-      console.log('📍 Loading rooms by floor...')
-      const roomsData = await loadRoomsByFloor()
+      // 1. Cargar habitaciones agrupadas por piso CON RESERVAS
+      console.log('📍 Loading rooms by floor with reservations...')
+      const roomsData = await loadRoomsByFloorWithReservations()
       console.log('✅ Rooms loaded:', roomsData)
       
       // 2. Cargar snacks
@@ -51,12 +51,9 @@ export const useCheckInData = () => {
       }
       console.log('✅ Snacks loaded:', snacksData)
       
-      // 3. Cargar órdenes guardadas (reservas activas)
-      console.log('📋 Loading saved orders...')
-      const { data: ordersData, error: ordersError } = await loadSavedOrders()
-      if (ordersError) {
-        console.warn('⚠️ Orders error:', ordersError)
-      }
+      // 3. Cargar órdenes guardadas (reservas activas) - CORREGIDO
+      console.log('📋 Loading saved orders from reservations...')
+      const ordersData = await loadSavedOrdersFromReservations()
       console.log('✅ Orders loaded:', ordersData)
       
       // Actualizar estado
@@ -75,10 +72,10 @@ export const useCheckInData = () => {
     }
   }
 
-  // FUNCIÓN CORREGIDA: Cargar habitaciones por piso con formato correcto
-  const loadRoomsByFloor = async () => {
+  // FUNCIÓN CORREGIDA: Cargar habitaciones por piso CON información de reservas
+  const loadRoomsByFloorWithReservations = async () => {
     try {
-      // Intentar obtener habitaciones directamente
+      // Obtener habitaciones con información de reservas
       const { data: rooms, error } = await db.getRooms()
       
       if (error) {
@@ -91,7 +88,7 @@ export const useCheckInData = () => {
         return generateMockRooms()
       }
       
-      console.log('📊 Raw rooms data:', rooms)
+      console.log('📊 Raw rooms data with reservations:', rooms)
       
       // Agrupar habitaciones por piso correctamente
       const roomsByFloor = {}
@@ -103,13 +100,12 @@ export const useCheckInData = () => {
           roomsByFloor[floor] = []
         }
         
-        // Formatear habitación correctamente
+        // Formatear habitación correctamente CON información de reservas
         const formattedRoom = {
           id: room.id,
           number: room.number,
           status: room.status || 'available',
           cleaning_status: room.cleaning_status || 'clean',
-          // CORREGIDO: Usar room_type en lugar de type
           room_type: room.room_type || 'Habitación Estándar',
           capacity: room.capacity || 2,
           rate: room.base_rate || roomPrices[floor] || 100,
@@ -117,10 +113,16 @@ export const useCheckInData = () => {
           features: room.features || ['WiFi Gratis'],
           room_id: room.id,
           floor: floor,
-          // Información de reservas si existe
+          // INFORMACIÓN DE RESERVAS - MEJORADA
           currentGuest: room.currentGuest || null,
           nextReservation: room.nextReservation || null,
-          activeReservation: room.activeReservation || null
+          activeReservation: room.activeReservation || null,
+          // Información adicional si existe
+          guestName: room.currentGuest?.name || null,
+          checkInDate: room.activeReservation?.check_in || null,
+          checkOutDate: room.activeReservation?.check_out || null,
+          reservationId: room.activeReservation?.id || null,
+          confirmationCode: room.activeReservation?.confirmation_code || null
         }
         
         roomsByFloor[floor].push(formattedRoom)
@@ -135,21 +137,80 @@ export const useCheckInData = () => {
         })
       })
       
-      console.log('📋 Formatted rooms by floor:', roomsByFloor)
-      
-      // Verificar que cada piso tiene un array
-      Object.keys(roomsByFloor).forEach(floor => {
-        if (!Array.isArray(roomsByFloor[floor])) {
-          console.error(`❌ Floor ${floor} is not an array:`, roomsByFloor[floor])
-          roomsByFloor[floor] = []
-        }
-      })
+      console.log('📋 Formatted rooms by floor with reservations:', roomsByFloor)
       
       return roomsByFloor
       
     } catch (error) {
-      console.error('❌ Error in loadRoomsByFloor:', error)
+      console.error('❌ Error in loadRoomsByFloorWithReservations:', error)
       return generateMockRooms()
+    }
+  }
+
+  // FUNCIÓN CORREGIDA: Cargar órdenes guardadas desde reservas ACTIVAS (checked_in)
+  const loadSavedOrdersFromReservations = async () => {
+    try {
+      // Obtener reservas actualmente en checked_in (huéspedes que están en el hotel)
+      const { data: reservations, error } = await db.getReservations({
+        status: 'checked_in'
+      })
+      
+      if (error) {
+        console.warn('Error loading checked-in reservations:', error)
+        return {}
+      }
+      
+      // Convertir reservas a formato de órdenes guardadas para check-out
+      const orders = {}
+      
+      if (reservations && Array.isArray(reservations)) {
+        reservations.forEach(reservation => {
+          if (reservation.room && reservation.guest) {
+            // Calcular precio por piso si no está disponible
+            const floor = Math.floor(parseInt(reservation.room.number) / 100)
+            const roomPrice = parseFloat(reservation.rate) || roomPrices[floor] || 100
+            
+            // FORMATO CORRECTO para savedOrders
+            orders[reservation.room.number] = {
+              id: reservation.id,
+              room: {
+                id: reservation.room.id,
+                number: reservation.room.number,
+                status: 'occupied',
+                floor: reservation.room.floor,
+                room_type: reservation.room.room_type || 'Habitación Estándar'
+              },
+              roomPrice: roomPrice,
+              snacks: [], // Los snacks se pueden obtener de special_requests si es necesario
+              total: parseFloat(reservation.total_amount) || roomPrice,
+              checkInDate: reservation.check_in,
+              checkOutDate: reservation.check_out,
+              guestName: reservation.guest.full_name || 
+                        `${reservation.guest.first_name || ''} ${reservation.guest.last_name || ''}`.trim(),
+              guestId: reservation.guest_id,
+              reservationId: reservation.id,
+              confirmationCode: reservation.confirmation_code,
+              // Información adicional para el check-out
+              guestEmail: reservation.guest.email,
+              guestPhone: reservation.guest.phone,
+              guestDocument: reservation.guest.document_number,
+              specialRequests: reservation.special_requests,
+              paymentStatus: reservation.payment_status,
+              checkedInAt: reservation.checked_in_at,
+              nights: reservation.nights || Math.ceil(
+                (new Date(reservation.check_out) - new Date(reservation.check_in)) / (1000 * 60 * 60 * 24)
+              )
+            }
+          }
+        })
+      }
+      
+      console.log('📋 Saved orders from reservations:', orders)
+      return orders
+      
+    } catch (error) {
+      console.error('Error in loadSavedOrdersFromReservations:', error)
+      return {}
     }
   }
 
@@ -164,52 +225,75 @@ export const useCheckInData = () => {
           number: '101',
           status: 'available',
           cleaning_status: 'clean',
-          room_type: 'Habitación Estándar', // CORREGIDO: room_type en lugar de type
+          room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
           features: ['WiFi Gratis', 'TV Smart'],
           room_id: 1,
-          floor: 1
+          floor: 1,
+          currentGuest: null,
+          activeReservation: null
         },
         {
           id: 2,
           number: '102',
           status: 'occupied',
           cleaning_status: 'dirty',
-          room_type: 'Habitación Estándar', // CORREGIDO: room_type en lugar de type
+          room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Individual', count: 2 }],
           features: ['WiFi Gratis', 'TV Smart'],
           room_id: 2,
-          floor: 1
+          floor: 1,
+          // Mock guest data para testing
+          currentGuest: {
+            id: 1,
+            name: 'Juan Pérez',
+            email: 'juan@example.com',
+            phone: '+51987654321',
+            checkIn: '2025-07-19',
+            checkOut: '2025-07-21'
+          },
+          activeReservation: {
+            id: 1,
+            check_in: '2025-07-19',
+            check_out: '2025-07-21',
+            confirmation_code: 'HTP-2025-001'
+          },
+          guestName: 'Juan Pérez',
+          reservationId: 1
         },
         {
           id: 3,
           number: '103',
           status: 'cleaning',
           cleaning_status: 'in_progress',
-          room_type: 'Habitación Estándar', // CORREGIDO: room_type en lugar de type
+          room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
           features: ['WiFi Gratis', 'TV Smart'],
           room_id: 3,
-          floor: 1
+          floor: 1,
+          currentGuest: null,
+          activeReservation: null
         },
         {
           id: 4,
           number: '104',
           status: 'available',
           cleaning_status: 'clean',
-          room_type: 'Habitación Estándar', // CORREGIDO: room_type en lugar de type
+          room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
           features: ['WiFi Gratis', 'TV Smart'],
           room_id: 4,
-          floor: 1
+          floor: 1,
+          currentGuest: null,
+          activeReservation: null
         }
       ],
       2: [
@@ -218,96 +302,51 @@ export const useCheckInData = () => {
           number: '201',
           status: 'available',
           cleaning_status: 'clean',
-          room_type: 'Habitación Deluxe', // CORREGIDO: room_type en lugar de type
+          room_type: 'Habitación Deluxe',
           capacity: 3,
           rate: 95.00,
           beds: [{ type: 'Queen', count: 1 }],
           features: ['WiFi Gratis', 'TV Smart', 'Balcón'],
           room_id: 5,
-          floor: 2
+          floor: 2,
+          currentGuest: null,
+          activeReservation: null
         },
         {
           id: 6,
           number: '202',
           status: 'occupied',
           cleaning_status: 'dirty',
-          room_type: 'Habitación Deluxe', // CORREGIDO: room_type en lugar de type
+          room_type: 'Habitación Deluxe',
           capacity: 3,
           rate: 95.00,
           beds: [{ type: 'King', count: 1 }],
           features: ['WiFi Gratis', 'TV Smart', 'Balcón'],
           room_id: 6,
-          floor: 2
-        }
-      ],
-      3: [
-        {
-          id: 7,
-          number: '301',
-          status: 'available',
-          cleaning_status: 'clean',
-          room_type: 'Suite Ejecutiva', // CORREGIDO: room_type en lugar de type
-          capacity: 4,
-          rate: 110.00,
-          beds: [{ type: 'King', count: 1 }, { type: 'Sofá Cama', count: 1 }],
-          features: ['WiFi Gratis', 'TV Smart', 'Jacuzzi', 'Vista al Mar'],
-          room_id: 7,
-          floor: 3
+          floor: 2,
+          // Mock guest data para testing
+          currentGuest: {
+            id: 2,
+            name: 'María García',
+            email: 'maria@example.com',
+            phone: '+51987654322',
+            checkIn: '2025-07-18',
+            checkOut: '2025-07-20'
+          },
+          activeReservation: {
+            id: 2,
+            check_in: '2025-07-18',
+            check_out: '2025-07-20',
+            confirmation_code: 'HTP-2025-002'
+          },
+          guestName: 'María García',
+          reservationId: 2
         }
       ]
     }
     
     console.log('✅ Mock rooms generated:', mockRooms)
     return mockRooms
-  }
-
-  // Cargar órdenes guardadas desde reservas activas
-  const loadSavedOrders = async () => {
-    try {
-      const { data: reservations, error } = await db.getReservations({
-        status: 'checked_in'
-      })
-      
-      if (error) {
-        console.warn('Error loading reservations:', error)
-        return { data: {}, error: null }
-      }
-      
-      // Convertir reservas a formato de órdenes guardadas
-      const orders = {}
-      
-      if (reservations && Array.isArray(reservations)) {
-        reservations.forEach(reservation => {
-          if (reservation.room && reservation.guest) {
-            // Calcular precio por piso si no está disponible
-            const floor = Math.floor(parseInt(reservation.room.number) / 100)
-            const roomPrice = reservation.rate || roomPrices[floor] || 100
-            
-            orders[reservation.room.number] = {
-              id: reservation.id,
-              room: {
-                id: reservation.room.id,
-                number: reservation.room.number,
-                status: 'occupied'
-              },
-              roomPrice: roomPrice,
-              snacks: [],
-              total: reservation.total_amount || roomPrice,
-              checkInDate: reservation.check_in,
-              guestName: reservation.guest.full_name || 
-                        `${reservation.guest.first_name || ''} ${reservation.guest.last_name || ''}`.trim(),
-              guestId: reservation.guest_id,
-              reservationId: reservation.id
-            }
-          }
-        })
-      }
-      
-      return { data: orders, error: null }
-    } catch (error) {
-      console.error('Error in loadSavedOrders:', error)
-      return { data: {}, error: null }
-    }
   }
 
   // Procesar check-in de habitación
@@ -399,7 +438,7 @@ export const useCheckInData = () => {
         [room.number]: newOrder
       }))
 
-      // 5. Actualizar roomsByFloor localmente - FORMATO CORRECTO
+      // 5. Actualizar roomsByFloor localmente
       setRoomsByFloor(prev => {
         const updated = { ...prev }
         Object.keys(updated).forEach(floor => {
@@ -424,24 +463,37 @@ export const useCheckInData = () => {
     }
   }
 
-  // Procesar check-out
+  // Procesar check-out - MEJORADO con validaciones
   const processCheckOut = async (roomNumber, paymentMethod) => {
     try {
+      console.log('🚪 Processing check-out for room:', roomNumber)
+      
+      // Verificar que existe la orden
       const order = savedOrders[roomNumber]
       if (!order) {
-        throw new Error('Orden no encontrada para la habitación ' + roomNumber)
+        const errorMsg = `No se encontró información de reserva para la habitación ${roomNumber}`
+        console.error('❌', errorMsg)
+        throw new Error(errorMsg)
       }
 
-      console.log('🚪 Processing check-out for room:', roomNumber)
+      console.log('📋 Order found for checkout:', order)
+
+      if (!order.reservationId) {
+        const errorMsg = `ID de reserva no encontrado para la habitación ${roomNumber}`
+        console.error('❌', errorMsg)
+        throw new Error(errorMsg)
+      }
 
       // 1. Actualizar reserva a checked_out
       const { error: reservationError } = await db.updateReservation(order.reservationId, {
         status: 'checked_out',
         checked_out_at: new Date().toISOString(),
-        payment_status: 'paid'
+        payment_status: 'paid',
+        payment_method: paymentMethod
       })
 
       if (reservationError) {
+        console.error('❌ Error updating reservation:', reservationError)
         throw new Error(`Error updating reservation: ${reservationError.message}`)
       }
 
@@ -454,6 +506,7 @@ export const useCheckInData = () => {
 
       if (roomError) {
         console.warn('⚠️ Warning updating room status:', roomError)
+        // No fallar por este error, es menos crítico
       }
 
       // 3. Remover de órdenes guardadas
@@ -470,7 +523,17 @@ export const useCheckInData = () => {
           if (Array.isArray(updated[floor])) {
             updated[floor] = updated[floor].map(r => 
               r.number === roomNumber 
-                ? { ...r, status: 'cleaning', cleaning_status: 'dirty' }
+                ? { 
+                    ...r, 
+                    status: 'cleaning', 
+                    cleaning_status: 'dirty',
+                    currentGuest: null,
+                    activeReservation: null,
+                    guestName: null,
+                    checkInDate: null,
+                    checkOutDate: null,
+                    reservationId: null
+                  }
                 : r
             )
           }
@@ -478,6 +541,7 @@ export const useCheckInData = () => {
         return updated
       })
 
+      console.log('✅ Check-out completed successfully')
       toast.success(`Check-out completado para habitación ${roomNumber}`)
       return { data: true, error: null }
 
@@ -524,11 +588,12 @@ export const useCheckInData = () => {
     loadInitialData()
   }
 
-  // Función de debug
+  // Función de debug MEJORADA
   const debugData = () => {
     console.log('🐛 Debug - Current state:')
     console.log('roomsByFloor:', roomsByFloor)
     console.log('savedOrders:', savedOrders)
+    console.log('savedOrders keys:', Object.keys(savedOrders))
     console.log('snackItems:', snackItems)
     console.log('loading:', loading)
     console.log('error:', error)
@@ -539,8 +604,31 @@ export const useCheckInData = () => {
         type: typeof roomsByFloor[floor],
         isArray: Array.isArray(roomsByFloor[floor]),
         length: Array.isArray(roomsByFloor[floor]) ? roomsByFloor[floor].length : 'N/A',
-        data: roomsByFloor[floor]
+        rooms: roomsByFloor[floor]?.map(r => ({
+          number: r.number,
+          status: r.status,
+          hasCurrentGuest: !!r.currentGuest,
+          hasActiveReservation: !!r.activeReservation,
+          guestName: r.guestName,
+          reservationId: r.reservationId
+        }))
       })
+    })
+
+    // Verificar correspondencia entre habitaciones ocupadas y savedOrders
+    console.log('🔗 Checking room-order correspondence:')
+    Object.keys(roomsByFloor).forEach(floor => {
+      if (Array.isArray(roomsByFloor[floor])) {
+        roomsByFloor[floor].forEach(room => {
+          if (room.status === 'occupied') {
+            const hasOrder = savedOrders[room.number]
+            console.log(`Room ${room.number}: status=${room.status}, hasOrder=${!!hasOrder}, guestName=${room.guestName}`)
+            if (!hasOrder) {
+              console.warn(`⚠️ Room ${room.number} is occupied but has no saved order!`)
+            }
+          }
+        })
+      }
     })
   }
 
