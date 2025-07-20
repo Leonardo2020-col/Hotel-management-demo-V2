@@ -1,4 +1,4 @@
-// src/pages/CheckIn/CheckIn.jsx - CÓDIGO COMPLETO CORREGIDO
+// src/pages/CheckIn/CheckIn.jsx - CÓDIGO COMPLETO CORREGIDO FINAL
 import React, { useState, useEffect } from 'react'
 import { LogIn, LogOut, RefreshCw } from 'lucide-react'
 import Button from '../../components/common/Button'
@@ -6,6 +6,7 @@ import RoomGrid from '../../components/checkin/RoomGrid'
 import SnackSelection from '../../components/checkin/SnackSelection'
 import CheckoutSummary from '../../components/checkin/CheckoutSummary'
 import { useCheckInData } from '../../hooks/useCheckInData'
+import { db } from '../../lib/supabase'
 import toast from 'react-hot-toast'
 
 const CheckIn = () => {
@@ -75,7 +76,297 @@ const CheckIn = () => {
     setSelectedRoom(null)
   }
 
-  // FUNCIÓN HANDLEROOM CLICK CORREGIDA
+  // NUEVAS FUNCIONES DE APOYO
+  const searchReservationForRoom = async (room) => {
+    try {
+      // Buscar reservas para esta habitación específica
+      const { data: reservations, error } = await db.getReservations({
+        roomId: room.id
+      })
+      
+      if (error) {
+        console.error('Error searching reservations:', error)
+        return null
+      }
+      
+      // Buscar la reserva más relevante (checked_in primero, luego confirmed para hoy)
+      const today = new Date().toISOString().split('T')[0]
+      
+      const relevantReservation = reservations?.find(r => r.status === 'checked_in') ||
+                                reservations?.find(r => 
+                                  r.status === 'confirmed' && 
+                                  new Date(r.check_in).toISOString().split('T')[0] <= today
+                                )
+      
+      return relevantReservation || null
+    } catch (error) {
+      console.error('Error in searchReservationForRoom:', error)
+      return null
+    }
+  }
+
+  const createTemporaryOrderFromReservation = (room, reservation) => {
+    console.log('📋 Creating order from database reservation:', reservation)
+    
+    const floor = Math.floor(parseInt(room.number) / 100)
+    const roomPrice = parseFloat(reservation.rate) || roomPrices[floor] || 100
+    
+    const orderFound = {
+      id: reservation.id,
+      room: {
+        id: room.id,
+        number: room.number,
+        status: room.status,
+        floor: room.floor || floor,
+        room_type: room.room_type || 'Habitación Estándar'
+      },
+      roomPrice: roomPrice,
+      snacks: [],
+      total: parseFloat(reservation.total_amount) || roomPrice,
+      checkInDate: reservation.check_in,
+      checkOutDate: reservation.check_out,
+      guestName: reservation.guest?.full_name || 
+                `${reservation.guest?.first_name || ''} ${reservation.guest?.last_name || ''}`.trim(),
+      guestId: reservation.guest_id,
+      reservationId: reservation.id,
+      confirmationCode: reservation.confirmation_code,
+      reservationStatus: reservation.status,
+      guestEmail: reservation.guest?.email || '',
+      guestPhone: reservation.guest?.phone || '',
+      specialRequests: reservation.special_requests || '',
+      paymentStatus: reservation.payment_status || 'pending',
+      checkedInAt: reservation.checked_in_at,
+      needsAutoCheckIn: reservation.status === 'confirmed'
+    }
+    
+    // Actualizar savedOrders
+    setSavedOrders(prev => ({
+      ...prev,
+      [room.number]: orderFound
+    }))
+    
+    // Si necesita check-in automático, hacerlo
+    if (orderFound.needsAutoCheckIn) {
+      handleAutoCheckIn(orderFound)
+    }
+    
+    setCurrentOrder(orderFound)
+    setOrderStep(2)
+    
+    toast.success(`Información de reserva encontrada para habitación ${room.number}`)
+  }
+
+  const createTemporaryOrderFromRoomData = (room) => {
+    const floor = Math.floor(parseInt(room.number) / 100)
+    const roomPrice = roomPrices && roomPrices[floor] ? roomPrices[floor] : 100
+    
+    const orderFound = {
+      id: room.reservationId || `temp-${room.number}`,
+      room: {
+        id: room.id,
+        number: room.number,
+        status: room.status,
+        floor: room.floor || floor,
+        room_type: room.room_type || 'Habitación Estándar'
+      },
+      roomPrice: roomPrice,
+      snacks: [],
+      total: roomPrice,
+      checkInDate: room.checkInDate || room.activeReservation?.check_in || new Date().toISOString().split('T')[0],
+      checkOutDate: room.checkOutDate || room.activeReservation?.check_out || new Date().toISOString().split('T')[0],
+      guestName: room.guestName || room.currentGuest?.name || 'Huésped Temporal',
+      guestId: room.currentGuest?.id || null,
+      reservationId: room.reservationId || room.activeReservation?.id || null,
+      confirmationCode: room.confirmationCode || room.activeReservation?.confirmation_code || `TEMP-${room.number}`,
+      guestEmail: room.currentGuest?.email || '',
+      guestPhone: room.currentGuest?.phone || '',
+      specialRequests: room.activeReservation?.special_requests || '',
+      paymentStatus: room.activeReservation?.payment_status || 'pending',
+      checkedInAt: room.activeReservation?.checked_in_at || new Date().toISOString(),
+      isTemporary: true
+    }
+    
+    console.log('📋 Temporary order created from room data:', orderFound)
+    
+    // Actualizar savedOrders
+    setSavedOrders(prev => ({
+      ...prev,
+      [room.number]: orderFound
+    }))
+    
+    return orderFound
+  }
+
+  const handleAutoCheckIn = async (order) => {
+    try {
+      console.log('🔄 Performing automatic check-in for reservation:', order.reservationId)
+      
+      // Actualizar reserva a checked_in
+      const { error } = await db.updateReservation(order.reservationId, {
+        status: 'checked_in',
+        checked_in_at: new Date().toISOString()
+      })
+      
+      if (error) {
+        console.error('Error in auto check-in:', error)
+        toast.warning('Error al actualizar estado de reserva automáticamente')
+        return
+      }
+      
+      // Actualizar orden local
+      setSavedOrders(prev => ({
+        ...prev,
+        [order.room.number]: {
+          ...order,
+          reservationStatus: 'checked_in',
+          checkedInAt: new Date().toISOString(),
+          needsAutoCheckIn: false
+        }
+      }))
+      
+      toast.success(`Check-in automático realizado para habitación ${order.room.number}`)
+      
+    } catch (error) {
+      console.error('Error in handleAutoCheckIn:', error)
+      toast.error('Error al realizar check-in automático')
+    }
+  }
+
+  const handleNoOrderFound = (room) => {
+    console.error('❌ No order information found for room:', room.number)
+    console.error('Available savedOrders keys:', Object.keys(savedOrders || {}))
+    console.error('Room data:', room)
+    
+    // Mostrar toast con opciones
+    toast((t) => (
+      <div className="max-w-md">
+        <p className="font-semibold mb-2">No se encontró información de reserva</p>
+        <p className="text-sm text-gray-600 mb-3">
+          Habitación {room.number} está ocupada pero no tiene reserva activa.
+        </p>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => {
+              // Forzar recarga de datos
+              refreshData()
+              toast.dismiss(t.id)
+            }}
+            className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+          >
+            Recargar Datos
+          </button>
+          <button
+            onClick={() => {
+              // Crear check-in manual
+              createManualCheckIn(room)
+              toast.dismiss(t.id)
+            }}
+            className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+          >
+            Check-in Manual
+          </button>
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              onClick={() => {
+                debugData()
+                toast.dismiss(t.id)
+              }}
+              className="px-3 py-1 bg-yellow-500 text-white rounded text-sm hover:bg-yellow-600"
+            >
+              Debug
+            </button>
+          )}
+        </div>
+      </div>
+    ), { 
+      duration: 10000,
+      position: 'top-center'
+    })
+  }
+
+  const createManualCheckIn = async (room) => {
+    try {
+      // Crear una reserva temporal para esta habitación
+      const floor = Math.floor(parseInt(room.number) / 100)
+      const roomPrice = roomPrices[floor] || 100
+      
+      // Crear huésped temporal
+      const { data: guest, error: guestError } = await db.createGuest({
+        first_name: 'Huésped',
+        last_name: 'Manual',
+        email: `manual-${room.number}@hotel.com`,
+        phone: '+51999999999',
+        document_type: 'DNI',
+        document_number: `MANUAL-${room.number}`
+      })
+      
+      if (guestError) {
+        throw new Error('Error creando huésped temporal: ' + guestError.message)
+      }
+      
+      // Crear reserva manual
+      const reservationData = {
+        guest_id: guest.id,
+        room_id: room.id,
+        branch_id: 1,
+        check_in: new Date().toISOString().split('T')[0],
+        check_out: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        adults: 1,
+        children: 0,
+        status: 'checked_in',
+        total_amount: roomPrice,
+        rate: roomPrice,
+        source: 'manual',
+        special_requests: 'Check-in manual desde interfaz',
+        payment_status: 'pending'
+      }
+      
+      const { data: reservation, error: reservationError } = await db.createReservation(reservationData)
+      
+      if (reservationError) {
+        throw new Error('Error creando reserva: ' + reservationError.message)
+      }
+      
+      // Crear orden y proceder
+      const newOrder = {
+        id: reservation.id,
+        room: {
+          id: room.id,
+          number: room.number,
+          status: 'occupied',
+          floor: room.floor || floor,
+          room_type: room.room_type || 'Habitación Estándar'
+        },
+        roomPrice: roomPrice,
+        snacks: [],
+        total: roomPrice,
+        checkInDate: reservationData.check_in,
+        checkOutDate: reservationData.check_out,
+        guestName: `${guest.first_name} ${guest.last_name}`,
+        guestId: guest.id,
+        reservationId: reservation.id,
+        confirmationCode: reservation.confirmation_code,
+        reservationStatus: 'checked_in',
+        isManual: true
+      }
+      
+      setSavedOrders(prev => ({
+        ...prev,
+        [room.number]: newOrder
+      }))
+      
+      setCurrentOrder(newOrder)
+      setOrderStep(2)
+      
+      toast.success(`Check-in manual creado para habitación ${room.number}`)
+      
+    } catch (error) {
+      console.error('Error in createManualCheckIn:', error)
+      toast.error('Error al crear check-in manual: ' + error.message)
+    }
+  }
+
+  // FUNCIÓN HANDLEROOM CLICK CORREGIDA FINAL
   const handleRoomClick = (room) => {
     if (loading) {
       toast.info('Cargando datos, por favor espera...')
@@ -98,11 +389,16 @@ const CheckIn = () => {
         if (savedOrders && savedOrders[room.number]) {
           orderFound = savedOrders[room.number]
           console.log('✅ Order found by room number:', orderFound)
+          
+          // Si la reserva está en estado 'confirmed', hacer check-in automático
+          if (orderFound.needsAutoCheckIn && orderFound.reservationStatus === 'confirmed') {
+            console.log('🔄 Auto check-in needed for confirmed reservation')
+            handleAutoCheckIn(orderFound)
+          }
         }
         
         // 2. Si no se encuentra, buscar por reservationId en la habitación
         if (!orderFound && room.reservationId) {
-          // Buscar en savedOrders por reservationId
           const orderByReservationId = Object.values(savedOrders || {}).find(
             order => order.reservationId === room.reservationId
           )
@@ -112,82 +408,32 @@ const CheckIn = () => {
           }
         }
         
-        // 3. Si no se encuentra, crear orden temporal desde datos de la habitación
-        if (!orderFound && (room.currentGuest || room.guestName || room.activeReservation)) {
-          console.log('⚠️ Creating temporary order from room data')
-          
-          const floor = Math.floor(parseInt(room.number) / 100)
-          const roomPrice = roomPrices && roomPrices[floor] ? roomPrices[floor] : 100
-          
-          // Crear orden temporal desde datos de habitación
-          orderFound = {
-            id: room.reservationId || `temp-${room.number}`,
-            room: {
-              id: room.id,
-              number: room.number,
-              status: room.status,
-              floor: room.floor || floor,
-              room_type: room.room_type || 'Habitación Estándar'
-            },
-            roomPrice: roomPrice,
-            snacks: [],
-            total: roomPrice,
-            checkInDate: room.checkInDate || room.activeReservation?.check_in || new Date().toISOString().split('T')[0],
-            checkOutDate: room.checkOutDate || room.activeReservation?.check_out || new Date().toISOString().split('T')[0],
-            guestName: room.guestName || room.currentGuest?.name || 'Huésped Temporal',
-            guestId: room.currentGuest?.id || null,
-            reservationId: room.reservationId || room.activeReservation?.id || null,
-            confirmationCode: room.confirmationCode || room.activeReservation?.confirmation_code || `TEMP-${room.number}`,
-            // Información adicional si está disponible
-            guestEmail: room.currentGuest?.email || '',
-            guestPhone: room.currentGuest?.phone || '',
-            specialRequests: room.activeReservation?.special_requests || '',
-            paymentStatus: room.activeReservation?.payment_status || 'pending',
-            checkedInAt: room.activeReservation?.checked_in_at || new Date().toISOString()
-          }
-          
-          console.log('📋 Temporary order created:', orderFound)
-          
-          // Actualizar savedOrders para que esté disponible en próximas consultas
-          setSavedOrders(prev => ({
-            ...prev,
-            [room.number]: orderFound
-          }))
+        // 3. NUEVA ESTRATEGIA: Buscar reserva directamente en base de datos
+        if (!orderFound) {
+          console.log('🔍 Searching for reservation directly in database...')
+          searchReservationForRoom(room).then(reservation => {
+            if (reservation) {
+              console.log('✅ Found reservation in database:', reservation)
+              createTemporaryOrderFromReservation(room, reservation)
+            } else {
+              // 4. Si no se encuentra, crear orden temporal desde datos de la habitación
+              if (room.currentGuest || room.guestName || room.activeReservation) {
+                console.log('⚠️ Creating temporary order from room data')
+                const tempOrder = createTemporaryOrderFromRoomData(room)
+                setCurrentOrder(tempOrder)
+                setOrderStep(2)
+              } else {
+                handleNoOrderFound(room)
+              }
+            }
+          })
+          return // Salir aquí y esperar el resultado asíncrono
         }
         
         if (orderFound) {
           setCurrentOrder(orderFound)
           setOrderStep(2) // Ir directamente al resumen de pago
           console.log('✅ Proceeding to checkout with order:', orderFound)
-        } else {
-          // Último recurso: mostrar error con información de debug
-          console.error('❌ No order information found for room:', room.number)
-          console.error('Available savedOrders keys:', Object.keys(savedOrders || {}))
-          console.error('Room data:', room)
-          
-          toast.error(
-            `No se encontró información de reserva para la habitación ${room.number}. ` +
-            `Posibles causas: La reserva no está en estado "checked_in" o hubo un error al cargar los datos.`,
-            { duration: 6000 }
-          )
-          
-          // Mostrar botón de debug en desarrollo
-          if (process.env.NODE_ENV === 'development') {
-            toast((t) => (
-              <div>
-                <p>Error en habitación {room.number}</p>
-                <button 
-                  onClick={() => {
-                    debugData()
-                    toast.dismiss(t.id)
-                  }}
-                  className="mt-2 px-3 py-1 bg-blue-500 text-white rounded text-sm"
-                >
-                  Ver Debug Info
-                </button>
-              </div>
-            ), { duration: 10000 })
-          }
         }
       } else {
         toast.warning('Solo puedes hacer check-out de habitaciones ocupadas (rojas)')
@@ -700,4 +946,4 @@ const CheckIn = () => {
   )
 }
 
-export default CheckIn
+export default CheckIn;

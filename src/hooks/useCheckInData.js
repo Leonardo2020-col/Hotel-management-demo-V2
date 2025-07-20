@@ -1,4 +1,4 @@
-// src/hooks/useCheckInData.js - CÓDIGO COMPLETO CORREGIDO
+// src/hooks/useCheckInData.js - CÓDIGO COMPLETO CORREGIDO FINAL
 import { useState, useEffect } from 'react'
 import { db } from '../lib/supabase'
 import toast from 'react-hot-toast'
@@ -147,31 +147,68 @@ export const useCheckInData = () => {
     }
   }
 
-  // FUNCIÓN CORREGIDA: Cargar órdenes guardadas desde reservas ACTIVAS (checked_in)
+  // FUNCIÓN CORREGIDA FINAL: loadSavedOrdersFromReservations
   const loadSavedOrdersFromReservations = async () => {
     try {
-      // Obtener reservas actualmente en checked_in (huéspedes que están en el hotel)
-      const { data: reservations, error } = await db.getReservations({
+      console.log('📋 Loading saved orders from multiple reservation states...')
+      
+      // ESTRATEGIA MÚLTIPLE: Obtener reservas de diferentes estados
+      const today = new Date().toISOString().split('T')[0]
+      
+      // 1. Obtener reservas actualmente en checked_in
+      const { data: checkedInReservations, error: checkedInError } = await db.getReservations({
         status: 'checked_in'
       })
       
-      if (error) {
-        console.warn('Error loading checked-in reservations:', error)
-        return {}
+      if (checkedInError) {
+        console.warn('Error loading checked-in reservations:', checkedInError)
       }
+      
+      // 2. Obtener reservas confirmadas para hoy (que deberían estar en checked_in)
+      const { data: confirmedReservations, error: confirmedError } = await db.getReservations({
+        status: 'confirmed'
+      })
+      
+      if (confirmedError) {
+        console.warn('Error loading confirmed reservations:', confirmedError)
+      }
+      
+      // 3. Combinar ambos tipos de reservas
+      const allReservations = [
+        ...(checkedInReservations || []),
+        ...(confirmedReservations || []).filter(reservation => {
+          // Solo incluir reservas confirmadas que son para hoy o ya pasaron su fecha de check-in
+          const checkInDate = new Date(reservation.check_in).toISOString().split('T')[0]
+          return checkInDate <= today
+        })
+      ]
+      
+      console.log('📊 Found reservations:', {
+        checkedIn: checkedInReservations?.length || 0,
+        confirmedForToday: confirmedReservations?.filter(r => 
+          new Date(r.check_in).toISOString().split('T')[0] <= today
+        ).length || 0,
+        total: allReservations.length
+      })
       
       // Convertir reservas a formato de órdenes guardadas para check-out
       const orders = {}
       
-      if (reservations && Array.isArray(reservations)) {
-        reservations.forEach(reservation => {
+      if (allReservations && Array.isArray(allReservations)) {
+        allReservations.forEach(reservation => {
           if (reservation.room && reservation.guest) {
+            // Evitar duplicados (priorizar checked_in sobre confirmed)
+            const roomNumber = reservation.room.number
+            if (orders[roomNumber] && orders[roomNumber].reservationStatus === 'checked_in') {
+              return // Ya tenemos una reserva checked_in para esta habitación
+            }
+            
             // Calcular precio por piso si no está disponible
             const floor = Math.floor(parseInt(reservation.room.number) / 100)
             const roomPrice = parseFloat(reservation.rate) || roomPrices[floor] || 100
             
             // FORMATO CORRECTO para savedOrders
-            orders[reservation.room.number] = {
+            orders[roomNumber] = {
               id: reservation.id,
               room: {
                 id: reservation.room.id,
@@ -190,7 +227,8 @@ export const useCheckInData = () => {
               guestId: reservation.guest_id,
               reservationId: reservation.id,
               confirmationCode: reservation.confirmation_code,
-              // Información adicional para el check-out
+              // NUEVA: Información adicional para debugging
+              reservationStatus: reservation.status, // 'checked_in' o 'confirmed'
               guestEmail: reservation.guest.email,
               guestPhone: reservation.guest.phone,
               guestDocument: reservation.guest.document_number,
@@ -199,13 +237,17 @@ export const useCheckInData = () => {
               checkedInAt: reservation.checked_in_at,
               nights: reservation.nights || Math.ceil(
                 (new Date(reservation.check_out) - new Date(reservation.check_in)) / (1000 * 60 * 60 * 24)
-              )
+              ),
+              // Flag para identificar si necesita check-in automático
+              needsAutoCheckIn: reservation.status === 'confirmed'
             }
           }
         })
       }
       
-      console.log('📋 Saved orders from reservations:', orders)
+      console.log('📋 Saved orders created from reservations:', orders)
+      console.log('📊 Orders by room:', Object.keys(orders))
+      
       return orders
       
     } catch (error) {
