@@ -1,5 +1,5 @@
 // ============================================
-// CleaningManagement.jsx - CORREGIDO
+// CleaningManagement.jsx - CORREGIDO COMPLETO
 // ============================================
 import React, { useState, useMemo } from 'react';
 import { 
@@ -87,7 +87,7 @@ const CleaningManagement = ({
     });
   }, [rooms, searchTerm, filterStatus]);
 
-  // Manejar selección de habitaciones
+  // Manejar selección de habitaciones - CORREGIDO
   const handleRoomSelect = (roomId) => {
     setSelectedRooms(prev => 
       prev.includes(roomId)
@@ -150,64 +150,6 @@ const CleaningManagement = ({
       default:
         return AlertTriangle;
     }
-  };
-
-  const handleSelectRoom = (roomId) => {
-    if (onSelectRoom) {
-      onSelectRoom(prev => 
-        prev.includes(roomId)
-          ? prev.filter(id => id !== roomId)
-          : [...prev, roomId]
-      );
-    }
-  };
-
-  const StatusActions = ({ room }) => {
-    const availableActions = [];
-
-    switch (room.status) {
-      case ROOM_STATUS.AVAILABLE:
-        availableActions.push(
-          { 
-            label: 'Limpieza', 
-            action: () => onCleaningStatusChange && onCleaningStatusChange(room.id, CLEANING_STATUS.IN_PROGRESS),
-            color: 'warning',
-            icon: Clock
-          }
-        );
-        break;
-        
-      case ROOM_STATUS.CLEANING:
-        availableActions.push(
-          { 
-            label: 'Finalizar', 
-            action: () => handleStatusChange(room.id, CLEANING_STATUS.CLEAN),
-            color: 'success',
-            icon: CheckCircle
-          }
-        );
-        break;
-    }
-
-    return (
-      <div className="flex flex-wrap gap-2 mb-4">
-        {availableActions.map((action, index) => {
-          const ActionIcon = action.icon || CheckCircle;
-          return (
-            <Button
-              key={index}
-              size="sm"
-              variant={action.color}
-              onClick={action.action}
-              icon={ActionIcon}
-              className="text-xs px-3 py-1"
-            >
-              {action.label}
-            </Button>
-          );
-        })}
-      </div>
-    );
   };
 
   if (loading) {
