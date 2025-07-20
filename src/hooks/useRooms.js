@@ -69,14 +69,6 @@ export const useRooms = () => {
       console.log('Enriched rooms with reservations:', enrichedRooms)
       setRooms(enrichedRooms)
       
-      // 4. Generar tipos únicos desde las habitaciones existentes
-      const uniqueTypes = await db.getRoomTypes()
-      if (uniqueTypes.data) {
-        setRoomTypes(uniqueTypes.data)
-      } else {
-        const types = generateTypesFromRooms(roomsResult.data || [])
-        setRoomTypes(types)
-      }
       
       // 5. Cargar personal de limpieza
       const staffResult = await db.getCleaningStaff()
