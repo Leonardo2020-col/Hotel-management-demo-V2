@@ -1,4 +1,4 @@
-// src/pages/CheckIn/CheckIn.jsx - CÓDIGO COMPLETO CORREGIDO FINAL
+// src/pages/CheckIn/CheckIn.jsx - CON REGISTRO SIN RESERVACIÓN
 import React, { useState, useEffect } from 'react'
 import { LogIn, LogOut, RefreshCw } from 'lucide-react'
 import Button from '../../components/common/Button'
@@ -17,6 +17,20 @@ const CheckIn = () => {
   const [selectedSnackType, setSelectedSnackType] = useState(null)
   const [selectedSnacks, setSelectedSnacks] = useState([])
   const [currentOrder, setCurrentOrder] = useState(null)
+  
+  // NUEVO: Estado para datos del huésped en registro sin reserva
+  const [guestData, setGuestData] = useState({
+    fullName: '',
+    documentType: 'DNI',
+    documentNumber: '',
+    phone: '',
+    email: '',
+    nationality: 'Peruana',
+    gender: '',
+    adults: 1,
+    children: 0,
+    specialRequests: ''
+  })
 
   // Hook actualizado para Supabase
   const {
@@ -447,13 +461,27 @@ const CheckIn = () => {
         
         console.log(`💰 Room price for floor ${floor}: ${roomPrice}`)
         
+        // NUEVO: Resetear datos del huésped al seleccionar nueva habitación
+        setGuestData({
+          fullName: '',
+          documentType: 'DNI',
+          documentNumber: '',
+          phone: '',
+          email: '',
+          nationality: 'Peruana',
+          gender: '',
+          adults: 1,
+          children: 0,
+          specialRequests: ''
+        })
+        
         setCurrentOrder({
           room: room,
           roomPrice: roomPrice,
           snacks: [],
           total: roomPrice
         })
-        setOrderStep(1)
+        setOrderStep(1) // Ir a registro de huésped y snacks
       } else if (room.status === 'occupied') {
         toast.warning('Esta habitación ya está ocupada')
       } else if (room.cleaning_status !== 'clean') {
@@ -471,6 +499,19 @@ const CheckIn = () => {
     setOrderStep(0)
     setSelectedSnacks([])
     setCurrentOrder(null)
+    // Resetear datos del huésped
+    setGuestData({
+      fullName: '',
+      documentType: 'DNI',
+      documentNumber: '',
+      phone: '',
+      email: '',
+      nationality: 'Peruana',
+      gender: '',
+      adults: 1,
+      children: 0,
+      specialRequests: ''
+    })
   }
 
   const handleCheckInClick = () => {
@@ -480,6 +521,25 @@ const CheckIn = () => {
     setOrderStep(0)
     setSelectedSnacks([])
     setCurrentOrder(null)
+    // Resetear datos del huésped
+    setGuestData({
+      fullName: '',
+      documentType: 'DNI',
+      documentNumber: '',
+      phone: '',
+      email: '',
+      nationality: 'Peruana',
+      gender: '',
+      adults: 1,
+      children: 0,
+      specialRequests: ''
+    })
+  }
+
+  // NUEVO: Handler para cambios en datos del huésped
+  const handleGuestDataChange = (newGuestData) => {
+    setGuestData(newGuestData)
+    console.log('👤 Guest data updated:', newGuestData)
   }
 
   // Handlers para SnackSelection
@@ -518,17 +578,24 @@ const CheckIn = () => {
     }
   }
 
-  // Confirmar check-in con snacks
+  // FUNCIÓN ACTUALIZADA: Confirmar check-in con snacks y datos de huésped
   const handleConfirmOrder = async () => {
     if (!currentOrder) {
       toast.error('No hay orden actual')
       return
     }
 
-    console.log('✅ Confirming order with snacks:', selectedSnacks)
+    // Validar datos del huésped
+    if (!guestData.fullName?.trim() || !guestData.documentNumber?.trim() || !guestData.phone?.trim()) {
+      toast.error('Por favor complete los datos obligatorios del huésped')
+      return
+    }
+
+    console.log('✅ Confirming order with snacks and guest data:', { guestData, selectedSnacks })
 
     try {
-      const { data, error } = await processCheckIn(currentOrder, selectedSnacks)
+      // NUEVO: Usar processCheckIn con datos del huésped para registro sin reserva
+      const { data, error } = await processCheckIn(currentOrder, selectedSnacks, guestData)
       
       if (error) {
         toast.error(error.message || 'Error al procesar check-in')
@@ -538,8 +605,8 @@ const CheckIn = () => {
       const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
       
       toast.success(
-        `Check-in completado!\nHabitación: ${currentOrder.room.number}\nTotal: S/ ${(currentOrder.roomPrice + snacksTotal).toFixed(2)}`,
-        { duration: 4000 }
+        `Check-in sin reserva completado!\nHuésped: ${guestData.fullName}\nHabitación: ${currentOrder.room.number}\nTotal: S/ ${(currentOrder.roomPrice + snacksTotal).toFixed(2)}`,
+        { duration: 5000 }
       )
       
       resetOrder()
@@ -549,17 +616,24 @@ const CheckIn = () => {
     }
   }
 
-  // Confirmar check-in solo habitación
+  // FUNCIÓN ACTUALIZADA: Confirmar check-in solo habitación con datos de huésped
   const handleConfirmRoomOnly = async () => {
     if (!currentOrder) {
       toast.error('No hay orden actual')
       return
     }
 
-    console.log('✅ Confirming room only order')
+    // Validar datos del huésped
+    if (!guestData.fullName?.trim() || !guestData.documentNumber?.trim() || !guestData.phone?.trim()) {
+      toast.error('Por favor complete los datos obligatorios del huésped')
+      return
+    }
+
+    console.log('✅ Confirming room only order with guest data:', guestData)
 
     try {
-      const { data, error } = await processCheckIn(currentOrder, [])
+      // NUEVO: Usar processCheckIn con datos del huésped para registro sin reserva
+      const { data, error } = await processCheckIn(currentOrder, [], guestData)
       
       if (error) {
         toast.error(error.message || 'Error al procesar check-in')
@@ -567,8 +641,8 @@ const CheckIn = () => {
       }
 
       toast.success(
-        `Check-in completado!\nHabitación: ${currentOrder.room.number}\nTotal: S/ ${currentOrder.roomPrice.toFixed(2)}`,
-        { duration: 4000 }
+        `Check-in sin reserva completado!\nHuésped: ${guestData.fullName}\nHabitación: ${currentOrder.room.number}\nTotal: S/ ${currentOrder.roomPrice.toFixed(2)}`,
+        { duration: 5000 }
       )
       
       resetOrder()
@@ -615,6 +689,19 @@ const CheckIn = () => {
     setCurrentOrder(null)
     setSelectedRoom(null)
     setCheckoutMode(false)
+    // NUEVO: Resetear datos del huésped
+    setGuestData({
+      fullName: '',
+      documentType: 'DNI',
+      documentNumber: '',
+      phone: '',
+      email: '',
+      nationality: 'Peruana',
+      gender: '',
+      adults: 1,
+      children: 0,
+      specialRequests: ''
+    })
   }
 
   // Panel de Debug para desarrollo
@@ -662,8 +749,27 @@ const CheckIn = () => {
                   <div>Piso seleccionado: {selectedFloor}</div>
                   <div>Total pisos: {Object.keys(roomsData || {}).length}</div>
                   <div>Total órdenes: {Object.keys(savedOrders || {}).length}</div>
+                  <div>Paso actual: {orderStep}</div>
                 </div>
               </div>
+
+              {/* Datos del huésped */}
+              {orderStep === 1 && (
+                <div className="border-b pb-2">
+                  <strong>Datos del Huésped:</strong>
+                  <div className="ml-2">
+                    <div>Nombre: {guestData.fullName || 'Vacío'}</div>
+                    <div>Documento: {guestData.documentNumber || 'Vacío'}</div>
+                    <div>Teléfono: {guestData.phone || 'Vacío'}</div>
+                    <div>Email: {guestData.email || 'Vacío'}</div>
+                    <div>Válido: {
+                      guestData.fullName?.trim() && 
+                      guestData.documentNumber?.trim() && 
+                      guestData.phone?.trim() ? '✅' : '❌'
+                    }</div>
+                  </div>
+                </div>
+              )}
 
               {/* Habitaciones ocupadas */}
               <div className="border-b pb-2">
@@ -692,28 +798,8 @@ const CheckIn = () => {
                       </div>
                       <div className="text-gray-500 truncate">
                         ID: {savedOrders[roomNum].reservationId || 'N/A'}
+                        {savedOrders[roomNum].isWalkIn && <span className="text-green-600"> (Walk-in)</span>}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Problemas detectados */}
-              <div className="border-b pb-2">
-                <strong>Problemas Detectados:</strong>
-                <div className="ml-2">
-                  {occupiedRooms.filter(room => !savedOrders[room.number]).map(room => (
-                    <div key={room.number} className="text-red-600 text-xs">
-                      Room {room.number}: Ocupada pero sin orden
-                      {room.guestName && <div className="ml-2">Huésped: {room.guestName}</div>}
-                      {room.reservationId && <div className="ml-2">Reserva: {room.reservationId}</div>}
-                    </div>
-                  ))}
-                  {roomsWithOrders.filter(roomNum => 
-                    !occupiedRooms.find(room => room.number === roomNum)
-                  ).map(roomNum => (
-                    <div key={roomNum} className="text-orange-600 text-xs">
-                      Room {roomNum}: Orden sin habitación ocupada
                     </div>
                   ))}
                 </div>
@@ -725,6 +811,7 @@ const CheckIn = () => {
                   onClick={() => {
                     debugData()
                     console.log('🔍 Full debug executed')
+                    console.log('👤 Current guest data:', guestData)
                   }}
                   className="w-full bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
                 >
@@ -735,6 +822,7 @@ const CheckIn = () => {
                   onClick={() => {
                     console.log('🏠 RoomsByFloor:', roomsData)
                     console.log('📋 SavedOrders:', savedOrders)
+                    console.log('👤 GuestData:', guestData)
                   }}
                   className="w-full bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600"
                 >
@@ -823,7 +911,14 @@ const CheckIn = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-800 mb-2">Reception Panel</h1>
-          <p className="text-gray-600">Gestión de Check-in y Check-out</p>
+          <p className="text-gray-600">
+            {checkoutMode ? 'Check-out de huéspedes' : 'Check-in sin reservación'}
+          </p>
+          {orderStep === 1 && !checkoutMode && (
+            <div className="mt-2 inline-block bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm">
+              🆕 Registro directo sin reserva previa - Complete los datos del huésped
+            </div>
+          )}
         </div>
 
         {/* Action Buttons - Solo mostrar en paso 0 */}
@@ -837,7 +932,7 @@ const CheckIn = () => {
               className="px-8 py-4 text-lg"
               disabled={loading}
             >
-              Check In
+              Check In Directo
             </Button>
             
             <Button
@@ -881,15 +976,17 @@ const CheckIn = () => {
             />
           )}
 
-          {/* Paso 1: Selección de Snacks */}
+          {/* Paso 1: Registro de Huésped y Selección de Snacks */}
           {orderStep === 1 && !checkoutMode && (
             <SnackSelection
               currentOrder={currentOrder}
+              guestData={guestData}
               selectedSnackType={selectedSnackType}
               selectedSnacks={selectedSnacks}
               snackTypes={snackTypes}
               snackItems={snackItems}
               onBack={() => setOrderStep(0)}
+              onGuestDataChange={handleGuestDataChange}
               onSnackTypeSelect={handleSnackTypeSelect}
               onSnackSelect={handleSnackSelect}
               onSnackRemove={handleSnackRemove}
@@ -897,6 +994,7 @@ const CheckIn = () => {
               onConfirmOrder={handleConfirmOrder}
               onConfirmRoomOnly={handleConfirmRoomOnly}
               onCancelOrder={resetOrder}
+              loading={loading}
             />
           )}
 
@@ -919,11 +1017,20 @@ const CheckIn = () => {
               <div className="flex space-x-6">
                 <span>Total habitaciones: {Object.values(roomsData).flat().length}</span>
                 <span>Órdenes guardadas: {Object.keys(savedOrders || {}).length}</span>
-                <span>Modo: {checkoutMode ? 'Check-out' : 'Check-in'}</span>
+                <span>Modo: {checkoutMode ? 'Check-out' : 'Check-in directo'}</span>
               </div>
               <div className="text-xs text-gray-400">
                 Última actualización: {new Date().toLocaleTimeString()}
               </div>
+            </div>
+            
+            {/* Información del modo */}
+            <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-600">
+              {checkoutMode ? (
+                <span>💡 <strong>Modo Check-out:</strong> Selecciona una habitación ocupada (roja) para procesar la salida del huésped</span>
+              ) : (
+                <span>💡 <strong>Modo Check-in Directo:</strong> Selecciona una habitación disponible (verde) para registrar un huésped sin reserva previa</span>
+              )}
             </div>
             
             {/* Debug info en desarrollo */}
@@ -933,7 +1040,8 @@ const CheckIn = () => {
                 Loading: {loading ? 'Sí' : 'No'} | 
                 Error: {error ? 'Sí' : 'No'} | 
                 Rooms: {typeof roomsData} | 
-                Keys: {Object.keys(roomsData).join(', ')}
+                Keys: {Object.keys(roomsData).join(', ')} | 
+                Guest Data Valid: {guestData.fullName?.trim() && guestData.documentNumber?.trim() && guestData.phone?.trim() ? 'Sí' : 'No'}
               </div>
             )}
           </div>
