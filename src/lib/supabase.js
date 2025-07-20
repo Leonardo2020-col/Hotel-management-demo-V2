@@ -1,4 +1,4 @@
-// src/lib/supabase.js - VERSIÓN COMPLETA CORREGIDA
+// src/lib/supabase.js - SIN ROOM_TYPES NI DESCRIPTIONS
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -42,7 +42,6 @@ export const getRoomsByFloor = async (branchId = null) => {
         number: room.number,
         status: room.status,
         cleaning_status: room.cleaning_status,
-        type: room.room_type,
         capacity: room.capacity,
         rate: room.base_rate,
         beds: room.beds,
@@ -66,17 +65,17 @@ export const getRoomsByFloor = async (branchId = null) => {
   }
 }
 
-// Database helpers - VERSIÓN COMPLETA
+// Database helpers - SIN ROOM_TYPES
 export const db = {
   // =============================================
-  // ROOMS MANAGEMENT
+  // ROOMS MANAGEMENT - SIN ROOM_TYPES
   // =============================================
 
   async getRooms(filters = {}) {
     try {
-      console.log('Loading rooms with reservation data...')
+      console.log('Loading rooms...')
       
-      // Primero obtener todas las habitaciones
+      // Obtener habitaciones sin room_type ni description
       let roomQuery = supabase
         .from('rooms')
         .select('*')
@@ -93,14 +92,11 @@ export const db = {
       if (filters.floor && filters.floor !== 'all') {
         roomQuery = roomQuery.eq('floor', filters.floor)
       }
-      if (filters.type && filters.type !== 'all') {
-        roomQuery = roomQuery.eq('room_type', filters.type)
-      }
       if (filters.cleaningStatus && filters.cleaningStatus !== 'all') {
         roomQuery = roomQuery.eq('cleaning_status', filters.cleaningStatus)
       }
       if (filters.search) {
-        roomQuery = roomQuery.or(`number.ilike.%${filters.search}%,description.ilike.%${filters.search}%,room_type.ilike.%${filters.search}%`)
+        roomQuery = roomQuery.or(`number.ilike.%${filters.search}%`)
       }
 
       const { data: rooms, error: roomsError } = await roomQuery
@@ -183,7 +179,7 @@ export const db = {
         }
       })
 
-      console.log(`Loaded ${enrichedRooms.length} rooms with reservation data`)
+      console.log(`Loaded ${enrichedRooms.length} rooms`)
       return { data: enrichedRooms, error: null }
 
     } catch (error) {
@@ -214,7 +210,7 @@ export const db = {
   },
 
   // =============================================
-  // SNACKS MANAGEMENT - FUNCIÓN FALTANTE
+  // SNACKS MANAGEMENT
   // =============================================
 
   async getSnackItems() {
@@ -270,7 +266,7 @@ export const db = {
   },
 
   // =============================================
-  // ROOM OPERATIONS
+  // ROOM OPERATIONS - SIN ROOM_TYPES
   // =============================================
 
   async createRoom(roomData) {
@@ -285,11 +281,10 @@ export const db = {
         }
       }
 
-      // Preparar datos para inserción
+      // Preparar datos para inserción SIN room_type y description
       const insertData = {
         number: roomData.number.toString(),
         floor: parseInt(roomData.floor),
-        room_type: roomData.room_type || roomData.type || 'Habitación Estándar',
         base_rate: parseFloat(roomData.base_rate || roomData.rate || 100),
         capacity: parseInt(roomData.capacity || 2),
         branch_id: roomData.branch_id || 1,
@@ -298,7 +293,6 @@ export const db = {
         beds: roomData.beds || [{ type: 'Doble', count: 1 }],
         size: parseInt(roomData.size || 25),
         features: roomData.features || ['WiFi Gratis'],
-        description: roomData.description || `${roomData.room_type || 'Habitación Estándar'} ${roomData.number}`,
         bed_options: roomData.bed_options || ['Doble']
       }
 
@@ -343,10 +337,13 @@ export const db = {
 
   async updateRoom(roomId, updates) {
     try {
+      // Filtrar campos que ya no existen
+      const { room_type, description, ...validUpdates } = updates
+      
       const { data, error } = await supabase
         .from('rooms')
         .update({
-          ...updates,
+          ...validUpdates,
           updated_at: new Date().toISOString()
         })
         .eq('id', roomId)
@@ -487,7 +484,6 @@ export const db = {
             id,
             number,
             floor,
-            room_type,
             capacity,
             base_rate
           )

@@ -64,10 +64,10 @@ const CleaningManagement = ({
     }
 
     return {
-      needsCleaning: rooms.filter(room => room.cleaningStatus === CLEANING_STATUS.DIRTY).length,
-      inProgress: rooms.filter(room => room.cleaningStatus === CLEANING_STATUS.IN_PROGRESS).length,
-      clean: rooms.filter(room => room.cleaningStatus === CLEANING_STATUS.CLEAN).length,
-      inspected: rooms.filter(room => room.cleaningStatus === CLEANING_STATUS.INSPECTED).length
+      needsCleaning: rooms.filter(room => room.cleaning_status === CLEANING_STATUS.DIRTY).length,
+      inProgress: rooms.filter(room => room.cleaning_status === CLEANING_STATUS.IN_PROGRESS).length,
+      clean: rooms.filter(room => room.cleaning_status === CLEANING_STATUS.CLEAN).length,
+      inspected: rooms.filter(room => room.cleaning_status === CLEANING_STATUS.INSPECTED).length
     };
   }, [rooms]);
 
@@ -78,10 +78,10 @@ const CleaningManagement = ({
     return rooms.filter(room => {
       // Filtro por término de búsqueda
       const matchesSearch = String(room.number).toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           (room.type || '').toLowerCase().includes(searchTerm.toLowerCase());
+                           (room.room_type || '').toLowerCase().includes(searchTerm.toLowerCase());
 
       // Filtro por estado de limpieza
-      const matchesStatus = filterStatus === 'all' || room.cleaningStatus === filterStatus;
+      const matchesStatus = filterStatus === 'all' || room.cleaning_status === filterStatus;
 
       return matchesSearch && matchesStatus;
     });
@@ -150,6 +150,64 @@ const CleaningManagement = ({
       default:
         return AlertTriangle;
     }
+  };
+
+  const handleSelectRoom = (roomId) => {
+    if (onSelectRoom) {
+      onSelectRoom(prev => 
+        prev.includes(roomId)
+          ? prev.filter(id => id !== roomId)
+          : [...prev, roomId]
+      );
+    }
+  };
+
+  const StatusActions = ({ room }) => {
+    const availableActions = [];
+
+    switch (room.status) {
+      case ROOM_STATUS.AVAILABLE:
+        availableActions.push(
+          { 
+            label: 'Limpieza', 
+            action: () => onCleaningStatusChange && onCleaningStatusChange(room.id, CLEANING_STATUS.IN_PROGRESS),
+            color: 'warning',
+            icon: Clock
+          }
+        );
+        break;
+        
+      case ROOM_STATUS.CLEANING:
+        availableActions.push(
+          { 
+            label: 'Finalizar', 
+            action: () => handleStatusChange(room.id, CLEANING_STATUS.CLEAN),
+            color: 'success',
+            icon: CheckCircle
+          }
+        );
+        break;
+    }
+
+    return (
+      <div className="flex flex-wrap gap-2 mb-4">
+        {availableActions.map((action, index) => {
+          const ActionIcon = action.icon || CheckCircle;
+          return (
+            <Button
+              key={index}
+              size="sm"
+              variant={action.color}
+              onClick={action.action}
+              icon={ActionIcon}
+              className="text-xs px-3 py-1"
+            >
+              {action.label}
+            </Button>
+          );
+        })}
+      </div>
+    );
   };
 
   if (loading) {
@@ -289,7 +347,7 @@ const CleaningManagement = ({
       {/* Rooms Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredRooms.map((room) => {
-          const StatusIcon = getStatusIcon(room.cleaningStatus);
+          const StatusIcon = getStatusIcon(room.cleaning_status);
           const isSelected = selectedRooms.includes(room.id);
 
           return (
@@ -315,14 +373,15 @@ const CleaningManagement = ({
                   </div>
                   <span className={classNames(
                     'px-3 py-1 rounded-full text-xs font-semibold border flex items-center space-x-1',
-                    getStatusColor(room.cleaningStatus)
+                    getStatusColor(room.cleaning_status)
                   )}>
                     <StatusIcon size={14} />
-                    <span>{room.cleaningStatus}</span>
+                    <span>{room.cleaning_status}</span>
                   </span>
                 </div>
 
                 <div className="space-y-3">
+                  {/* CORREGIDO: Eliminar room.type y simplificar */}
                   <div className="flex items-center justify-between text-sm text-gray-600">
                     <div className="flex items-center space-x-1">
                       <MapPin size={14} />
@@ -330,35 +389,42 @@ const CleaningManagement = ({
                     </div>
                     <div className="flex items-center space-x-1">
                       <Users size={14} />
-                      <span>{room.type}</span>
+                      <span>Cap. {room.capacity || 2}</span>
                     </div>
                   </div>
 
-                  {room.assignedCleaner && (
+                  {/* Tipo de habitación si existe */}
+                  {room.room_type && (
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">{room.room_type}</span>
+                    </div>
+                  )}
+
+                  {room.assigned_cleaner && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
                         <User size={14} className="text-blue-600" />
                         <span className="text-sm font-medium text-blue-900">
-                          {room.assignedCleaner}
+                          {room.assigned_cleaner}
                         </span>
                       </div>
-                      {room.cleaningStartTime && (
+                      {room.cleaning_start_time && (
                         <p className="text-xs text-blue-700 mt-1">
-                          Iniciado: {getRelativeTime(room.cleaningStartTime)}
+                          Iniciado: {getRelativeTime(room.cleaning_start_time)}
                         </p>
                       )}
                     </div>
                   )}
 
-                  {room.lastCleaned && (
+                  {room.last_cleaned && (
                     <div className="text-xs text-gray-500">
-                      Última limpieza: {getRelativeTime(room.lastCleaned)}
-                      {room.cleanedBy && ` por ${room.cleanedBy}`}
+                      Última limpieza: {getRelativeTime(room.last_cleaned)}
+                      {room.cleaned_by && ` por ${room.cleaned_by}`}
                     </div>
                   )}
 
                   <div className="flex flex-wrap gap-2">
-                    {room.cleaningStatus === CLEANING_STATUS.DIRTY && (
+                    {room.cleaning_status === CLEANING_STATUS.DIRTY && (
                       <Button
                         size="sm"
                         variant="warning"
@@ -367,7 +433,7 @@ const CleaningManagement = ({
                         Iniciar Limpieza
                       </Button>
                     )}
-                    {room.cleaningStatus === CLEANING_STATUS.IN_PROGRESS && (
+                    {room.cleaning_status === CLEANING_STATUS.IN_PROGRESS && (
                       <Button
                         size="sm"
                         variant="success"
@@ -376,7 +442,7 @@ const CleaningManagement = ({
                         Marcar Limpia
                       </Button>
                     )}
-                    {room.cleaningStatus === CLEANING_STATUS.CLEAN && (
+                    {room.cleaning_status === CLEANING_STATUS.CLEAN && (
                       <Button
                         size="sm"
                         variant="primary"

@@ -191,6 +191,8 @@ const RoomGrid = ({
           const roomStatus = room.status || 'available'
           const roomCapacity = room.capacity || 2
           const roomRate = room.rate || room.base_rate || 100
+          // CORREGIDO: Usar room_type en lugar de type
+          const roomType = room.room_type || 'Habitación Estándar'
 
           const isClickable = checkoutMode ? roomStatus === 'occupied' : roomStatus === 'available'
           const hasOrder = savedOrders && savedOrders[roomNumber]
@@ -219,6 +221,12 @@ const RoomGrid = ({
                 <div className="text-xs">
                   S/ {parseFloat(roomRate).toFixed(0)}
                 </div>
+                {/* Mostrar tipo de habitación si es diferente del estándar */}
+                {roomType !== 'Habitación Estándar' && (
+                  <div className="text-xs mt-1 truncate" title={roomType}>
+                    {roomType.split(' ')[0]}
+                  </div>
+                )}
               </div>
               
               {/* Indicador de orden guardada */}

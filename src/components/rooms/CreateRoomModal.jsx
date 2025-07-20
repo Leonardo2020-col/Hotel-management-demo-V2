@@ -1,4 +1,4 @@
-// src/components/rooms/CreateRoomModal.jsx - SIN ROOM_TYPES
+// src/components/rooms/CreateRoomModal.jsx - SIN ROOM_TYPES Y DESCRIPCIÓN
 import React, { useState } from 'react';
 import { X, Bed, Users, Maximize, DollarSign, MapPin, Plus, Trash2 } from 'lucide-react';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -37,7 +37,7 @@ const ROOM_FEATURES = {
   CITY_VIEW: 'Vista a la Ciudad'
 };
 
-// SCHEMA SIMPLIFICADO - Solo número y piso requeridos
+// SCHEMA SIMPLIFICADO - Solo número y piso requeridos, SIN DESCRIPCIÓN
 const schema = yup.object().shape({
   number: yup.string().required('El número de habitación es obligatorio'),
   floor: yup.number().min(1, 'El piso debe ser mayor a 0').required('El piso es obligatorio'),
@@ -45,7 +45,6 @@ const schema = yup.object().shape({
   capacity: yup.number().min(1, 'La capacidad debe ser mayor a 0').optional(),
   size: yup.number().min(1, 'El tamaño debe ser mayor a 0').optional(),
   base_rate: yup.number().min(0, 'La tarifa debe ser positiva').optional(),
-  description: yup.string().optional(),
   beds: yup.array().of(
     yup.object().shape({
       type: yup.string().optional(),
@@ -74,8 +73,8 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
       capacity: 2,
       size: 25,
       base_rate: 100,
-      description: '',
       room_type: 'Habitación Estándar'
+      // ELIMINADO: description: ''
     }
   });
 
@@ -86,7 +85,7 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
 
   const watchedType = watch('room_type');
 
-  // Auto-completar campos basado en tipo seleccionado (usando tipos generados dinámicamente)
+  // Auto-completar campos basado en tipo seleccionado
   React.useEffect(() => {
     if (watchedType && roomTypes && roomTypes.length > 0) {
       const selectedType = roomTypes.find(type => type.name === watchedType);
@@ -94,7 +93,6 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
         setValue('capacity', selectedType.capacity || 2);
         setValue('size', selectedType.size || 25);
         setValue('base_rate', selectedType.base_rate || 100);
-        setValue('description', selectedType.description || `${watchedType} confortable y moderna`);
         
         // Características por defecto según el tipo
         const typeFeatures = getDefaultFeaturesForType(watchedType);
@@ -146,11 +144,11 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
         capacity: data.capacity || 2,
         size: data.size || 25,
         base_rate: data.base_rate || 100,
-        description: data.description || `${data.room_type || 'Habitación'} ${data.number}`,
         room_type: data.room_type || 'Habitación Estándar',
         // Convertir base_rate a rate para compatibilidad
         rate: data.base_rate || 100,
         type: data.room_type || 'Habitación Estándar'
+        // ELIMINADO: description generada automáticamente
       };
       
       console.log('Submitting room data:', roomData);
@@ -315,18 +313,7 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
                 </div>
               </div>
 
-              {/* Description */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Descripción
-                </label>
-                <textarea
-                  {...register('description')}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Describe las características principales de la habitación... (opcional)"
-                />
-              </div>
+              {/* ELIMINADO: Campo Description */}
 
               {/* Beds Configuration */}
               <div className="mb-6">
@@ -429,7 +416,7 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
               </div>
             </div>
 
-            {/* Preview Card */}
+            {/* Preview Card - SIN DESCRIPCIÓN */}
             {watch('number') && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <h4 className="font-semibold text-yellow-900 mb-3">Vista Previa</h4>
@@ -470,9 +457,7 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
                     </span>
                   </div>
                   
-                  {watch('description') && (
-                    <p className="text-sm text-gray-600 mb-3">{watch('description')}</p>
-                  )}
+                  {/* ELIMINADO: Descripción preview */}
                   
                   {bedFields.length > 0 && (
                     <div className="mb-3">

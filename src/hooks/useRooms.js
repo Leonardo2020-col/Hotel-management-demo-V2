@@ -140,11 +140,12 @@ export const useRooms = () => {
     })
   }
 
-  // Generar tipos únicos desde habitaciones existentes
+  // Generar tipos únicos desde habitaciones existentes - CORREGIDO
   const generateTypesFromRooms = (roomsData) => {
     const uniqueTypes = {}
     
     roomsData.forEach((room, index) => {
+      // CORREGIDO: Usar room_type en lugar de type
       const typeName = room.room_type || 'Habitación Estándar'
       if (!uniqueTypes[typeName]) {
         uniqueTypes[typeName] = {
@@ -248,7 +249,7 @@ export const useRooms = () => {
         id: room.id,
         number: room.number,
         floor: room.floor,
-        type: room.room_type,
+        room_type: room.room_type, // CORREGIDO: usar room_type
         status: room.status,
         cleaningStatus: room.cleaning_status
       },
@@ -266,7 +267,7 @@ export const useRooms = () => {
       const newRoomData = {
         number: roomData.number,
         floor: parseInt(roomData.floor),
-        room_type: roomData.type || roomData.room_type || 'Habitación Estándar',
+        room_type: roomData.room_type || 'Habitación Estándar', // CORREGIDO: usar room_type
         base_rate: parseFloat(roomData.rate || roomData.base_rate || 100),
         capacity: parseInt(roomData.capacity || 2),
         status: ROOM_STATUS.AVAILABLE,
@@ -274,9 +275,9 @@ export const useRooms = () => {
         beds: roomData.beds || [{ type: 'Doble', count: 1 }],
         size: parseInt(roomData.size) || 25,
         features: roomData.features || ['WiFi Gratis'],
-        description: roomData.description || `${roomData.type || 'Habitación Estándar'} ${roomData.number}`,
         bed_options: roomData.bed_options || ['Doble'],
         branch_id: 1
+        // ELIMINADO: description
       }
 
       const { data, error } = await db.createRoom(newRoomData)

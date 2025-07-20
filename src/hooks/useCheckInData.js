@@ -109,7 +109,8 @@ export const useCheckInData = () => {
           number: room.number,
           status: room.status || 'available',
           cleaning_status: room.cleaning_status || 'clean',
-          type: room.room_type || 'Habitación Estándar',
+          // CORREGIDO: Usar room_type en lugar de type
+          room_type: room.room_type || 'Habitación Estándar',
           capacity: room.capacity || 2,
           rate: room.base_rate || roomPrices[floor] || 100,
           beds: room.beds || [{ type: 'Doble', count: 1 }],
@@ -152,7 +153,7 @@ export const useCheckInData = () => {
     }
   }
 
-  // Generar habitaciones mock para pruebas
+  // Generar habitaciones mock para pruebas - CORREGIDO
   const generateMockRooms = () => {
     console.log('🏗️ Generating mock rooms...')
     
@@ -163,7 +164,7 @@ export const useCheckInData = () => {
           number: '101',
           status: 'available',
           cleaning_status: 'clean',
-          type: 'Habitación Estándar',
+          room_type: 'Habitación Estándar', // CORREGIDO: room_type en lugar de type
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
@@ -176,7 +177,7 @@ export const useCheckInData = () => {
           number: '102',
           status: 'occupied',
           cleaning_status: 'dirty',
-          type: 'Habitación Estándar',
+          room_type: 'Habitación Estándar', // CORREGIDO: room_type en lugar de type
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Individual', count: 2 }],
@@ -189,7 +190,7 @@ export const useCheckInData = () => {
           number: '103',
           status: 'cleaning',
           cleaning_status: 'in_progress',
-          type: 'Habitación Estándar',
+          room_type: 'Habitación Estándar', // CORREGIDO: room_type en lugar de type
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
@@ -202,7 +203,7 @@ export const useCheckInData = () => {
           number: '104',
           status: 'available',
           cleaning_status: 'clean',
-          type: 'Habitación Estándar',
+          room_type: 'Habitación Estándar', // CORREGIDO: room_type en lugar de type
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
@@ -217,7 +218,7 @@ export const useCheckInData = () => {
           number: '201',
           status: 'available',
           cleaning_status: 'clean',
-          type: 'Habitación Deluxe',
+          room_type: 'Habitación Deluxe', // CORREGIDO: room_type en lugar de type
           capacity: 3,
           rate: 95.00,
           beds: [{ type: 'Queen', count: 1 }],
@@ -230,7 +231,7 @@ export const useCheckInData = () => {
           number: '202',
           status: 'occupied',
           cleaning_status: 'dirty',
-          type: 'Habitación Deluxe',
+          room_type: 'Habitación Deluxe', // CORREGIDO: room_type en lugar de type
           capacity: 3,
           rate: 95.00,
           beds: [{ type: 'King', count: 1 }],
@@ -245,7 +246,7 @@ export const useCheckInData = () => {
           number: '301',
           status: 'available',
           cleaning_status: 'clean',
-          type: 'Suite Ejecutiva',
+          room_type: 'Suite Ejecutiva', // CORREGIDO: room_type en lugar de type
           capacity: 4,
           rate: 110.00,
           beds: [{ type: 'King', count: 1 }, { type: 'Sofá Cama', count: 1 }],
