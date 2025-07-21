@@ -1,4 +1,4 @@
-// src/pages/Rooms/Rooms.jsx - SIMPLIFICADO CON CLICK PARA LIMPIAR
+// src/pages/Rooms/Rooms.jsx - SIMPLIFICADO CON CLICK PARA LIMPIAR (SIN ROOM_TYPE)
 import React, { useState } from 'react'
 import { Plus, Calendar, Sparkles, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 import { useRooms } from '../../hooks/useRooms'
@@ -19,10 +19,9 @@ const Rooms = () => {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedRooms, setSelectedRooms] = useState([])
   
-  // Filtros simplificados
+  // Filtros simplificados (sin tipo de habitación)
   const [filters, setFilters] = useState({
     status: 'all',
-    type: 'all',
     floor: 'all',
     search: ''
   })
@@ -30,7 +29,6 @@ const Rooms = () => {
   // Hook simplificado con estados de 3 niveles
   const {
     rooms,
-    roomTypes,
     cleaningStaff,
     reservations,
     roomStats,
@@ -240,7 +238,7 @@ const Rooms = () => {
     toast.success('Datos actualizados')
   }
 
-  // Filtrar habitaciones
+  // Filtrar habitaciones (sin tipo de habitación)
   const filteredRooms = React.useMemo(() => {
     if (!rooms) return []
 
@@ -250,7 +248,6 @@ const Rooms = () => {
         const searchTerm = filters.search.toLowerCase()
         const matchesSearch = 
           room.number.toString().toLowerCase().includes(searchTerm) ||
-          (room.room_type || '').toLowerCase().includes(searchTerm) ||
           room.status.toLowerCase().includes(searchTerm) ||
           (room.currentGuest?.name || '').toLowerCase().includes(searchTerm)
         if (!matchesSearch) return false
@@ -258,9 +255,6 @@ const Rooms = () => {
 
       // Filtro por estado simplificado
       if (filters.status !== 'all' && room.status !== filters.status) return false
-      
-      // Filtro por tipo
-      if (filters.type !== 'all' && room.room_type !== filters.type) return false
       
       // Filtro por piso
       if (filters.floor !== 'all' && room.floor.toString() !== filters.floor) return false
@@ -394,15 +388,13 @@ const Rooms = () => {
       {/* Statistics */}
       <RoomStats 
         stats={roomStats} 
-        roomsByType={[]} // Simplificado
         loading={loading} 
       />
 
-      {/* Filters */}
+      {/* Filters (sin tipo de habitación) */}
       <RoomFilters
         filters={filters}
         onFiltersChange={setFilters}
-        roomTypes={roomTypes || []}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         loading={loading}
@@ -465,7 +457,6 @@ const Rooms = () => {
             variant="outline"
             onClick={() => setFilters({
               status: 'all',
-              type: 'all',
               floor: 'all',
               search: ''
             })}
@@ -501,7 +492,6 @@ const Rooms = () => {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateRoom}
-          roomTypes={roomTypes || []}
           loading={loading}
         />
       )}

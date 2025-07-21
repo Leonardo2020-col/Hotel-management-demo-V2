@@ -1,4 +1,4 @@
-// src/components/checkin/RoomGrid.jsx - VERSIÓN SIMPLIFICADA CON 3 ESTADOS
+// src/components/checkin/RoomGrid.jsx - SIN ROOM_TYPES Y SIMPLIFICADO
 import React from 'react';
 import { Bed, ChevronRight, Users, MapPin, Sparkles } from 'lucide-react';
 import Button from '../common/Button';
@@ -12,7 +12,7 @@ const RoomGrid = ({
   onFloorChange, 
   onRoomClick, 
   onNext,
-  onCleanRoom // NUEVA PROP para limpiar habitación con un click
+  onCleanRoom // Función para limpiar habitación
 }) => {
   
   // ESTADOS SIMPLIFICADOS - Solo 3 estados
@@ -150,9 +150,9 @@ const RoomGrid = ({
         </div>
       </div>
 
-      {/* NUEVA: Leyenda simplificada */}
+      {/* Leyenda simplificada */}
       <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <h3 className="text-sm font-semibold text-blue-900 mb-2">Estados de Habitaciones (Simplificado)</h3>
+        <h3 className="text-sm font-semibold text-blue-900 mb-2">Estados de Habitaciones (Sistema Simplificado)</h3>
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center">
             <div className="w-4 h-4 bg-green-500 rounded mr-2"></div>
@@ -170,7 +170,7 @@ const RoomGrid = ({
         </div>
       </div>
 
-      {/* Grid de Habitaciones SIMPLIFICADO */}
+      {/* Grid de Habitaciones */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
         {currentFloorRooms.map((room, index) => {
           if (!room) return null;
@@ -217,6 +217,9 @@ const RoomGrid = ({
                   <div className="text-xs mt-1">
                     {getRoomStatusText(room)}
                   </div>
+                  <div className="text-xs mt-1 opacity-75">
+                    {roomType}
+                  </div>
                 </div>
                 
                 {/* Información del huésped para habitaciones ocupadas */}
@@ -234,7 +237,7 @@ const RoomGrid = ({
                 )}
               </button>
 
-              {/* NUEVO: Botón de limpieza rápida */}
+              {/* Botón de limpieza rápida */}
               {needsCleaning && (
                 <button
                   onClick={(e) => handleQuickClean(room, e)}
@@ -264,7 +267,7 @@ const RoomGrid = ({
             <div className="w-4 h-4 bg-yellow-500 rounded mr-2"></div>
             <span>Necesita Limpieza</span>
           </div>
-          {/* NUEVA: Instrucción para limpieza rápida */}
+          {/* Instrucción para limpieza rápida */}
           <div className="flex items-center text-green-600 font-medium">
             <Sparkles className="w-4 h-4 mr-2" />
             <span>Click en ✨ para limpiar</span>
@@ -292,130 +295,6 @@ const RoomGrid = ({
         Necesitan limpieza: {currentFloorRooms.filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length}
       </div>
     </>
-  );
-};
-
-// Para src/components/checkin/RoomGrid.jsx - Versión simplificada
-const SimplifiedCheckInRoomCard = ({ 
-  room, 
-  onRoomClick, 
-  onQuickClean,
-  selectedRoom,
-  checkoutMode = false 
-}) => {
-  // Determinar estado simplificado
-  const getDisplayStatus = () => {
-    if (room.status === 'occupied') return 'occupied';
-    if (room.cleaning_status === 'dirty' || room.status === 'cleaning') return 'needs_cleaning';
-    return 'available';
-  };
-  
-  const displayStatus = getDisplayStatus();
-  
-  // Colores por estado
-  const getStatusColor = () => {
-    switch (displayStatus) {
-      case 'available':
-        return 'bg-green-500 hover:bg-green-600 text-white';
-      case 'occupied':
-        return 'bg-red-500 hover:bg-red-600 text-white';
-      case 'needs_cleaning':
-        return 'bg-yellow-500 hover:bg-yellow-600 text-white';
-      default:
-        return 'bg-gray-500 hover:bg-gray-600 text-white';
-    }
-  };
-  
-  const getStatusText = () => {
-    switch (displayStatus) {
-      case 'available': return 'Disponible';
-      case 'occupied': return 'Ocupada';  
-      case 'needs_cleaning': return 'Necesita Limpieza';
-      default: return 'Desconocido';
-    }
-  };
-  
-  const isClickable = checkoutMode 
-    ? displayStatus === 'occupied' 
-    : displayStatus === 'available';
-    
-  const isSelected = selectedRoom?.number === room.number;
-  
-  // Handler principal del click
-  const handleMainClick = () => {
-    if (displayStatus === 'needs_cleaning') {
-      // Si necesita limpieza, limpiar directamente
-      handleQuickClean();
-    } else if (isClickable) {
-      // Si es clickeable, acción normal
-      onRoomClick(room);
-    }
-  };
-  
-  // Handler para limpieza rápida
-  const handleQuickClean = (event) => {
-    if (event) event.stopPropagation();
-    
-    if (displayStatus === 'needs_cleaning' && onQuickClean) {
-      onQuickClean(room.id || room.room_id);
-    }
-  };
-  
-  return (
-    <div className="relative">
-      {/* Botón principal de la habitación */}
-      <button
-        onClick={handleMainClick}
-        disabled={!isClickable && displayStatus !== 'needs_cleaning'}
-        className={`
-          relative p-4 rounded-lg font-bold text-lg transition-all duration-200 transform hover:scale-105
-          ${getStatusColor()}
-          ${isSelected ? 'ring-4 ring-blue-400 ring-opacity-50' : ''}
-          ${!isClickable && displayStatus !== 'needs_cleaning' ? 'opacity-50 cursor-not-allowed' : ''}
-          ${displayStatus === 'needs_cleaning' ? 'animate-pulse' : ''}
-          w-full
-        `}
-      >
-        {/* Número de habitación */}
-        <div className="text-center mb-2">
-          <div className="text-2xl font-bold">{room.number}</div>
-          <div className="text-sm opacity-90">{getStatusText()}</div>
-        </div>
-        
-        {/* Información de la habitación */}
-        <div className="text-xs opacity-75">
-          <div className="flex items-center justify-center space-x-1 mb-1">
-            <span>👥 {room.capacity || 2}</span>
-          </div>
-          <div className="text-center">
-            S/ {parseFloat(room.rate || room.base_rate || 100).toFixed(0)}
-          </div>
-        </div>
-        
-        {/* Información del huésped para habitaciones ocupadas */}
-        {displayStatus === 'occupied' && (room.guestName || room.currentGuest) && (
-          <div className="absolute top-1 left-1 bg-white bg-opacity-90 rounded px-1 py-0.5 text-xs text-gray-800 max-w-[80%] truncate">
-            {room.guestName || room.currentGuest?.name || 'Huésped'}
-          </div>
-        )}
-      </button>
-
-      {/* Botón de limpieza rápida flotante */}
-      {displayStatus === 'needs_cleaning' && (
-        <button
-          onClick={handleQuickClean}
-          className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-green-500 hover:bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110"
-          title="Click para marcar como limpia"
-        >
-          ✨
-        </button>
-      )}
-      
-      {/* Indicador de necesita limpieza */}
-      {displayStatus === 'needs_cleaning' && (
-        <div className="absolute top-1 right-1 w-3 h-3 bg-orange-500 rounded-full animate-ping"></div>
-      )}
-    </div>
   );
 };
 

@@ -1,11 +1,10 @@
-// src/hooks/useRooms.js - SIMPLIFICADO A 3 ESTADOS
+// src/hooks/useRooms.js - SIN ROOM_TYPES
 import { useState, useEffect, useMemo } from 'react'
 import { db, subscriptions } from '../lib/supabase'
 import toast from 'react-hot-toast'
 
 export const useRooms = () => {
   const [rooms, setRooms] = useState([])
-  const [roomTypes, setRoomTypes] = useState([])
   const [cleaningStaff, setCleaningStaff] = useState([])
   const [reservations, setReservations] = useState([])
   const [loading, setLoading] = useState(true)
@@ -137,7 +136,7 @@ export const useRooms = () => {
         
         // Estados legacy para compatibilidad (opcional)
         original_status: room.status,
-        cleaning_status: room.cleaning_status
+        cleaning_status: room.cleaning_status || 'clean'
       }
 
       return enrichedRoom
@@ -429,60 +428,45 @@ export const useRooms = () => {
     }
   }
 
-  // ============================================
-// ACTUALIZACIÓN DEL HOOK useRooms.js 
-// ============================================
-
-// Agregar esta función al hook useRooms
-const handleQuickClean = async (roomId) => {
-  try {
-    const room = rooms.find(r => r.id === roomId);
-    if (!room) {
-      toast.error('Habitación no encontrada');
-      return { data: null, error: 'Room not found' };
-    }
-
-    console.log(`🧹 Quick cleaning room ${room.number} (ID: ${roomId})`);
-
-    // Actualizar en base de datos usando la nueva función
-    const { data, error } = await db.cleanRoomWithClick(roomId);
+  // Generar roomTypes dinámicamente desde las habitaciones existentes
+  const roomTypes = useMemo(() => {
+    if (!rooms || rooms.length === 0) return []
     
-    if (error) {
-      console.error('Error cleaning room:', error);
-      throw error;
-    }
-
-    // Actualizar estado local inmediatamente
-    setRooms(prev => 
-      prev.map(r => r.id === roomId ? { 
-        ...r, 
-        status: 'available',
-        cleaning_status: 'clean',
-        displayStatus: 'available',
-        last_cleaned: new Date().toISOString(),
-        cleaned_by: 'Reception Staff'
-      } : r)
-    );
+    const typesMap = new Map()
     
-    toast.success(`✨ Habitación ${room.number} limpiada y disponible`, {
-      icon: '🧹',
-      duration: 3000
-    });
+    rooms.forEach(room => {
+      const type = room.room_type
+      if (type && !typesMap.has(type)) {
+        // Calcular estadísticas para este tipo
+        const roomsOfType = rooms.filter(r => r.room_type === type)
+        const available = roomsOfType.filter(r => r.status === ROOM_STATUS.AVAILABLE).length
+        const occupied = roomsOfType.filter(r => r.status === ROOM_STATUS.OCCUPIED).length
+        const averageRate = roomsOfType.reduce((sum, r) => sum + (r.base_rate || 0), 0) / roomsOfType.length
+        
+        typesMap.set(type, {
+          id: type.toLowerCase().replace(/\s+/g, '_'),
+          name: type,
+          description: `Tipo de habitación ${type}`,
+          baseRate: averageRate,
+          capacity: room.capacity || 2,
+          size: room.size || 25,
+          totalRooms: roomsOfType.length,
+          availableRooms: available,
+          occupiedRooms: occupied,
+          active: true,
+          features: room.features || [],
+          bedOptions: room.bed_options || []
+        })
+      }
+    })
     
-    return { data: true, error: null };
-    
-  } catch (error) {
-    console.error('Error in handleQuickClean:', error);
-    toast.error('Error al limpiar la habitación');
-    return { data: null, error };
-  }
-};
-
+    return Array.from(typesMap.values())
+  }, [rooms])
 
   return {
     // Datos
     rooms,
-    roomTypes,
+    roomTypes, // GENERADO DINÁMICAMENTE
     cleaningStaff,
     reservations,
     roomStats,
@@ -498,7 +482,7 @@ const handleQuickClean = async (roomId) => {
     deleteRoom,
     updateRoomStatus,
     
-    // NUEVA FUNCIÓN PRINCIPAL: Limpiar con click
+    // FUNCIÓN PRINCIPAL: Limpiar con click
     handleRoomCleanClick,
     
     // Métodos para manejo de reservas

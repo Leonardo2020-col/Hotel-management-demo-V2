@@ -1,5 +1,5 @@
 // ============================================
-// src/components/checkin/CheckoutSummary.jsx - EXPORT CORREGIDO
+// src/components/checkin/CheckoutSummary.jsx - SIN ROOM_TYPES
 // ============================================
 import React, { useState } from 'react';
 import { ChevronLeft, Check, CreditCard, DollarSign, Smartphone } from 'lucide-react';
@@ -47,6 +47,11 @@ const CheckoutSummary = ({
     );
   }
 
+  const roomInfo = currentOrder.room || {};
+  const roomType = roomInfo.room_type || 'Habitación Estándar';
+  const roomNumber = roomInfo.number || 'N/A';
+  const roomPrice = currentOrder.roomPrice || currentOrder.total || 0;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -64,8 +69,9 @@ const CheckoutSummary = ({
         <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-8">
           {/* Header del huésped */}
           <div className="text-center mb-6 p-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg">
-            <h3 className="text-2xl font-bold">Habitación {currentOrder?.room?.number}</h3>
+            <h3 className="text-2xl font-bold">Habitación {roomNumber}</h3>
             <p className="text-blue-100 mt-1">Huésped: {currentOrder?.guestName || 'Sin especificar'}</p>
+            <p className="text-blue-100 text-sm">Tipo: {roomType}</p>
             <p className="text-blue-100 text-sm">Check-in: {currentOrder?.checkInDate || 'N/A'}</p>
           </div>
 
@@ -79,10 +85,10 @@ const CheckoutSummary = ({
                 <div>
                   <span className="font-medium">Precio de habitación</span>
                   <p className="text-sm text-gray-600">
-                    Piso {Math.floor((currentOrder?.room?.number || 100) / 100)}
+                    {roomType} - Piso {Math.floor(parseInt(roomNumber) / 100) || 1}
                   </p>
                 </div>
-                <span className="font-bold text-lg">S/ {(currentOrder?.roomPrice || 0).toFixed(2)}</span>
+                <span className="font-bold text-lg">S/ {roomPrice.toFixed(2)}</span>
               </div>
 
               {/* Servicios adicionales */}

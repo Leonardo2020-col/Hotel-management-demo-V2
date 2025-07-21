@@ -77,8 +77,8 @@ const CleaningManagement = ({
 
     return rooms.filter(room => {
       // Filtro por término de búsqueda
-      const matchesSearch = String(room.number).toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           (room.room_type || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = String(room.number).toLowerCase().includes(searchTerm.toLowerCase()); //||
+                           //(room.room_type || '').toLowerCase().includes(searchTerm.toLowerCase());
 
       // Filtro por estado de limpieza
       const matchesStatus = filterStatus === 'all' || room.cleaning_status === filterStatus;

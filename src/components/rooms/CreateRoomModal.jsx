@@ -1,4 +1,4 @@
-// src/components/rooms/CreateRoomModal.jsx - SIN ROOM_TYPES Y DESCRIPCIÓN
+// src/components/rooms/CreateRoomModal.jsx - SIN ROOM_TYPES COMPLETAMENTE
 import React, { useState } from 'react';
 import { X, Bed, Users, Maximize, DollarSign, MapPin, Plus, Trash2 } from 'lucide-react';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -15,7 +15,9 @@ const COMMON_ROOM_TYPES = [
   'Suite Presidencial',
   'Habitación Familiar',
   'Habitación Individual',
-  'Habitación Doble'
+  'Habitación Doble',
+  'Suite Master',
+  'Habitación Premium'
 ];
 
 // Características de habitación
@@ -34,10 +36,11 @@ const ROOM_FEATURES = {
   KITCHEN: 'Kitchenette',
   TERRACE: 'Terraza',
   SEA_VIEW: 'Vista al Mar',
-  CITY_VIEW: 'Vista a la Ciudad'
+  CITY_VIEW: 'Vista a la Ciudad',
+  GARDEN_VIEW: 'Vista al Jardín'
 };
 
-// SCHEMA SIMPLIFICADO - Solo número y piso requeridos, SIN DESCRIPCIÓN
+// SCHEMA SIMPLIFICADO - Solo campos básicos requeridos
 const schema = yup.object().shape({
   number: yup.string().required('El número de habitación es obligatorio'),
   floor: yup.number().min(1, 'El piso debe ser mayor a 0').required('El piso es obligatorio'),
@@ -54,7 +57,7 @@ const schema = yup.object().shape({
   features: yup.array().optional()
 });
 
-const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
+const CreateRoomModal = ({ isOpen, onClose, onSubmit, existingRooms = [] }) => {
   const [selectedFeatures, setSelectedFeatures] = useState([]);
 
   const {
@@ -74,7 +77,6 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
       size: 25,
       base_rate: 100,
       room_type: 'Habitación Estándar'
-      // ELIMINADO: description: ''
     }
   });
 
@@ -85,22 +87,34 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
 
   const watchedType = watch('room_type');
 
+  // Generar tipos de habitación dinámicamente desde habitaciones existentes + tipos comunes
+  const allRoomTypes = React.useMemo(() => {
+    const existingTypes = existingRooms?.map(r => r.room_type).filter(Boolean) || [];
+    const combinedTypes = [...new Set([...COMMON_ROOM_TYPES, ...existingTypes])];
+    return combinedTypes.sort();
+  }, [existingRooms]);
+
   // Auto-completar campos basado en tipo seleccionado
   React.useEffect(() => {
-    if (watchedType && roomTypes && roomTypes.length > 0) {
-      const selectedType = roomTypes.find(type => type.name === watchedType);
-      if (selectedType) {
-        setValue('capacity', selectedType.capacity || 2);
-        setValue('size', selectedType.size || 25);
-        setValue('base_rate', selectedType.base_rate || 100);
-        
-        // Características por defecto según el tipo
-        const typeFeatures = getDefaultFeaturesForType(watchedType);
-        setSelectedFeatures(typeFeatures);
-        setValue('features', typeFeatures);
-      }
+    if (watchedType) {
+      // Características por defecto según el tipo
+      const typeFeatures = getDefaultFeaturesForType(watchedType);
+      setSelectedFeatures(typeFeatures);
+      setValue('features', typeFeatures);
+      
+      // Tarifas sugeridas por tipo
+      const suggestedRate = getSuggestedRateForType(watchedType);
+      setValue('base_rate', suggestedRate);
+      
+      // Capacidad sugerida por tipo
+      const suggestedCapacity = getSuggestedCapacityForType(watchedType);
+      setValue('capacity', suggestedCapacity);
+      
+      // Tamaño sugerido por tipo
+      const suggestedSize = getSuggestedSizeForType(watchedType);
+      setValue('size', suggestedSize);
     }
-  }, [watchedType, roomTypes, setValue]);
+  }, [watchedType, setValue]);
 
   // Obtener características por defecto según el tipo
   const getDefaultFeaturesForType = (roomType) => {
@@ -117,10 +131,62 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
         return [...baseFeatures, 'Minibar', 'Balcón', 'Kitchenette'];
       case 'Suite Presidencial':
         return [...baseFeatures, 'Minibar', 'Jacuzzi', 'Vista al Mar', 'Room Service', 'Terraza', 'Caja Fuerte'];
+      case 'Suite Master':
+        return [...baseFeatures, 'Minibar', 'Jacuzzi', 'Terraza', 'Room Service', 'Caja Fuerte'];
       case 'Habitación Familiar':
         return [...baseFeatures, 'Minibar', 'Room Service'];
+      case 'Habitación Premium':
+        return [...baseFeatures, 'Minibar', 'Balcón', 'Caja Fuerte', 'Vista al Mar'];
       default:
         return baseFeatures;
+    }
+  };
+
+  const getSuggestedRateForType = (roomType) => {
+    switch (roomType) {
+      case 'Habitación Estándar': return 100;
+      case 'Habitación Individual': return 80;
+      case 'Habitación Doble': return 120;
+      case 'Habitación Deluxe': return 180;
+      case 'Habitación Premium': return 220;
+      case 'Junior Suite': return 280;
+      case 'Suite Ejecutiva': return 350;
+      case 'Suite Master': return 450;
+      case 'Suite Presidencial': return 600;
+      case 'Habitación Familiar': return 200;
+      default: return 100;
+    }
+  };
+
+  const getSuggestedCapacityForType = (roomType) => {
+    switch (roomType) {
+      case 'Habitación Individual': return 1;
+      case 'Habitación Estándar': return 2;
+      case 'Habitación Doble': return 2;
+      case 'Habitación Deluxe': return 3;
+      case 'Habitación Premium': return 3;
+      case 'Junior Suite': return 3;
+      case 'Suite Ejecutiva': return 4;
+      case 'Suite Master': return 4;
+      case 'Suite Presidencial': return 6;
+      case 'Habitación Familiar': return 4;
+      default: return 2;
+    }
+  };
+
+  const getSuggestedSizeForType = (roomType) => {
+    switch (roomType) {
+      case 'Habitación Individual': return 18;
+      case 'Habitación Estándar': return 25;
+      case 'Habitación Doble': return 28;
+      case 'Habitación Deluxe': return 35;
+      case 'Habitación Premium': return 40;
+      case 'Junior Suite': return 45;
+      case 'Suite Ejecutiva': return 60;
+      case 'Suite Master': return 75;
+      case 'Suite Presidencial': return 100;
+      case 'Habitación Familiar': return 50;
+      default: return 25;
     }
   };
 
@@ -139,16 +205,15 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
         ...data,
         features: selectedFeatures,
         status: 'available',
-        cleaningStatus: 'clean',
-        // Valores por defecto si están vacíos
+        cleaning_status: 'clean',
+        // Asegurar que los campos tienen valores
         capacity: data.capacity || 2,
         size: data.size || 25,
         base_rate: data.base_rate || 100,
         room_type: data.room_type || 'Habitación Estándar',
-        // Convertir base_rate a rate para compatibilidad
+        // Compatibilidad con diferentes nombres de campo
         rate: data.base_rate || 100,
         type: data.room_type || 'Habitación Estándar'
-        // ELIMINADO: description generada automáticamente
       };
       
       console.log('Submitting room data:', roomData);
@@ -174,13 +239,6 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
     'Litera'
   ];
 
-  // Combinar tipos dinámicos con tipos comunes
-  const allRoomTypes = React.useMemo(() => {
-    const existingTypes = roomTypes?.map(t => t.name) || [];
-    const combinedTypes = [...new Set([...COMMON_ROOM_TYPES, ...existingTypes])];
-    return combinedTypes;
-  }, [roomTypes]);
-
   if (!isOpen) return null;
 
   return (
@@ -191,7 +249,7 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Nueva Habitación</h2>
             <p className="text-gray-600 mt-1">
-              Solo número y piso son obligatorios. Sistema simplificado sin room_types.
+              Sistema simplificado sin room_types. Tipos generados dinámicamente.
             </p>
           </div>
           <button
@@ -313,8 +371,6 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
                 </div>
               </div>
 
-              {/* ELIMINADO: Campo Description */}
-
               {/* Beds Configuration */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
@@ -416,7 +472,7 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
               </div>
             </div>
 
-            {/* Preview Card - SIN DESCRIPCIÓN */}
+            {/* Preview Card */}
             {watch('number') && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <h4 className="font-semibold text-yellow-900 mb-3">Vista Previa</h4>
@@ -456,8 +512,6 @@ const CreateRoomModal = ({ isOpen, onClose, onSubmit, roomTypes = [] }) => {
                       {watch('room_type') || 'Habitación Estándar'}
                     </span>
                   </div>
-                  
-                  {/* ELIMINADO: Descripción preview */}
                   
                   {bedFields.length > 0 && (
                     <div className="mb-3">
