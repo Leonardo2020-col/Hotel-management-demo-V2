@@ -395,6 +395,7 @@ const Rooms = () => {
       <RoomFilters
         filters={filters}
         onFiltersChange={setFilters}
+        rooms={rooms} // Pasar rooms en lugar de roomTypes
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         loading={loading}

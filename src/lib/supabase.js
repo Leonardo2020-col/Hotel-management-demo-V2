@@ -617,7 +617,7 @@ async markRoomAsDirtyAfterCheckout(roomId) {
   async updateRoom(roomId, updates) {
     try {
       // Filtrar campos que ya no existen
-      const { room_type, description, ...validUpdates } = updates
+      //const { room_type, description, ...validUpdates } = updates
       
       const { data, error } = await supabase
         .from('rooms')

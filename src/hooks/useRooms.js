@@ -1,4 +1,4 @@
-// src/hooks/useRooms.js - SIN ROOM_TYPES
+// src/hooks/useRooms.js - COMPLETAMENTE SIN ROOM_TYPES
 import { useState, useEffect, useMemo } from 'react'
 import { db, subscriptions } from '../lib/supabase'
 import toast from 'react-hot-toast'
@@ -239,23 +239,26 @@ export const useRooms = () => {
     }
   }
 
-  // Crear nueva habitación
+  // Crear nueva habitación - SOLO NÚMERO Y PISO
   const createRoom = async (roomData) => {
     try {
       console.log('Creating room with data:', roomData)
       
+      // Solo número y piso son requeridos
+      if (!roomData.number || !roomData.floor) {
+        throw new Error('Número de habitación y piso son requeridos')
+      }
+
       const newRoomData = {
-        number: roomData.number,
+        number: roomData.number.toString(),
         floor: parseInt(roomData.floor),
-        //room_type: roomData.room_type || 'Habitación Estándar',
-        base_rate: parseFloat(roomData.rate || roomData.base_rate || 100),
-        capacity: parseInt(roomData.capacity || 2),
+        base_rate: parseFloat(roomData.base_rate || 100), // Opcional
+        capacity: parseInt(roomData.capacity || 2), // Opcional
         status: 'available', // Estado en BD
         cleaning_status: 'clean', // Estado en BD
-        beds: roomData.beds || [{ type: 'Doble', count: 1 }],
-        size: parseInt(roomData.size) || 25,
-        features: roomData.features || ['WiFi Gratis'],
-        bed_options: roomData.bed_options || ['Doble'],
+        size: parseInt(roomData.size) || 25, // Opcional
+        features: roomData.features || [], // Opcional
+        beds: roomData.beds || [], // Opcional
         branch_id: 1
       }
 
@@ -394,7 +397,18 @@ export const useRooms = () => {
   // Resto de funciones simplificadas...
   const updateRoom = async (roomId, updateData) => {
     try {
-      const { data, error } = await db.updateRoom(roomId, updateData)
+      // Solo permitir actualizar número, piso y campos opcionales
+      const allowedFields = {
+        number: updateData.number,
+        floor: updateData.floor,
+        base_rate: updateData.base_rate,
+        capacity: updateData.capacity,
+        size: updateData.size,
+        features: updateData.features,
+        beds: updateData.beds
+      }
+
+      const { data, error } = await db.updateRoom(roomId, allowedFields)
       
       if (error) throw error
       
@@ -428,45 +442,9 @@ export const useRooms = () => {
     }
   }
 
-  // Generar roomTypes dinámicamente desde las habitaciones existentes
-  const roomTypes = useMemo(() => {
-    if (!rooms || rooms.length === 0) return []
-    
-    const typesMap = new Map()
-    
-    rooms.forEach(room => {
-      //const type = room.room_type
-      if (type && !typesMap.has(type)) {
-        // Calcular estadísticas para este tipo
-        //const roomsOfType = rooms.filter(r => r.room_type === type)
-        const available = roomsOfType.filter(r => r.status === ROOM_STATUS.AVAILABLE).length
-        const occupied = roomsOfType.filter(r => r.status === ROOM_STATUS.OCCUPIED).length
-        const averageRate = roomsOfType.reduce((sum, r) => sum + (r.base_rate || 0), 0) / roomsOfType.length
-        
-        typesMap.set(type, {
-          id: type.toLowerCase().replace(/\s+/g, '_'),
-          name: type,
-          description: `Tipo de habitación ${type}`,
-          baseRate: averageRate,
-          capacity: room.capacity || 2,
-          size: room.size || 25,
-          totalRooms: roomsOfType.length,
-          availableRooms: available,
-          occupiedRooms: occupied,
-          active: true,
-          features: room.features || [],
-          bedOptions: room.bed_options || []
-        })
-      }
-    })
-    
-    return Array.from(typesMap.values())
-  }, [rooms])
-
   return {
     // Datos
     rooms,
-    roomTypes, // GENERADO DINÁMICAMENTE
     cleaningStaff,
     reservations,
     roomStats,

@@ -1,4 +1,4 @@
-// src/components/rooms/RoomFilters.jsx - SIN ROOM_TYPES
+// src/components/rooms/RoomFilters.jsx - SIN FILTRO DE TIPO
 import React from 'react';
 import { Search, Filter, X, Grid, List } from 'lucide-react';
 import Button from '../common/Button';
@@ -13,7 +13,7 @@ const ROOM_STATUS = {
 const RoomFilters = ({ 
   filters = {}, 
   onFiltersChange, 
-  rooms = [], // Cambiar de roomTypes a rooms
+  rooms = [], // Para generar opciones de piso dinámicamente
   viewMode = 'grid', 
   onViewModeChange, 
   loading = false
@@ -31,7 +31,6 @@ const RoomFilters = ({
     if (onFiltersChange) {
       onFiltersChange({
         status: 'all',
-        type: 'all',
         floor: 'all',
         search: ''
       });
@@ -50,20 +49,6 @@ const RoomFilters = ({
     { value: ROOM_STATUS.OCCUPIED, label: 'Ocupadas', icon: '👥' },
     { value: ROOM_STATUS.NEEDS_CLEANING, label: 'Necesitan Limpieza', icon: '🧹' }
   ];
-
-  // Generar opciones de tipo dinámicamente desde las habitaciones
-  const typeOptions = React.useMemo(() => {
-    const allTypes = [{ value: 'all', label: 'Todos los tipos' }];
-    
-    if (rooms && rooms.length > 0) {
-      const uniqueTypes = [...new Set(rooms.map(room => room.room_type).filter(Boolean))];
-      uniqueTypes.forEach(type => {
-        allTypes.push({ value: type, label: type });
-      });
-    }
-    
-    return allTypes;
-  }, [rooms]);
 
   // Generar opciones de piso dinámicamente desde las habitaciones
   const floorOptions = React.useMemo(() => {
@@ -84,8 +69,8 @@ const RoomFilters = ({
     return (
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
         <div className="animate-pulse">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[...Array(3)].map((_, i) => (
               <div key={i} className="h-10 bg-gray-200 rounded"></div>
             ))}
           </div>
@@ -147,27 +132,28 @@ const RoomFilters = ({
       {/* EXPLICACIÓN DEL SISTEMA SIMPLIFICADO */}
       <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
         <p className="text-blue-700 text-sm">
-          <strong>Sistema simplificado sin room_types:</strong> 
+          <strong>Sistema ultra-simplificado:</strong> 
           <span className="ml-2">
-            ✅ Disponible (limpia) · 👥 Ocupada · 🧹 Necesita Limpieza
+            Solo número de habitación y piso requeridos · ✅ Disponible · 👥 Ocupada · 🧹 Necesita Limpieza
           </span>
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* SOLO 3 FILTROS: Búsqueda, Estado, Piso */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
           <input
             type="text"
-            placeholder="Buscar habitaciones..."
+            placeholder="Buscar por número..."
             value={filters.search || ''}
             onChange={(e) => handleFilterChange('search', e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
-        {/* Status Filter con iconos */}
+        {/* Status Filter */}
         <div className="relative">
           <select
             value={filters.status || 'all'}
@@ -187,20 +173,7 @@ const RoomFilters = ({
           </div>
         </div>
 
-        {/* Type Filter - Dinámico desde habitaciones */}
-        <select
-          value={filters.type || 'all'}
-          onChange={(e) => handleFilterChange('type', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          {typeOptions.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-
-        {/* Floor Filter - Dinámico desde habitaciones */}
+        {/* Floor Filter */}
         <select
           value={filters.floor || 'all'}
           onChange={(e) => handleFilterChange('floor', e.target.value)}
@@ -240,17 +213,6 @@ const RoomFilters = ({
               </button>
             </span>
           )}
-          {filters.type !== 'all' && (
-            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-              Tipo: {filters.type}
-              <button
-                onClick={() => handleFilterChange('type', 'all')}
-                className="ml-1 hover:text-purple-600"
-              >
-                <X size={12} />
-              </button>
-            </span>
-          )}
           {filters.floor !== 'all' && (
             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
               Piso: {filters.floor}
@@ -269,7 +231,7 @@ const RoomFilters = ({
       <div className="mt-4 text-sm text-gray-500 border-t pt-3">
         <div className="flex justify-between items-center">
           <span>
-            Sistema sin room_types - Tipos generados dinámicamente desde las habitaciones
+            ✨ Sistema súper simple: Solo número y piso obligatorios
           </span>
           <div className="flex items-center space-x-4 text-xs">
             <div className="flex items-center space-x-1">
