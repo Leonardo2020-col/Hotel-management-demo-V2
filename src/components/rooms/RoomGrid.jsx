@@ -283,11 +283,7 @@ const RoomGrid = ({
                     <MapPin size={14} />
                     <span>Piso {room.floor}</span>
                   </div>
-                  {room.room_type && (
-                    <span className="ml-4 px-2 py-1 bg-gray-100 rounded text-xs">
-                      {room.room_type}
-                    </span>
-                  )}
+                  
                 </div>
               </div>
 
@@ -472,10 +468,6 @@ const RoomGrid = ({
                   <div>
                     <p className="text-sm text-gray-600">Piso</p>
                     <p className="font-semibold">{showingReservationDetails.floor}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Tipo</p>
-                    <p className="font-semibold">{showingReservationDetails.room_type}</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Tarifa</p>

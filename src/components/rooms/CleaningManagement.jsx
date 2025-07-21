@@ -335,12 +335,7 @@ const CleaningManagement = ({
                     </div>
                   </div>
 
-                  {/* Tipo de habitación si existe */}
-                  {room.room_type && (
-                    <div className="text-sm text-gray-600">
-                      <span className="font-medium">{room.room_type}</span>
-                    </div>
-                  )}
+      
 
                   {room.assigned_cleaner && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
