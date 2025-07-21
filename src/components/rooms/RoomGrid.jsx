@@ -1,14 +1,11 @@
-// src/components/rooms/RoomGrid.jsx - CORREGIDO CON RESERVAS
+// src/components/rooms/RoomGrid.jsx - SIMPLIFICADO CON CLICK PARA LIMPIAR
 import React, { useState } from 'react';
 import { 
   Edit, 
   Trash2, 
   MapPin, 
   CheckCircle,
-  Clock,
   AlertTriangle,
-  Wrench,
-  Ban,
   Users,
   Eye,
   LogOut,
@@ -17,19 +14,19 @@ import {
   Phone,
   Mail,
   CreditCard,
-  X  
+  X,
+  Sparkles
 } from 'lucide-react';
 import Button from '../common/Button';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import classNames from 'classnames';
 import toast from 'react-hot-toast'; 
 
+// ESTADOS SIMPLIFICADOS
 const ROOM_STATUS = {
   AVAILABLE: 'available',
-  OCCUPIED: 'occupied',
-  CLEANING: 'cleaning',
-  MAINTENANCE: 'maintenance',
-  OUT_OF_ORDER: 'out_of_order'
+  OCCUPIED: 'occupied', 
+  NEEDS_CLEANING: 'needs_cleaning'
 };
 
 const RoomGrid = ({ 
@@ -40,44 +37,53 @@ const RoomGrid = ({
   onStatusChange,
   onEdit,
   onDelete,
-  // NUEVAS PROPS para manejo de reservas
   onViewReservation,
   onProcessCheckIn,
-  onProcessCheckOut
+  onProcessCheckOut,
+  // NUEVA FUNCIÓN: Click para limpiar
+  onRoomCleanClick
 }) => {
   const [showingReservationDetails, setShowingReservationDetails] = useState(null);
 
+  // Obtener color según estado simplificado
   const getStatusColor = (status) => {
     switch (status) {
       case ROOM_STATUS.AVAILABLE:
         return 'bg-green-100 text-green-800 border-green-200';
       case ROOM_STATUS.OCCUPIED:
         return 'bg-blue-100 text-blue-800 border-blue-200';
-      case ROOM_STATUS.CLEANING:
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case ROOM_STATUS.MAINTENANCE:
+      case ROOM_STATUS.NEEDS_CLEANING:
         return 'bg-orange-100 text-orange-800 border-orange-200';
-      case ROOM_STATUS.OUT_OF_ORDER:
-        return 'bg-red-100 text-red-800 border-red-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
+  // Obtener icono según estado simplificado
   const getStatusIcon = (status) => {
     switch (status) {
       case ROOM_STATUS.AVAILABLE:
         return CheckCircle;
       case ROOM_STATUS.OCCUPIED:
         return Users;
-      case ROOM_STATUS.CLEANING:
-        return Clock;
-      case ROOM_STATUS.MAINTENANCE:
-        return Wrench;
-      case ROOM_STATUS.OUT_OF_ORDER:
-        return Ban;
+      case ROOM_STATUS.NEEDS_CLEANING:
+        return AlertTriangle;
       default:
         return AlertTriangle;
+    }
+  };
+
+  // Obtener texto del estado
+  const getStatusText = (status) => {
+    switch (status) {
+      case ROOM_STATUS.AVAILABLE:
+        return 'Disponible';
+      case ROOM_STATUS.OCCUPIED:
+        return 'Ocupada';
+      case ROOM_STATUS.NEEDS_CLEANING:
+        return 'Necesita Limpieza';
+      default:
+        return 'Desconocido';
     }
   };
 
@@ -91,7 +97,20 @@ const RoomGrid = ({
     }
   };
 
-  // NUEVA FUNCIÓN: Mostrar información de la reserva
+  // NUEVA FUNCIÓN: Manejar click de limpieza
+  const handleCleaningClick = async (room, event) => {
+    event.stopPropagation(); // Evitar propagación del click
+    
+    if (room.status !== ROOM_STATUS.NEEDS_CLEANING) {
+      toast.warning('Esta habitación no necesita limpieza');
+      return;
+    }
+
+    if (onRoomCleanClick) {
+      await onRoomCleanClick(room.id);
+    }
+  };
+
   const handleViewReservationInfo = (room) => {
     if (room.status === ROOM_STATUS.OCCUPIED && room.currentGuest) {
       setShowingReservationDetails(room);
@@ -100,6 +119,7 @@ const RoomGrid = ({
     }
   };
 
+  // Componente de acciones según estado
   const StatusActions = ({ room }) => {
     const availableActions = [];
 
@@ -115,20 +135,6 @@ const RoomGrid = ({
             icon: LogIn
           });
         }
-        availableActions.push(
-          { 
-            label: 'Ocupar', 
-            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.OCCUPIED),
-            color: 'primary',
-            icon: Users
-          },
-          { 
-            label: 'Limpieza', 
-            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.CLEANING),
-            color: 'warning',
-            icon: Clock
-          }
-        );
         break;
         
       case ROOM_STATUS.OCCUPIED:
@@ -148,26 +154,15 @@ const RoomGrid = ({
         );
         break;
         
-      case ROOM_STATUS.CLEANING:
-        availableActions.push(
-          { 
-            label: 'Finalizar', 
-            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.AVAILABLE),
-            color: 'success',
-            icon: CheckCircle
-          }
-        );
-        break;
-        
-      case ROOM_STATUS.MAINTENANCE:
-        availableActions.push(
-          { 
-            label: 'Finalizar', 
-            action: () => onStatusChange && onStatusChange(room.id, ROOM_STATUS.AVAILABLE),
-            color: 'success',
-            icon: CheckCircle
-          }
-        );
+      case ROOM_STATUS.NEEDS_CLEANING:
+        // ACCIÓN PRINCIPAL: Botón de limpieza destacado
+        availableActions.push({
+          label: 'Limpiar Ahora',
+          action: (e) => handleCleaningClick(room, e),
+          color: 'warning',
+          icon: Sparkles,
+          isMainAction: true
+        });
         break;
     }
 
@@ -182,7 +177,10 @@ const RoomGrid = ({
               variant={action.color}
               onClick={action.action}
               icon={ActionIcon}
-              className="text-xs px-3 py-1"
+              className={classNames(
+                "text-xs px-3 py-1",
+                action.isMainAction && "ring-2 ring-orange-300 font-semibold shadow-lg transform hover:scale-105"
+              )}
             >
               {action.label}
             </Button>
@@ -242,9 +240,17 @@ const RoomGrid = ({
             <div
               key={room.id}
               className={classNames(
-                'bg-white rounded-xl shadow-lg border transition-all duration-300 hover:shadow-xl',
-                isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-100'
+                'bg-white rounded-xl shadow-lg border transition-all duration-300 hover:shadow-xl cursor-pointer',
+                isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-100',
+                // DESTACAR habitaciones que necesitan limpieza
+                room.status === ROOM_STATUS.NEEDS_CLEANING && 'ring-2 ring-orange-300 shadow-orange-100'
               )}
+              // CLICK PRINCIPAL: Si necesita limpieza, limpiar directamente
+              onClick={(e) => {
+                if (room.status === ROOM_STATUS.NEEDS_CLEANING) {
+                  handleCleaningClick(room, e);
+                }
+              }}
             >
               {/* Header */}
               <div className="p-6 border-b border-gray-200">
@@ -253,7 +259,10 @@ const RoomGrid = ({
                     <input
                       type="checkbox"
                       checked={isSelected}
-                      onChange={() => handleSelectRoom(room.id)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleSelectRoom(room.id);
+                      }}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                     <h3 className="text-xl font-bold text-gray-900">
@@ -265,7 +274,7 @@ const RoomGrid = ({
                     getStatusColor(room.status)
                   )}>
                     <StatusIcon size={14} />
-                    <span>{room.status}</span>
+                    <span>{getStatusText(room.status)}</span>
                   </span>
                 </div>
 
@@ -283,7 +292,7 @@ const RoomGrid = ({
               </div>
 
               {/* Content */}
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
                 {/* Rate */}
                 <div className="text-center">
                   <span className="text-2xl font-bold text-blue-600">
@@ -291,8 +300,30 @@ const RoomGrid = ({
                   </span>
                 </div>
 
-                {/* Current Guest - INFORMACIÓN MEJORADA */}
-                {room.currentGuest && (
+                {/* INDICADOR ESPECIAL: Necesita limpieza */}
+                {room.status === ROOM_STATUS.NEEDS_CLEANING && (
+                  <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-4 text-center">
+                    <Sparkles className="mx-auto h-8 w-8 text-orange-600 mb-2" />
+                    <p className="text-sm font-bold text-orange-900 mb-2">
+                      🧹 Habitación necesita limpieza
+                    </p>
+                    <p className="text-xs text-orange-700 mb-3">
+                      Haz click en la habitación para marcarla como limpia
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="warning"
+                      onClick={(e) => handleCleaningClick(room, e)}
+                      icon={Sparkles}
+                      className="w-full font-semibold"
+                    >
+                      ✨ Limpiar Ahora
+                    </Button>
+                  </div>
+                )}
+
+                {/* Current Guest - solo para ocupadas */}
+                {room.status === ROOM_STATUS.OCCUPIED && room.currentGuest && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-semibold text-blue-900">
@@ -330,8 +361,8 @@ const RoomGrid = ({
                   </div>
                 )}
 
-                {/* Next Reservation - INFORMACIÓN MEJORADA */}
-                {room.nextReservation && !room.currentGuest && (
+                {/* Next Reservation - solo para disponibles */}
+                {room.status === ROOM_STATUS.AVAILABLE && room.nextReservation && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                     <p className="text-sm font-semibold text-yellow-900 mb-2">
                       Próxima Reserva
@@ -352,24 +383,7 @@ const RoomGrid = ({
                   </div>
                 )}
 
-                {/* Cleaning Status */}
-                {room.cleaning_status && room.cleaning_status !== 'clean' && (
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                    <p className="text-sm font-medium text-orange-900">
-                      Estado de Limpieza: 
-                      <span className="ml-2 px-2 py-1 bg-orange-100 rounded text-xs">
-                        {room.cleaning_status}
-                      </span>
-                    </p>
-                    {room.assigned_cleaner && (
-                      <p className="text-xs text-orange-700 mt-1">
-                        Asignado a: {room.assigned_cleaner}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Room Empty State */}
+                {/* Available State - solo para disponibles sin reservas */}
                 {room.status === ROOM_STATUS.AVAILABLE && !room.nextReservation && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
                     <CheckCircle className="mx-auto h-6 w-6 text-green-600 mb-2" />
@@ -393,7 +407,10 @@ const RoomGrid = ({
                     size="sm"
                     variant="outline"
                     icon={Edit}
-                    onClick={() => onEdit && onEdit(room.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit && onEdit(room.id);
+                    }}
                     className="flex-1"
                   >
                     Editar
@@ -402,7 +419,10 @@ const RoomGrid = ({
                     size="sm"
                     variant="danger"
                     icon={Trash2}
-                    onClick={() => onDelete && onDelete(room.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete && onDelete(room.id);
+                    }}
                     className="flex-1"
                     disabled={room.status === ROOM_STATUS.OCCUPIED}
                   >
@@ -415,7 +435,7 @@ const RoomGrid = ({
         })}
       </div>
 
-      {/* NUEVO: Modal de Detalles de Reserva */}
+      {/* Modal de Detalles de Reserva */}
       {showingReservationDetails && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -525,38 +545,12 @@ const RoomGrid = ({
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm text-green-600">Noches</p>
-                      <p className="font-semibold text-green-900">
-                        {showingReservationDetails.activeReservation.nights || 
-                         Math.ceil((new Date(showingReservationDetails.currentGuest.checkOut) - 
-                                   new Date(showingReservationDetails.currentGuest.checkIn)) / 
-                                   (1000 * 60 * 60 * 24))} noches
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-green-600">Huéspedes</p>
-                      <p className="font-semibold text-green-900">
-                        {showingReservationDetails.activeReservation.adults || 1} adultos
-                        {showingReservationDetails.activeReservation.children > 0 && 
-                         `, ${showingReservationDetails.activeReservation.children} niños`}
-                      </p>
-                    </div>
-                    <div>
                       <p className="text-sm text-green-600">Total</p>
                       <p className="font-semibold text-green-900">
                         {formatCurrency(showingReservationDetails.activeReservation.total_amount || 0)}
                       </p>
                     </div>
                   </div>
-                  
-                  {showingReservationDetails.activeReservation.special_requests && (
-                    <div className="mt-4">
-                      <p className="text-sm text-green-600">Solicitudes especiales</p>
-                      <p className="font-semibold text-green-900">
-                        {showingReservationDetails.activeReservation.special_requests}
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
             </div>

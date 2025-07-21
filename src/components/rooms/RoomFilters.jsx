@@ -1,24 +1,13 @@
-// ============================================
-// RoomFilters.jsx - VERSIÓN FINAL CORREGIDA
-// ============================================
+// src/components/rooms/RoomFilters.jsx - FILTROS SIMPLIFICADOS
 import React from 'react';
 import { Search, Filter, X, Grid, List } from 'lucide-react';
 import Button from '../common/Button';
 
-// Constants for room and cleaning status
+// ESTADOS SIMPLIFICADOS - Solo 3 estados
 const ROOM_STATUS = {
   AVAILABLE: 'available',
   OCCUPIED: 'occupied',
-  CLEANING: 'cleaning',
-  MAINTENANCE: 'maintenance',
-  OUT_OF_ORDER: 'out_of_order'
-};
-
-const CLEANING_STATUS = {
-  CLEAN: 'clean',
-  DIRTY: 'dirty',
-  IN_PROGRESS: 'in_progress',
-  INSPECTED: 'inspected'
+  NEEDS_CLEANING: 'needs_cleaning'
 };
 
 const RoomFilters = ({ 
@@ -44,7 +33,6 @@ const RoomFilters = ({
         status: 'all',
         type: 'all',
         floor: 'all',
-        cleaningStatus: 'all',
         search: ''
       });
     }
@@ -55,13 +43,12 @@ const RoomFilters = ({
     return value !== 'all';
   });
 
+  // OPCIONES DE ESTADO SIMPLIFICADAS
   const statusOptions = [
-    { value: 'all', label: 'Todos los estados' },
-    { value: ROOM_STATUS.AVAILABLE, label: 'Disponible' },
-    { value: ROOM_STATUS.OCCUPIED, label: 'Ocupada' },
-    { value: ROOM_STATUS.CLEANING, label: 'Limpieza' },
-    { value: ROOM_STATUS.MAINTENANCE, label: 'Mantenimiento' },
-    { value: ROOM_STATUS.OUT_OF_ORDER, label: 'Fuera de Servicio' }
+    { value: 'all', label: 'Todos los estados', icon: '🏨' },
+    { value: ROOM_STATUS.AVAILABLE, label: 'Disponibles', icon: '✅' },
+    { value: ROOM_STATUS.OCCUPIED, label: 'Ocupadas', icon: '👥' },
+    { value: ROOM_STATUS.NEEDS_CLEANING, label: 'Necesitan Limpieza', icon: '🧹' }
   ];
 
   const typeOptions = [
@@ -81,20 +68,12 @@ const RoomFilters = ({
     { value: '5', label: 'Piso 5' }
   ];
 
-  const cleaningStatusOptions = [
-    { value: 'all', label: 'Todos los estados de limpieza' },
-    { value: CLEANING_STATUS.CLEAN, label: 'Limpia' },
-    { value: CLEANING_STATUS.DIRTY, label: 'Sucia' },
-    { value: CLEANING_STATUS.IN_PROGRESS, label: 'En Proceso' },
-    { value: CLEANING_STATUS.INSPECTED, label: 'Inspeccionada' }
-  ];
-
   if (loading) {
     return (
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
         <div className="animate-pulse">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-            {[...Array(6)].map((_, i) => (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
               <div key={i} className="h-10 bg-gray-200 rounded"></div>
             ))}
           </div>
@@ -153,7 +132,17 @@ const RoomFilters = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* EXPLICACIÓN DEL SISTEMA SIMPLIFICADO */}
+      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <p className="text-blue-700 text-sm">
+          <strong>Sistema simplificado:</strong> 
+          <span className="ml-2">
+            ✅ Disponible (limpia) · 👥 Ocupada · 🧹 Necesita Limpieza
+          </span>
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
@@ -166,18 +155,25 @@ const RoomFilters = ({
           />
         </div>
 
-        {/* Status Filter */}
-        <select
-          value={filters.status || 'all'}
-          onChange={(e) => handleFilterChange('status', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          {statusOptions.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        {/* Status Filter con iconos */}
+        <div className="relative">
+          <select
+            value={filters.status || 'all'}
+            onChange={(e) => handleFilterChange('status', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
+          >
+            {statusOptions.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.icon} {option.label}
+              </option>
+            ))}
+          </select>
+          <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
+          </div>
+        </div>
 
         {/* Type Filter */}
         <select
@@ -204,19 +200,81 @@ const RoomFilters = ({
             </option>
           ))}
         </select>
+      </div>
 
-        {/* Cleaning Status Filter */}
-        <select
-          value={filters.cleaningStatus || 'all'}
-          onChange={(e) => handleFilterChange('cleaningStatus', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          {cleaningStatusOptions.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+      {/* Indicadores de estado activo */}
+      {hasActiveFilters && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <span className="text-sm text-gray-600">Filtros activos:</span>
+          {filters.search && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+              Búsqueda: "{filters.search}"
+              <button
+                onClick={() => handleFilterChange('search', '')}
+                className="ml-1 hover:text-blue-600"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          {filters.status !== 'all' && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+              Estado: {statusOptions.find(opt => opt.value === filters.status)?.label}
+              <button
+                onClick={() => handleFilterChange('status', 'all')}
+                className="ml-1 hover:text-green-600"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          {filters.type !== 'all' && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+              Tipo: {filters.type}
+              <button
+                onClick={() => handleFilterChange('type', 'all')}
+                className="ml-1 hover:text-purple-600"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          {filters.floor !== 'all' && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
+              Piso: {filters.floor}
+              <button
+                onClick={() => handleFilterChange('floor', 'all')}
+                className="ml-1 hover:text-orange-600"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Contador de resultados */}
+      <div className="mt-4 text-sm text-gray-500 border-t pt-3">
+        <div className="flex justify-between items-center">
+          <span>
+            {/* Este contador se mostrará desde el componente padre */}
+            Usa los filtros para encontrar habitaciones específicas
+          </span>
+          <div className="flex items-center space-x-4 text-xs">
+            <div className="flex items-center space-x-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span>Disponible</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <span>Ocupada</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+              <span>Necesita Limpieza</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

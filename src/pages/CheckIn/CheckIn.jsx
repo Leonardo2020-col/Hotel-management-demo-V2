@@ -1,6 +1,6 @@
-// src/pages/CheckIn/CheckIn.jsx - CON REGISTRO SIN RESERVACIÓN
+// src/pages/CheckIn/CheckIn.jsx - CON LIMPIEZA RÁPIDA INTEGRADA
 import React, { useState, useEffect } from 'react'
-import { LogIn, LogOut, RefreshCw } from 'lucide-react'
+import { LogIn, LogOut, RefreshCw, Sparkles } from 'lucide-react'
 import Button from '../../components/common/Button'
 import RoomGrid from '../../components/checkin/RoomGrid'
 import SnackSelection from '../../components/checkin/SnackSelection'
@@ -12,13 +12,13 @@ import toast from 'react-hot-toast'
 const CheckIn = () => {
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [selectedFloor, setSelectedFloor] = useState(1)
-  const [orderStep, setOrderStep] = useState(0) // 0: rooms, 1: snack selection, 2: checkout summary
+  const [orderStep, setOrderStep] = useState(0)
   const [checkoutMode, setCheckoutMode] = useState(false)
   const [selectedSnackType, setSelectedSnackType] = useState(null)
   const [selectedSnacks, setSelectedSnacks] = useState([])
   const [currentOrder, setCurrentOrder] = useState(null)
   
-  // NUEVO: Estado para datos del huésped en registro sin reserva
+  // Estado para datos del huésped
   const [guestData, setGuestData] = useState({
     fullName: '',
     documentType: 'DNI',
@@ -32,7 +32,7 @@ const CheckIn = () => {
     specialRequests: ''
   })
 
-  // Hook actualizado para Supabase
+  // Hook con nueva función de limpieza rápida
   const {
     floorRooms,
     roomsByFloor,
@@ -44,26 +44,24 @@ const CheckIn = () => {
     error,
     processCheckIn,
     processCheckOut,
+    cleanRoom, // NUEVA FUNCIÓN
     refreshData,
     debugData,
-    setSavedOrders
+    setSavedOrders,
+    hasQuickCleanCapability // NUEVA FLAG
   } = useCheckInData()
 
   // Debug al cargar
   useEffect(() => {
     console.log('🔍 CheckIn Component Debug:')
-    console.log('floorRooms:', floorRooms)
-    console.log('roomsByFloor:', roomsByFloor)
-    console.log('loading:', loading)
-    console.log('error:', error)
+    console.log('Has quick clean capability:', hasQuickCleanCapability)
     
-    // Llamar debug del hook
     if (debugData) {
       debugData()
     }
-  }, [floorRooms, roomsByFloor, loading, error, debugData])
+  }, [floorRooms, roomsByFloor, loading, error, debugData, hasQuickCleanCapability])
 
-  // Seleccionar piso automáticamente cuando cambien los datos
+  // Seleccionar piso automáticamente
   useEffect(() => {
     const rooms = floorRooms || roomsByFloor
     if (rooms && typeof rooms === 'object') {
@@ -76,24 +74,65 @@ const CheckIn = () => {
     }
   }, [floorRooms, roomsByFloor, selectedFloor])
 
-  // Determinar qué datos de habitaciones usar
+  // Determinar qué datos usar
   const getRoomsData = () => {
     const rooms = floorRooms || roomsByFloor
     console.log('📊 Using rooms data:', rooms)
     return rooms || {}
   }
 
-  // Handlers para RoomGrid
+  // Handler para cambio de piso
   const handleFloorChange = (floor) => {
     console.log(`🏠 Changing to floor ${floor}`)
     setSelectedFloor(floor)
     setSelectedRoom(null)
   }
 
-  // NUEVAS FUNCIONES DE APOYO
+  // NUEVO: Handler para limpieza rápida
+  const handleQuickClean = async (roomId) => {
+    try {
+      console.log(`✨ Quick clean requested for room ID: ${roomId}`)
+      
+      // Mostrar confirmación
+      const roomData = Object.values(getRoomsData())
+        .flat()
+        .find(room => room.id === roomId || room.room_id === roomId)
+      
+      const roomNumber = roomData?.number || 'desconocida'
+      
+      const confirmed = window.confirm(
+        `¿Marcar habitación ${roomNumber} como limpia y disponible?`
+      )
+      
+      if (!confirmed) return
+      
+      // Llamar función de limpieza
+      const { data, error } = await cleanRoom(roomId)
+      
+      if (error) {
+        toast.error(`Error al limpiar habitación: ${error.message}`)
+        return
+      }
+      
+      // Mostrar notificación de éxito con efecto especial
+      toast.success(`🎉 Habitación ${roomNumber} lista para nuevos huéspedes!`, {
+        duration: 4000,
+        icon: '✨',
+        style: {
+          background: '#10B981',
+          color: 'white',
+        }
+      })
+      
+    } catch (error) {
+      console.error('❌ Error in handleQuickClean:', error)
+      toast.error('Error inesperado al limpiar habitación')
+    }
+  }
+
+  // Funciones auxiliares para búsqueda de reservas
   const searchReservationForRoom = async (room) => {
     try {
-      // Buscar reservas para esta habitación específica
       const { data: reservations, error } = await db.getReservations({
         roomId: room.id
       })
@@ -103,7 +142,6 @@ const CheckIn = () => {
         return null
       }
       
-      // Buscar la reserva más relevante (checked_in primero, luego confirmed para hoy)
       const today = new Date().toISOString().split('T')[0]
       
       const relevantReservation = reservations?.find(r => r.status === 'checked_in') ||
@@ -153,13 +191,11 @@ const CheckIn = () => {
       needsAutoCheckIn: reservation.status === 'confirmed'
     }
     
-    // Actualizar savedOrders
     setSavedOrders(prev => ({
       ...prev,
       [room.number]: orderFound
     }))
     
-    // Si necesita check-in automático, hacerlo
     if (orderFound.needsAutoCheckIn) {
       handleAutoCheckIn(orderFound)
     }
@@ -202,7 +238,6 @@ const CheckIn = () => {
     
     console.log('📋 Temporary order created from room data:', orderFound)
     
-    // Actualizar savedOrders
     setSavedOrders(prev => ({
       ...prev,
       [room.number]: orderFound
@@ -215,7 +250,6 @@ const CheckIn = () => {
     try {
       console.log('🔄 Performing automatic check-in for reservation:', order.reservationId)
       
-      // Actualizar reserva a checked_in
       const { error } = await db.updateReservation(order.reservationId, {
         status: 'checked_in',
         checked_in_at: new Date().toISOString()
@@ -227,7 +261,6 @@ const CheckIn = () => {
         return
       }
       
-      // Actualizar orden local
       setSavedOrders(prev => ({
         ...prev,
         [order.room.number]: {
@@ -248,10 +281,7 @@ const CheckIn = () => {
 
   const handleNoOrderFound = (room) => {
     console.error('❌ No order information found for room:', room.number)
-    console.error('Available savedOrders keys:', Object.keys(savedOrders || {}))
-    console.error('Room data:', room)
     
-    // Mostrar toast con opciones
     toast((t) => (
       <div className="max-w-md">
         <p className="font-semibold mb-2">No se encontró información de reserva</p>
@@ -261,7 +291,6 @@ const CheckIn = () => {
         <div className="flex space-x-2">
           <button
             onClick={() => {
-              // Forzar recarga de datos
               refreshData()
               toast.dismiss(t.id)
             }}
@@ -271,7 +300,6 @@ const CheckIn = () => {
           </button>
           <button
             onClick={() => {
-              // Crear check-in manual
               createManualCheckIn(room)
               toast.dismiss(t.id)
             }}
@@ -300,11 +328,9 @@ const CheckIn = () => {
 
   const createManualCheckIn = async (room) => {
     try {
-      // Crear una reserva temporal para esta habitación
       const floor = Math.floor(parseInt(room.number) / 100)
       const roomPrice = roomPrices[floor] || 100
       
-      // Crear huésped temporal
       const { data: guest, error: guestError } = await db.createGuest({
         first_name: 'Huésped',
         last_name: 'Manual',
@@ -318,7 +344,6 @@ const CheckIn = () => {
         throw new Error('Error creando huésped temporal: ' + guestError.message)
       }
       
-      // Crear reserva manual
       const reservationData = {
         guest_id: guest.id,
         room_id: room.id,
@@ -341,7 +366,6 @@ const CheckIn = () => {
         throw new Error('Error creando reserva: ' + reservationError.message)
       }
       
-      // Crear orden y proceder
       const newOrder = {
         id: reservation.id,
         room: {
@@ -380,7 +404,7 @@ const CheckIn = () => {
     }
   }
 
-  // FUNCIÓN HANDLEROOM CLICK CORREGIDA FINAL
+  // FUNCIÓN PRINCIPAL: handleRoomClick
   const handleRoomClick = (room) => {
     if (loading) {
       toast.info('Cargando datos, por favor espera...')
@@ -388,15 +412,12 @@ const CheckIn = () => {
     }
 
     console.log('🔘 Room clicked:', room)
-    console.log('🔍 Current savedOrders:', savedOrders)
-    console.log('🔍 Looking for order in room:', room.number)
 
     if (checkoutMode) {
       // Modo Check-out: solo habitaciones ocupadas
       if (room.status === 'occupied') {
         setSelectedRoom(room)
         
-        // BÚSQUEDA MEJORADA de orden guardada
         let orderFound = null
         
         // 1. Buscar por número de habitación en savedOrders
@@ -404,14 +425,13 @@ const CheckIn = () => {
           orderFound = savedOrders[room.number]
           console.log('✅ Order found by room number:', orderFound)
           
-          // Si la reserva está en estado 'confirmed', hacer check-in automático
           if (orderFound.needsAutoCheckIn && orderFound.reservationStatus === 'confirmed') {
             console.log('🔄 Auto check-in needed for confirmed reservation')
             handleAutoCheckIn(orderFound)
           }
         }
         
-        // 2. Si no se encuentra, buscar por reservationId en la habitación
+        // 2. Si no se encuentra, buscar por reservationId
         if (!orderFound && room.reservationId) {
           const orderByReservationId = Object.values(savedOrders || {}).find(
             order => order.reservationId === room.reservationId
@@ -422,7 +442,7 @@ const CheckIn = () => {
           }
         }
         
-        // 3. NUEVA ESTRATEGIA: Buscar reserva directamente en base de datos
+        // 3. Buscar reserva directamente en base de datos
         if (!orderFound) {
           console.log('🔍 Searching for reservation directly in database...')
           searchReservationForRoom(room).then(reservation => {
@@ -430,7 +450,6 @@ const CheckIn = () => {
               console.log('✅ Found reservation in database:', reservation)
               createTemporaryOrderFromReservation(room, reservation)
             } else {
-              // 4. Si no se encuentra, crear orden temporal desde datos de la habitación
               if (room.currentGuest || room.guestName || room.activeReservation) {
                 console.log('⚠️ Creating temporary order from room data')
                 const tempOrder = createTemporaryOrderFromRoomData(room)
@@ -441,19 +460,19 @@ const CheckIn = () => {
               }
             }
           })
-          return // Salir aquí y esperar el resultado asíncrono
+          return
         }
         
         if (orderFound) {
           setCurrentOrder(orderFound)
-          setOrderStep(2) // Ir directamente al resumen de pago
+          setOrderStep(2)
           console.log('✅ Proceeding to checkout with order:', orderFound)
         }
       } else {
         toast.warning('Solo puedes hacer check-out de habitaciones ocupadas (rojas)')
       }
     } else {
-      // Modo Check-in: solo habitaciones disponibles
+      // Modo Check-in: solo habitaciones disponibles y limpias
       if (room.status === 'available' && room.cleaning_status === 'clean') {
         setSelectedRoom(room)
         const floor = Math.floor(parseInt(room.number) / 100)
@@ -461,7 +480,7 @@ const CheckIn = () => {
         
         console.log(`💰 Room price for floor ${floor}: ${roomPrice}`)
         
-        // NUEVO: Resetear datos del huésped al seleccionar nueva habitación
+        // Resetear datos del huésped
         setGuestData({
           fullName: '',
           documentType: 'DNI',
@@ -481,11 +500,40 @@ const CheckIn = () => {
           snacks: [],
           total: roomPrice
         })
-        setOrderStep(1) // Ir a registro de huésped y snacks
+        setOrderStep(1)
       } else if (room.status === 'occupied') {
         toast.warning('Esta habitación ya está ocupada')
-      } else if (room.cleaning_status !== 'clean') {
-        toast.warning('Esta habitación no está lista (necesita limpieza)')
+      } else if (room.cleaning_status === 'dirty') {
+        // NUEVA: Ofrecer limpiar la habitación
+        toast((t) => (
+          <div className="max-w-md">
+            <p className="font-semibold mb-2">Habitación necesita limpieza</p>
+            <p className="text-sm text-gray-600 mb-3">
+              ¿Deseas marcarla como limpia para que esté disponible?
+            </p>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => {
+                  handleQuickClean(room.id || room.room_id)
+                  toast.dismiss(t.id)
+                }}
+                className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 flex items-center space-x-1"
+              >
+                <Sparkles size={14} />
+                <span>Limpiar Ahora</span>
+              </button>
+              <button
+                onClick={() => toast.dismiss(t.id)}
+                className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ), { 
+          duration: 8000,
+          position: 'top-center'
+        })
       } else {
         toast.warning('Esta habitación no está disponible')
       }
@@ -499,7 +547,6 @@ const CheckIn = () => {
     setOrderStep(0)
     setSelectedSnacks([])
     setCurrentOrder(null)
-    // Resetear datos del huésped
     setGuestData({
       fullName: '',
       documentType: 'DNI',
@@ -521,7 +568,6 @@ const CheckIn = () => {
     setOrderStep(0)
     setSelectedSnacks([])
     setCurrentOrder(null)
-    // Resetear datos del huésped
     setGuestData({
       fullName: '',
       documentType: 'DNI',
@@ -536,7 +582,6 @@ const CheckIn = () => {
     })
   }
 
-  // NUEVO: Handler para cambios en datos del huésped
   const handleGuestDataChange = (newGuestData) => {
     setGuestData(newGuestData)
     console.log('👤 Guest data updated:', newGuestData)
@@ -578,14 +623,13 @@ const CheckIn = () => {
     }
   }
 
-  // FUNCIÓN ACTUALIZADA: Confirmar check-in con snacks y datos de huésped
+  // Confirmar check-in con snacks y datos de huésped
   const handleConfirmOrder = async () => {
     if (!currentOrder) {
       toast.error('No hay orden actual')
       return
     }
 
-    // Validar datos del huésped
     if (!guestData.fullName?.trim() || !guestData.documentNumber?.trim() || !guestData.phone?.trim()) {
       toast.error('Por favor complete los datos obligatorios del huésped')
       return
@@ -594,7 +638,6 @@ const CheckIn = () => {
     console.log('✅ Confirming order with snacks and guest data:', { guestData, selectedSnacks })
 
     try {
-      // NUEVO: Usar processCheckIn con datos del huésped para registro sin reserva
       const { data, error } = await processCheckIn(currentOrder, selectedSnacks, guestData)
       
       if (error) {
@@ -616,14 +659,13 @@ const CheckIn = () => {
     }
   }
 
-  // FUNCIÓN ACTUALIZADA: Confirmar check-in solo habitación con datos de huésped
+  // Confirmar check-in solo habitación
   const handleConfirmRoomOnly = async () => {
     if (!currentOrder) {
       toast.error('No hay orden actual')
       return
     }
 
-    // Validar datos del huésped
     if (!guestData.fullName?.trim() || !guestData.documentNumber?.trim() || !guestData.phone?.trim()) {
       toast.error('Por favor complete los datos obligatorios del huésped')
       return
@@ -632,7 +674,6 @@ const CheckIn = () => {
     console.log('✅ Confirming room only order with guest data:', guestData)
 
     try {
-      // NUEVO: Usar processCheckIn con datos del huésped para registro sin reserva
       const { data, error } = await processCheckIn(currentOrder, [], guestData)
       
       if (error) {
@@ -689,7 +730,6 @@ const CheckIn = () => {
     setCurrentOrder(null)
     setSelectedRoom(null)
     setCheckoutMode(false)
-    // NUEVO: Resetear datos del huésped
     setGuestData({
       fullName: '',
       documentType: 'DNI',
@@ -713,11 +753,9 @@ const CheckIn = () => {
     }
 
     const roomsData = getRoomsData()
-    const occupiedRooms = Object.values(roomsData || {})
+    const needsCleaningRooms = Object.values(roomsData || {})
       .flat()
-      .filter(room => room.status === 'occupied')
-
-    const roomsWithOrders = Object.keys(savedOrders || {})
+      .filter(room => room.cleaning_status === 'dirty' || room.status === 'cleaning')
 
     return (
       <div className="fixed bottom-4 right-4 z-50">
@@ -741,107 +779,56 @@ const CheckIn = () => {
             </div>
             
             <div className="space-y-3 text-xs">
-              {/* Estado general */}
               <div className="border-b pb-2">
                 <strong>Estado General:</strong>
                 <div className="ml-2">
                   <div>Modo: {checkoutMode ? 'Check-out' : 'Check-in'}</div>
                   <div>Piso seleccionado: {selectedFloor}</div>
-                  <div>Total pisos: {Object.keys(roomsData || {}).length}</div>
-                  <div>Total órdenes: {Object.keys(savedOrders || {}).length}</div>
-                  <div>Paso actual: {orderStep}</div>
+                  <div>Limpieza rápida: {hasQuickCleanCapability ? '✅' : '❌'}</div>
+                  <div>Habitaciones sucias: {needsCleaningRooms.length}</div>
                 </div>
               </div>
 
-              {/* Datos del huésped */}
-              {orderStep === 1 && (
-                <div className="border-b pb-2">
-                  <strong>Datos del Huésped:</strong>
-                  <div className="ml-2">
-                    <div>Nombre: {guestData.fullName || 'Vacío'}</div>
-                    <div>Documento: {guestData.documentNumber || 'Vacío'}</div>
-                    <div>Teléfono: {guestData.phone || 'Vacío'}</div>
-                    <div>Email: {guestData.email || 'Vacío'}</div>
-                    <div>Válido: {
-                      guestData.fullName?.trim() && 
-                      guestData.documentNumber?.trim() && 
-                      guestData.phone?.trim() ? '✅' : '❌'
-                    }</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Habitaciones ocupadas */}
               <div className="border-b pb-2">
-                <strong>Habitaciones Ocupadas ({occupiedRooms.length}):</strong>
+                <strong>Habitaciones que necesitan limpieza:</strong>
                 <div className="ml-2 max-h-20 overflow-y-auto">
-                  {occupiedRooms.map(room => (
+                  {needsCleaningRooms.map(room => (
                     <div key={room.number} className="flex justify-between">
                       <span>{room.number}</span>
-                      <span className={savedOrders[room.number] ? 'text-green-600' : 'text-red-600'}>
-                        {savedOrders[room.number] ? '✅' : '❌'}
-                      </span>
+                      <button
+                        onClick={() => handleQuickClean(room.id || room.room_id)}
+                        className="text-green-600 hover:text-green-800 text-xs"
+                      >
+                        ✨ Limpiar
+                      </button>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Órdenes guardadas */}
-              <div className="border-b pb-2">
-                <strong>Órdenes Guardadas ({roomsWithOrders.length}):</strong>
-                <div className="ml-2 max-h-20 overflow-y-auto">
-                  {roomsWithOrders.map(roomNum => (
-                    <div key={roomNum} className="text-xs">
-                      <div className="flex justify-between">
-                        <span>{roomNum}:</span>
-                        <span className="text-blue-600">{savedOrders[roomNum].guestName}</span>
-                      </div>
-                      <div className="text-gray-500 truncate">
-                        ID: {savedOrders[roomNum].reservationId || 'N/A'}
-                        {savedOrders[roomNum].isWalkIn && <span className="text-green-600"> (Walk-in)</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Acciones de debug */}
               <div className="space-y-2">
                 <button
                   onClick={() => {
                     debugData()
                     console.log('🔍 Full debug executed')
-                    console.log('👤 Current guest data:', guestData)
                   }}
                   className="w-full bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
                 >
-                  Log Complete Debug Info
+                  Log Debug Info
                 </button>
                 
                 <button
                   onClick={() => {
-                    console.log('🏠 RoomsByFloor:', roomsData)
-                    console.log('📋 SavedOrders:', savedOrders)
-                    console.log('👤 GuestData:', guestData)
-                  }}
-                  className="w-full bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600"
-                >
-                  Log Raw Data
-                </button>
-                
-                <button
-                  onClick={() => {
-                    const missingOrders = occupiedRooms.filter(room => !savedOrders[room.number])
-                    console.log('❌ Occupied rooms without orders:', missingOrders)
-                    if (missingOrders.length > 0) {
-                      alert(`Habitaciones ocupadas sin orden: ${missingOrders.map(r => r.number).join(', ')}`)
+                    const dirtyRooms = needsCleaningRooms.length
+                    if (dirtyRooms > 0) {
+                      alert(`Hay ${dirtyRooms} habitaciones que necesitan limpieza`)
                     } else {
-                      alert('Todas las habitaciones ocupadas tienen órdenes ✅')
+                      alert('Todas las habitaciones están limpias ✅')
                     }
                   }}
                   className="w-full bg-yellow-500 text-white px-2 py-1 rounded text-xs hover:bg-yellow-600"
                 >
-                  Check Missing Orders
+                  Check Limpieza
                 </button>
               </div>
             </div>
@@ -919,6 +906,12 @@ const CheckIn = () => {
               🆕 Registro directo sin reserva previa - Complete los datos del huésped
             </div>
           )}
+          {/* NUEVA: Indicador de funcionalidad de limpieza rápida */}
+          {hasQuickCleanCapability && orderStep === 0 && (
+            <div className="mt-2 inline-block bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm">
+              ✨ Limpieza rápida habilitada - Click en el botón ✨ para limpiar habitaciones
+            </div>
+          )}
         </div>
 
         {/* Action Buttons - Solo mostrar en paso 0 */}
@@ -956,6 +949,30 @@ const CheckIn = () => {
             >
               {loading ? 'Cargando...' : 'Actualizar'}
             </Button>
+
+            {/* NUEVO: Botón de limpieza rápida */}
+            {hasQuickCleanCapability && (
+              <Button
+                variant="success"
+                size="lg"
+                icon={Sparkles}
+                onClick={() => {
+                  const needsCleaningRooms = Object.values(roomsData || {})
+                    .flat()
+                    .filter(room => room.cleaning_status === 'dirty' || room.status === 'cleaning')
+                  
+                  if (needsCleaningRooms.length === 0) {
+                    toast.success('Todas las habitaciones están limpias ✨')
+                  } else {
+                    toast.info(`${needsCleaningRooms.length} habitación${needsCleaningRooms.length > 1 ? 'es' : ''} necesita${needsCleaningRooms.length === 1 ? '' : 'n'} limpieza. Click en ✨ junto a cada habitación.`)
+                  }
+                }}
+                className="px-6 py-4"
+                disabled={loading}
+              >
+                Estado Limpieza
+              </Button>
+            )}
           </div>
         )}
 
@@ -973,6 +990,7 @@ const CheckIn = () => {
               onFloorChange={handleFloorChange}
               onRoomClick={handleRoomClick}
               onNext={() => {}} // No se usa más
+              onCleanRoom={handleQuickClean} // NUEVA PROP
             />
           )}
 
@@ -1018,6 +1036,12 @@ const CheckIn = () => {
                 <span>Total habitaciones: {Object.values(roomsData).flat().length}</span>
                 <span>Órdenes guardadas: {Object.keys(savedOrders || {}).length}</span>
                 <span>Modo: {checkoutMode ? 'Check-out' : 'Check-in directo'}</span>
+                {/* NUEVA: Información de limpieza */}
+                {hasQuickCleanCapability && (
+                  <span className="text-green-600 font-medium">
+                    Necesitan limpieza: {Object.values(roomsData).flat().filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length}
+                  </span>
+                )}
               </div>
               <div className="text-xs text-gray-400">
                 Última actualización: {new Date().toLocaleTimeString()}
@@ -1031,19 +1055,13 @@ const CheckIn = () => {
               ) : (
                 <span>💡 <strong>Modo Check-in Directo:</strong> Selecciona una habitación disponible (verde) para registrar un huésped sin reserva previa</span>
               )}
+              {/* NUEVA: Información de limpieza */}
+              {hasQuickCleanCapability && (
+                <span className="block mt-1">
+                  ✨ <strong>Limpieza Rápida:</strong> Click en el botón ✨ junto a habitaciones amarillas para marcarlas como limpias
+                </span>
+              )}
             </div>
-            
-            {/* Debug info en desarrollo */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
-                <strong>Debug:</strong> 
-                Loading: {loading ? 'Sí' : 'No'} | 
-                Error: {error ? 'Sí' : 'No'} | 
-                Rooms: {typeof roomsData} | 
-                Keys: {Object.keys(roomsData).join(', ')} | 
-                Guest Data Valid: {guestData.fullName?.trim() && guestData.documentNumber?.trim() && guestData.phone?.trim() ? 'Sí' : 'No'}
-              </div>
-            )}
           </div>
         )}
       </div>

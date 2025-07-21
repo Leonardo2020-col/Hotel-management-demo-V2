@@ -1,8 +1,6 @@
-// ============================================
-// RoomStats.jsx - CORREGIDO
-// ============================================
+// src/components/rooms/RoomStats.jsx - ESTADÍSTICAS SIMPLIFICADAS
 import React from 'react';
-import { Bed, Users, Sparkles, Wrench, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Bed, Users, Sparkles, CheckCircle, AlertTriangle, TrendingUp } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 
 const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
@@ -11,11 +9,8 @@ const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
     total: 0,
     available: 0,
     occupied: 0,
-    occupancyRate: 0,
-    cleaning: 0,
-    maintenance: 0,
-    outOfOrder: 0,
     needsCleaning: 0,
+    occupancyRate: 0,
     revenue: {
       today: 0,
       thisMonth: 0,
@@ -23,6 +18,7 @@ const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
     }
   };
 
+  // ESTADÍSTICAS SIMPLIFICADAS - Solo 3 estados
   const mainStats = [
     {
       title: 'Total Habitaciones',
@@ -34,51 +30,30 @@ const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
     {
       title: 'Disponibles',
       value: safeStats.available,
-      icon: Users,
+      icon: CheckCircle,
       color: 'green',
-      description: 'Listas para ocupar'
+      description: 'Limpias y listas'
     },
     {
       title: 'Ocupadas',
       value: safeStats.occupied,
       icon: Users,
-      color: 'purple',
+      color: 'blue',
       description: 'Con huéspedes'
+    },
+    {
+      title: 'Necesitan Limpieza',
+      value: safeStats.needsCleaning,
+      icon: AlertTriangle,
+      color: 'orange',
+      description: 'Click para limpiar'
     },
     {
       title: 'Tasa de Ocupación',
       value: `${safeStats.occupancyRate}%`,
       icon: TrendingUp,
-      color: 'yellow',
+      color: 'purple',
       description: 'Porcentaje actual'
-    },
-    {
-      title: 'En Limpieza',
-      value: safeStats.cleaning,
-      icon: Sparkles,
-      color: 'blue',
-      description: 'Siendo limpiadas'
-    },
-    {
-      title: 'Mantenimiento',
-      value: safeStats.maintenance,
-      icon: Wrench,
-      color: 'orange',
-      description: 'En reparación'
-    },
-    {
-      title: 'Fuera de Servicio',
-      value: safeStats.outOfOrder,
-      icon: AlertTriangle,
-      color: 'red',
-      description: 'No disponibles'
-    },
-    {
-      title: 'Necesitan Limpieza',
-      value: safeStats.needsCleaning,
-      icon: Sparkles,
-      color: 'red',
-      description: 'Pendientes de limpieza'
     }
   ];
 
@@ -87,17 +62,15 @@ const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
       blue: 'text-blue-600 bg-blue-50',
       green: 'text-green-600 bg-green-50',
       purple: 'text-purple-600 bg-purple-50',
-      yellow: 'text-yellow-600 bg-yellow-50',
-      orange: 'text-orange-600 bg-orange-50',
-      red: 'text-red-600 bg-red-50'
+      orange: 'text-orange-600 bg-orange-50'
     };
     return colorMap[color] || 'text-gray-600 bg-gray-50';
   };
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[...Array(8)].map((_, i) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        {[...Array(5)].map((_, i) => (
           <div key={i} className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
             <div className="animate-pulse">
               <div className="flex items-center justify-between">
@@ -119,8 +92,22 @@ const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
 
   return (
     <div className="space-y-6">
-      {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* MENSAJE DE EXPLICACIÓN DEL NUEVO SISTEMA */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <Sparkles className="w-6 h-6 text-blue-600 mt-0.5" />
+          <div>
+            <h3 className="text-lg font-semibold text-blue-900">Sistema de Limpieza Simplificado</h3>
+            <p className="text-blue-700 text-sm mt-1">
+              Solo 3 estados: <strong>Disponible</strong> (verde), <strong>Ocupada</strong> (azul), 
+              <strong>Necesita Limpieza</strong> (naranja). Haz click en las habitaciones naranjas para marcarlas como limpias.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Grid Simplificado */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {mainStats.map((stat, index) => {
           const Icon = stat.icon;
           const colorClasses = getColorClasses(stat.color);
@@ -143,6 +130,15 @@ const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
                   <Icon className="w-6 h-6" />
                 </div>
               </div>
+
+              {/* Indicador especial para habitaciones que necesitan limpieza */}
+              {stat.title === 'Necesitan Limpieza' && stat.value > 0 && (
+                <div className="mt-3 p-2 bg-orange-100 border border-orange-300 rounded text-center">
+                  <p className="text-xs font-medium text-orange-800">
+                    🧹 Click en las habitaciones naranjas
+                  </p>
+                </div>
+              )}
             </div>
           );
         })}
@@ -175,48 +171,56 @@ const RoomStats = ({ stats, roomsByType = [], loading = false }) => {
         </div>
       )}
 
-      {/* Room Types Distribution */}
-      {roomsByType && roomsByType.length > 0 && (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Distribución por Tipo</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {roomsByType.map((type, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-semibold text-gray-900">{type.name}</h4>
-                  <span className="text-sm text-gray-600">{type.count} hab.</span>
-                </div>
-                <div className="space-y-1 text-sm text-gray-600">
-                  <div className="flex justify-between">
-                    <span>Disponibles:</span>
-                    <span className="text-green-600 font-medium">{type.available}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Ocupadas:</span>
-                    <span className="text-blue-600 font-medium">{type.occupied}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Tarifa promedio:</span>
-                    <span className="font-medium">{formatCurrency(type.averageRate)}</span>
-                  </div>
-                </div>
-                
-                {/* Progress bar for occupancy */}
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs text-gray-600 mb-1">
-                    <span>Ocupación</span>
-                    <span>{Math.round((type.occupied / type.count) * 100)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${(type.occupied / type.count) * 100}%` }}
-                    ></div>
-                  </div>
-                </div>
+      {/* Quick Actions para Limpieza */}
+      {safeStats.needsCleaning > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-orange-900 mb-2">
+                🧹 Acción Requerida: {safeStats.needsCleaning} habitación{safeStats.needsCleaning > 1 ? 'es' : ''} necesitan limpieza
+              </h3>
+              <p className="text-orange-700 text-sm">
+                Ve al grid de habitaciones y haz click en las habitaciones naranjas para marcarlas como limpias
+              </p>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-orange-600">
+                {safeStats.needsCleaning}
               </div>
-            ))}
+              <div className="text-orange-700 text-sm font-medium">Pendientes</div>
+            </div>
           </div>
+          
+          {/* Barra de progreso */}
+          <div className="mt-4">
+            <div className="flex justify-between text-xs text-orange-700 mb-1">
+              <span>Progreso de limpieza</span>
+              <span>
+                {safeStats.total - safeStats.needsCleaning} de {safeStats.total} limpias
+              </span>
+            </div>
+            <div className="w-full bg-orange-200 rounded-full h-2">
+              <div 
+                className="bg-orange-600 h-2 rounded-full transition-all duration-300"
+                style={{ 
+                  width: `${safeStats.total > 0 ? ((safeStats.total - safeStats.needsCleaning) / safeStats.total) * 100 : 0}%` 
+                }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Estado Ideal: Todas las habitaciones limpias */}
+      {safeStats.needsCleaning === 0 && safeStats.total > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
+          <CheckCircle className="mx-auto h-12 w-12 text-green-600 mb-4" />
+          <h3 className="text-lg font-bold text-green-900 mb-2">
+            ✨ ¡Excelente! Todas las habitaciones están limpias
+          </h3>
+          <p className="text-green-700">
+            {safeStats.available} habitaciones disponibles y {safeStats.occupied} ocupadas
+          </p>
         </div>
       )}
 

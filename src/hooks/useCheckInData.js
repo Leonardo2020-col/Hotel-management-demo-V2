@@ -1,4 +1,4 @@
-// src/hooks/useCheckInData.js - CÓDIGO COMPLETO CON REGISTRO SIN RESERVACIÓN
+// src/hooks/useCheckInData.js - AÑADIDA FUNCIÓN DE LIMPIEZA RÁPIDA
 import { useState, useEffect } from 'react'
 import { db } from '../lib/supabase'
 import toast from 'react-hot-toast'
@@ -51,7 +51,7 @@ export const useCheckInData = () => {
       }
       console.log('✅ Snacks loaded:', snacksData)
       
-      // 3. Cargar órdenes guardadas (reservas activas) - CORREGIDO
+      // 3. Cargar órdenes guardadas (reservas activas)
       console.log('📋 Loading saved orders from reservations...')
       const ordersData = await loadSavedOrdersFromReservations()
       console.log('✅ Orders loaded:', ordersData)
@@ -147,12 +147,11 @@ export const useCheckInData = () => {
     }
   }
 
-  // FUNCIÓN CORREGIDA FINAL: loadSavedOrdersFromReservations
+  // Cargar órdenes guardadas desde reservas
   const loadSavedOrdersFromReservations = async () => {
     try {
       console.log('📋 Loading saved orders from multiple reservation states...')
       
-      // ESTRATEGIA MÚLTIPLE: Obtener reservas de diferentes estados
       const today = new Date().toISOString().split('T')[0]
       
       // 1. Obtener reservas actualmente en checked_in
@@ -164,7 +163,7 @@ export const useCheckInData = () => {
         console.warn('Error loading checked-in reservations:', checkedInError)
       }
       
-      // 2. Obtener reservas confirmadas para hoy (que deberían estar en checked_in)
+      // 2. Obtener reservas confirmadas para hoy
       const { data: confirmedReservations, error: confirmedError } = await db.getReservations({
         status: 'confirmed'
       })
@@ -177,7 +176,6 @@ export const useCheckInData = () => {
       const allReservations = [
         ...(checkedInReservations || []),
         ...(confirmedReservations || []).filter(reservation => {
-          // Solo incluir reservas confirmadas que son para hoy o ya pasaron su fecha de check-in
           const checkInDate = new Date(reservation.check_in).toISOString().split('T')[0]
           return checkInDate <= today
         })
@@ -191,23 +189,20 @@ export const useCheckInData = () => {
         total: allReservations.length
       })
       
-      // Convertir reservas a formato de órdenes guardadas para check-out
+      // Convertir reservas a formato de órdenes guardadas
       const orders = {}
       
       if (allReservations && Array.isArray(allReservations)) {
         allReservations.forEach(reservation => {
           if (reservation.room && reservation.guest) {
-            // Evitar duplicados (priorizar checked_in sobre confirmed)
             const roomNumber = reservation.room.number
             if (orders[roomNumber] && orders[roomNumber].reservationStatus === 'checked_in') {
-              return // Ya tenemos una reserva checked_in para esta habitación
+              return
             }
             
-            // Calcular precio por piso si no está disponible
             const floor = Math.floor(parseInt(reservation.room.number) / 100)
             const roomPrice = parseFloat(reservation.rate) || roomPrices[floor] || 100
             
-            // FORMATO CORRECTO para savedOrders
             orders[roomNumber] = {
               id: reservation.id,
               room: {
@@ -218,7 +213,7 @@ export const useCheckInData = () => {
                 room_type: reservation.room.room_type || 'Habitación Estándar'
               },
               roomPrice: roomPrice,
-              snacks: [], // Los snacks se pueden obtener de special_requests si es necesario
+              snacks: [],
               total: parseFloat(reservation.total_amount) || roomPrice,
               checkInDate: reservation.check_in,
               checkOutDate: reservation.check_out,
@@ -227,8 +222,7 @@ export const useCheckInData = () => {
               guestId: reservation.guest_id,
               reservationId: reservation.id,
               confirmationCode: reservation.confirmation_code,
-              // NUEVA: Información adicional para debugging
-              reservationStatus: reservation.status, // 'checked_in' o 'confirmed'
+              reservationStatus: reservation.status,
               guestEmail: reservation.guest.email,
               guestPhone: reservation.guest.phone,
               guestDocument: reservation.guest.document_number,
@@ -238,7 +232,6 @@ export const useCheckInData = () => {
               nights: reservation.nights || Math.ceil(
                 (new Date(reservation.check_out) - new Date(reservation.check_in)) / (1000 * 60 * 60 * 24)
               ),
-              // Flag para identificar si necesita check-in automático
               needsAutoCheckIn: reservation.status === 'confirmed'
             }
           }
@@ -246,8 +239,6 @@ export const useCheckInData = () => {
       }
       
       console.log('📋 Saved orders created from reservations:', orders)
-      console.log('📊 Orders by room:', Object.keys(orders))
-      
       return orders
       
     } catch (error) {
@@ -256,7 +247,63 @@ export const useCheckInData = () => {
     }
   }
 
-  // Generar habitaciones mock para pruebas - CORREGIDO
+  // NUEVA FUNCIÓN: Limpiar habitación con un click
+  const cleanRoom = async (roomId) => {
+    try {
+      console.log(`🧹 Quick cleaning room with ID: ${roomId}`)
+      
+      // Actualizar estado de la habitación a disponible y limpia
+      const { data, error } = await db.updateRoomStatus(roomId, 'available', 'clean')
+      
+      if (error) {
+        throw new Error(`Error updating room status: ${error.message}`)
+      }
+      
+      // Actualizar estado local inmediatamente
+      setRoomsByFloor(prev => {
+        const updated = { ...prev }
+        Object.keys(updated).forEach(floor => {
+          if (Array.isArray(updated[floor])) {
+            updated[floor] = updated[floor].map(room => 
+              room.id === roomId || room.room_id === roomId
+                ? { 
+                    ...room, 
+                    status: 'available', 
+                    cleaning_status: 'clean',
+                    last_cleaned: new Date().toISOString(),
+                    cleaned_by: 'Sistema'
+                  }
+                : room
+            )
+          }
+        })
+        return updated
+      })
+      
+      // Encontrar el número de habitación para el toast
+      let roomNumber = 'desconocida'
+      Object.values(roomsByFloor).flat().forEach(room => {
+        if ((room.id === roomId || room.room_id === roomId)) {
+          roomNumber = room.number
+        }
+      })
+      
+      console.log('✅ Room cleaned successfully')
+      toast.success(`Habitación ${roomNumber} marcada como limpia y disponible`, {
+        icon: '✨',
+        duration: 3000
+      })
+      
+      return { data, error: null }
+      
+    } catch (error) {
+      console.error('❌ Error cleaning room:', error)
+      toast.error(`Error al limpiar habitación: ${error.message}`)
+      return { data: null, error }
+    }
+  }
+
+  // Generar habitaciones mock para pruebas
   const generateMockRooms = () => {
     console.log('🏗️ Generating mock rooms...')
     
@@ -289,7 +336,6 @@ export const useCheckInData = () => {
           features: ['WiFi Gratis', 'TV Smart'],
           room_id: 2,
           floor: 1,
-          // Mock guest data para testing
           currentGuest: {
             id: 1,
             name: 'Juan Pérez',
@@ -310,8 +356,8 @@ export const useCheckInData = () => {
         {
           id: 3,
           number: '103',
-          status: 'cleaning',
-          cleaning_status: 'in_progress',
+          status: 'cleaning', // Necesita limpieza
+          cleaning_status: 'dirty',
           room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
@@ -366,7 +412,6 @@ export const useCheckInData = () => {
           features: ['WiFi Gratis', 'TV Smart', 'Balcón'],
           room_id: 6,
           floor: 2,
-          // Mock guest data para testing
           currentGuest: {
             id: 2,
             name: 'María García',
@@ -437,19 +482,18 @@ export const useCheckInData = () => {
         status: 'checked_in',
         total_amount: totalAmount,
         rate: roomPrice,
-        paid_amount: 0, // Se pagará al check-out
+        paid_amount: 0,
         special_requests: [
           guestData.specialRequests || '',
           snacks.length > 0 ? `Snacks: ${snacks.map(s => `${s.name} x${s.quantity}`).join(', ')}` : ''
         ].filter(Boolean).join(' | '),
         payment_status: 'pending',
-        source: 'walk_in' // Indicar que es un registro sin reserva previa
+        source: 'walk_in'
       }
 
       const { data: reservation, error: reservationError } = await db.createReservation(reservationData)
       
       if (reservationError) {
-        // Si falla la reserva, intentar eliminar el huésped creado
         await db.deleteGuest(guest.id)
         throw new Error(`Error creating reservation: ${reservationError.message}`)
       }
@@ -465,10 +509,9 @@ export const useCheckInData = () => {
       
       if (roomError) {
         console.warn('⚠️ Warning updating room status:', roomError)
-        // No fallar por este error, es menos crítico
       }
 
-      // 4. Crear orden local para el estado de la aplicación
+      // 4. Crear orden local
       const newOrder = {
         id: reservation.id,
         room: { 
@@ -487,7 +530,6 @@ export const useCheckInData = () => {
         guestId: guest.id,
         reservationId: reservation.id,
         confirmationCode: reservation.confirmation_code,
-        // Información adicional del huésped
         guestEmail: guestData.email,
         guestPhone: guestData.phone,
         guestDocument: guestData.documentNumber,
@@ -496,7 +538,7 @@ export const useCheckInData = () => {
         adults: guestData.adults || 1,
         children: guestData.children || 0,
         nationality: guestData.nationality,
-        isWalkIn: true // Marcar como registro sin reserva previa
+        isWalkIn: true
       }
 
       // 5. Actualizar estado local
@@ -548,7 +590,7 @@ export const useCheckInData = () => {
     }
   }
 
-  // Procesar check-in de habitación - ACTUALIZADO para soportar registro sin reserva
+  // Procesar check-in de habitación
   const processCheckIn = async (roomData, snacks = [], guestData = null) => {
     try {
       // Si hay datos de huésped, es un registro sin reserva previa
@@ -584,7 +626,6 @@ export const useCheckInData = () => {
       if (guests && guests.length > 0) {
         guestId = guests[0].id
       } else {
-        // Crear huésped temporal si no existe ninguno
         const { data: newGuest } = await db.createGuest({
           first_name: 'Huésped',
           last_name: 'Temporal',
@@ -669,12 +710,11 @@ export const useCheckInData = () => {
     }
   }
 
-  // Procesar check-out - MEJORADO con validaciones
+  // Procesar check-out
   const processCheckOut = async (roomNumber, paymentMethod) => {
     try {
       console.log('🚪 Processing check-out for room:', roomNumber)
       
-      // Verificar que existe la orden
       const order = savedOrders[roomNumber]
       if (!order) {
         const errorMsg = `No se encontró información de reserva para la habitación ${roomNumber}`
@@ -703,16 +743,15 @@ export const useCheckInData = () => {
         throw new Error(`Error updating reservation: ${reservationError.message}`)
       }
 
-      // 2. Actualizar habitación a limpieza
+      // 2. Actualizar habitación a necesita limpieza (NO a limpieza automática)
       const { error: roomError } = await db.updateRoomStatus(
         order.room.id,
-        'cleaning',
-        'dirty'
+        'available', // CAMBIADO: disponible pero sucia
+        'dirty'      // NECESITA limpieza
       )
 
       if (roomError) {
         console.warn('⚠️ Warning updating room status:', roomError)
-        // No fallar por este error, es menos crítico
       }
 
       // 3. Remover de órdenes guardadas
@@ -722,7 +761,7 @@ export const useCheckInData = () => {
         return newOrders
       })
 
-      // 4. Actualizar roomsByFloor localmente
+      // 4. Actualizar roomsByFloor localmente - ESTADO NECESITA LIMPIEZA
       setRoomsByFloor(prev => {
         const updated = { ...prev }
         Object.keys(updated).forEach(floor => {
@@ -731,8 +770,8 @@ export const useCheckInData = () => {
               r.number === roomNumber 
                 ? { 
                     ...r, 
-                    status: 'cleaning', 
-                    cleaning_status: 'dirty',
+                    status: 'available',        // DISPONIBLE
+                    cleaning_status: 'dirty',   // PERO NECESITA LIMPIEZA
                     currentGuest: null,
                     activeReservation: null,
                     guestName: null,
@@ -748,7 +787,10 @@ export const useCheckInData = () => {
       })
 
       console.log('✅ Check-out completed successfully')
-      toast.success(`Check-out completado para habitación ${roomNumber}`)
+      toast.success(`Check-out completado para habitación ${roomNumber}. La habitación necesita limpieza.`, {
+        icon: '🚪',
+        duration: 4000
+      })
       return { data: true, error: null }
 
     } catch (error) {
@@ -758,7 +800,7 @@ export const useCheckInData = () => {
     }
   }
 
-  // Obtener habitaciones disponibles para check-in
+  // Obtener habitaciones disponibles
   const getAvailableRooms = () => {
     const available = {}
     
@@ -773,7 +815,7 @@ export const useCheckInData = () => {
     return available
   }
 
-  // Obtener habitaciones ocupadas para check-out
+  // Obtener habitaciones ocupadas
   const getOccupiedRooms = () => {
     const occupied = {}
     
@@ -794,173 +836,13 @@ export const useCheckInData = () => {
     loadInitialData()
   }
 
-  // Función de debug MEJORADA
   const debugData = () => {
     console.log('🐛 Debug - Current state:')
     console.log('roomsByFloor:', roomsByFloor)
     console.log('savedOrders:', savedOrders)
-    console.log('savedOrders keys:', Object.keys(savedOrders))
     console.log('snackItems:', snackItems)
     console.log('loading:', loading)
     console.log('error:', error)
-    
-    // Verificar formato de cada piso
-    Object.keys(roomsByFloor).forEach(floor => {
-      console.log(`🏠 Floor ${floor}:`, {
-        type: typeof roomsByFloor[floor],
-        isArray: Array.isArray(roomsByFloor[floor]),
-        length: Array.isArray(roomsByFloor[floor]) ? roomsByFloor[floor].length : 'N/A',
-        rooms: roomsByFloor[floor]?.map(r => ({
-          number: r.number,
-          status: r.status,
-          hasCurrentGuest: !!r.currentGuest,
-          hasActiveReservation: !!r.activeReservation,
-          guestName: r.guestName,
-          reservationId: r.reservationId
-        }))
-      })
-    })
-
-    // Verificar correspondencia entre habitaciones ocupadas y savedOrders
-    console.log('🔗 Checking room-order correspondence:')
-    Object.keys(roomsByFloor).forEach(floor => {
-      if (Array.isArray(roomsByFloor[floor])) {
-        roomsByFloor[floor].forEach(room => {
-          if (room.status === 'occupied') {
-            const hasOrder = savedOrders[room.number]
-            console.log(`Room ${room.number}: status=${room.status}, hasOrder=${!!hasOrder}, guestName=${room.guestName}`)
-            if (!hasOrder) {
-              console.warn(`⚠️ Room ${room.number} is occupied but has no saved order!`)
-            }
-          }
-        })
-      }
-    })
-
-    // Debug de órdenes walk-in
-    const walkInOrders = Object.values(savedOrders).filter(order => order.isWalkIn)
-    console.log('🚶‍♂️ Walk-in orders:', walkInOrders.length, walkInOrders)
-  }
-
-  // NUEVA FUNCIÓN: Validar datos del huésped
-  const validateGuestData = (guestData) => {
-    const errors = {}
-    
-    if (!guestData.fullName?.trim()) {
-      errors.fullName = 'El nombre completo es obligatorio'
-    }
-    
-    if (!guestData.documentNumber?.trim()) {
-      errors.documentNumber = 'El documento de identidad es obligatorio'
-    } else if (guestData.documentNumber.length < 6) {
-      errors.documentNumber = 'El documento debe tener al menos 6 caracteres'
-    }
-    
-    if (!guestData.phone?.trim()) {
-      errors.phone = 'El teléfono es obligatorio'
-    }
-    
-    if (guestData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestData.email)) {
-      errors.email = 'El email no tiene un formato válido'
-    }
-    
-    return {
-      isValid: Object.keys(errors).length === 0,
-      errors
-    }
-  }
-
-  // NUEVA FUNCIÓN: Obtener estadísticas de check-ins sin reserva
-  const getWalkInStats = () => {
-    const walkInOrders = Object.values(savedOrders).filter(order => order.isWalkIn)
-    const totalWalkInRevenue = walkInOrders.reduce((sum, order) => sum + order.total, 0)
-    
-    return {
-      totalWalkIns: walkInOrders.length,
-      totalRevenue: totalWalkInRevenue,
-      averageSpend: walkInOrders.length > 0 ? totalWalkInRevenue / walkInOrders.length : 0,
-      walkInOrders
-    }
-  }
-
-  // NUEVA FUNCIÓN: Buscar huésped por documento
-  const searchGuestByDocument = async (documentNumber) => {
-    try {
-      const { data: guests, error } = await db.searchGuests(documentNumber, 5)
-      
-      if (error) {
-        console.error('Error searching guests:', error)
-        return { data: null, error }
-      }
-      
-      // Buscar coincidencia exacta por número de documento
-      const exactMatch = guests?.find(guest => 
-        guest.document_number === documentNumber
-      )
-      
-      if (exactMatch) {
-        return { 
-          data: {
-            fullName: exactMatch.full_name || `${exactMatch.first_name} ${exactMatch.last_name}`,
-            documentType: exactMatch.document_type || 'DNI',
-            documentNumber: exactMatch.document_number,
-            phone: exactMatch.phone || '',
-            email: exactMatch.email || '',
-            nationality: exactMatch.nationality || 'Peruana',
-            gender: exactMatch.gender || '',
-            isExistingGuest: true,
-            guestId: exactMatch.id
-          }, 
-          error: null 
-        }
-      }
-      
-      return { data: null, error: null } // No se encontró
-    } catch (error) {
-      console.error('Error in searchGuestByDocument:', error)
-      return { data: null, error }
-    }
-  }
-
-  // NUEVA FUNCIÓN: Obtener historial de huésped
-  const getGuestHistory = async (guestId) => {
-    try {
-      const { data: reservations, error } = await db.getReservations({ guestId })
-      
-      if (error) {
-        console.error('Error getting guest history:', error)
-        return { data: [], error }
-      }
-      
-      return { data: reservations || [], error: null }
-    } catch (error) {
-      console.error('Error in getGuestHistory:', error)
-      return { data: [], error }
-    }
-  }
-
-  // NUEVA FUNCIÓN: Crear check-in express (con datos mínimos)
-  const createExpressCheckIn = async (roomData, basicGuestData) => {
-    try {
-      // Datos mínimos requeridos para check-in express
-      const expressGuestData = {
-        fullName: basicGuestData.name || 'Huésped Express',
-        documentType: 'DNI',
-        documentNumber: basicGuestData.document || Date.now().toString(),
-        phone: basicGuestData.phone || '+51999999999',
-        email: '',
-        nationality: 'Peruana',
-        gender: '',
-        adults: 1,
-        children: 0,
-        specialRequests: 'Check-in express'
-      }
-      
-      return await createGuestAndReservation(roomData, expressGuestData, [])
-    } catch (error) {
-      console.error('Error in createExpressCheckIn:', error)
-      return { data: null, error }
-    }
   }
 
   return {
@@ -974,36 +856,30 @@ export const useCheckInData = () => {
     error,
     
     // Acciones principales
-    processCheckIn, // ACTUALIZADA para soportar registro sin reserva
+    processCheckIn,
     processCheckOut,
     refreshData,
     debugData,
+    cleanRoom, // NUEVA FUNCIÓN para limpiar con un click
     
-    // NUEVAS: Funciones para registro sin reserva
+    // Funciones para registro sin reserva
     createGuestAndReservation,
-    validateGuestData,
-    searchGuestByDocument,
-    getGuestHistory,
-    createExpressCheckIn,
     
-    // Estadísticas y utilidades
+    // Utilidades
     getAvailableRooms,
     getOccupiedRooms,
-    getWalkInStats,
     
-    // Para compatibilidad con componente existente
+    // Para compatibilidad
     floorRooms: roomsByFloor,
     setSavedOrders,
     
     // Información adicional
-    hasWalkInCapability: true,
+    hasQuickCleanCapability: true, // NUEVA FLAG
     supportedFeatures: [
       'walk_in_checkin',
-      'guest_registration',
+      'guest_registration', 
       'snack_selection',
-      'express_checkin',
-      'guest_search',
-      'guest_history'
+      'quick_room_cleaning' // NUEVA CARACTERÍSTICA
     ]
   }
 }

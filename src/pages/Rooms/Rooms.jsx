@@ -1,6 +1,6 @@
-// src/pages/Rooms/Rooms.jsx - CORREGIDO CON MANEJO DE RESERVAS
+// src/pages/Rooms/Rooms.jsx - SIMPLIFICADO CON CLICK PARA LIMPIAR
 import React, { useState } from 'react'
-import { Plus, Calendar, Sparkles, RefreshCw, AlertCircle, LogIn, LogOut } from 'lucide-react'
+import { Plus, Calendar, Sparkles, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 import { useRooms } from '../../hooks/useRooms'
 import { useNavigate } from 'react-router-dom'
 import Button from '../../components/common/Button'
@@ -8,7 +8,6 @@ import RoomStats from '../../components/rooms/RoomStats'
 import RoomFilters from '../../components/rooms/RoomFilters'
 import RoomGrid from '../../components/rooms/RoomGrid'
 import RoomList from '../../components/rooms/RoomList'
-import CleaningManagement from '../../components/rooms/CleaningManagement'
 import CreateRoomModal from '../../components/rooms/CreateRoomModal'
 import toast from 'react-hot-toast'
 
@@ -16,22 +15,19 @@ const Rooms = () => {
   const navigate = useNavigate()
   
   // Estados principales
-  const [activeTab, setActiveTab] = useState('rooms')
   const [viewMode, setViewMode] = useState('grid')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedRooms, setSelectedRooms] = useState([])
-  const [showAssignCleaning, setShowAssignCleaning] = useState(false)
   
-  // Filtros
+  // Filtros simplificados
   const [filters, setFilters] = useState({
     status: 'all',
     type: 'all',
     floor: 'all',
-    cleaningStatus: 'all',
     search: ''
   })
 
-  // Hook corregido con reservas
+  // Hook simplificado con estados de 3 niveles
   const {
     rooms,
     roomTypes,
@@ -41,30 +37,21 @@ const Rooms = () => {
     loading,
     error,
     ROOM_STATUS,
-    CLEANING_STATUS,
     createRoom,
     updateRoom,
     deleteRoom,
     updateRoomStatus,
-    updateCleaningStatus,
-    assignCleaning,
-    getRoomsNeedingCleaning,
-    getAvailableRooms,
-    getCleaningStats,
-    // NUEVAS FUNCIONES para manejo de reservas
-    getRoomReservationInfo,
+    // FUNCIÓN PRINCIPAL: Click para limpiar
+    handleRoomCleanClick,
     processCheckIn,
     processCheckOut,
+    getRoomsNeedingCleaning,
+    getAvailableRooms,
+    getOccupiedRooms,
     refetch
   } = useRooms()
 
-  // Configuración de tabs
-  const tabs = [
-    { id: 'rooms', label: 'Habitaciones', icon: Calendar },
-    { id: 'cleaning', label: 'Gestión de Limpieza', icon: Sparkles }
-  ]
-
-  // Handlers básicos
+  // Handler para crear habitación
   const handleCreateRoom = async (roomData) => {
     try {
       console.log('Creating room with data:', roomData)
@@ -140,38 +127,8 @@ const Rooms = () => {
     }
   }
 
-  const handleCleaningStatusChange = async (roomId, newStatus) => {
-    try {
-      const { data, error } = await updateCleaningStatus(roomId, newStatus)
-      
-      if (error) {
-        toast.error(error.message || 'Error al actualizar estado de limpieza')
-        return
-      }
-    } catch (error) {
-      toast.error('Error inesperado al actualizar estado de limpieza')
-    }
-  }
-
-  const handleAssignCleaning = async (roomIds, staffId) => {
-    try {
-      const { data, error } = await assignCleaning(roomIds, staffId)
-      
-      if (error) {
-        toast.error(error.message || 'Error al asignar limpieza')
-        return
-      }
-      
-      setSelectedRooms([])
-      setShowAssignCleaning(false)
-    } catch (error) {
-      toast.error('Error inesperado al asignar limpieza')
-    }
-  }
-
-  // NUEVOS HANDLERS para manejo de reservas
+  // Handlers para reservas
   const handleViewReservation = (reservationId) => {
-    // Navegar a la página de reservas con el ID específico
     navigate(`/reservations?id=${reservationId}`)
   }
 
@@ -226,36 +183,56 @@ const Rooms = () => {
         return
       }
       
-      toast.success(`Check-out realizado exitosamente para habitación ${room.number}`)
+      toast.success(`Check-out realizado. Habitación ${room.number} marcada para limpieza.`)
     } catch (error) {
       console.error('Error in handleProcessCheckOut:', error)
       toast.error('Error inesperado en el check-out')
     }
   }
 
-  const handleViewRoomReservationInfo = (roomId) => {
-    try {
-      const info = getRoomReservationInfo(roomId)
-      
-      if (info.error) {
-        toast.warning(info.error)
-        return
-      }
-      
-      // Mostrar información detallada (ya se maneja en RoomGrid)
-      console.log('Room reservation info:', info)
-    } catch (error) {
-      toast.error('Error al obtener información de la reserva')
-    }
-  }
-
-  // Handler para acciones en lote
-  const handleBulkAssignCleaning = () => {
-    if (selectedRooms.length === 0) {
-      toast.warning('Selecciona al menos una habitación')
+  // FUNCIÓN PARA LIMPIAR TODAS LAS HABITACIONES PENDIENTES
+  const handleCleanAllRooms = async () => {
+    const roomsNeedingCleaning = getRoomsNeedingCleaning()
+    
+    if (roomsNeedingCleaning.length === 0) {
+      toast.success('No hay habitaciones que necesiten limpieza')
       return
     }
-    setShowAssignCleaning(true)
+    
+    const confirmed = window.confirm(
+      `¿Marcar como limpias ${roomsNeedingCleaning.length} habitación${roomsNeedingCleaning.length > 1 ? 'es' : ''}?`
+    )
+    
+    if (!confirmed) return
+    
+    try {
+      let successCount = 0
+      let errorCount = 0
+      
+      // Procesar en paralelo para mejor rendimiento
+      const cleaningPromises = roomsNeedingCleaning.map(async (room) => {
+        try {
+          await handleRoomCleanClick(room.id)
+          successCount++
+        } catch (error) {
+          errorCount++
+          console.error(`Error cleaning room ${room.number}:`, error)
+        }
+      })
+      
+      await Promise.all(cleaningPromises)
+      
+      if (successCount > 0) {
+        toast.success(`✨ ${successCount} habitación${successCount > 1 ? 'es' : ''} limpiada${successCount > 1 ? 's' : ''} exitosamente`)
+      }
+      
+      if (errorCount > 0) {
+        toast.error(`Error en ${errorCount} habitación${errorCount > 1 ? 'es' : ''}`)
+      }
+      
+    } catch (error) {
+      toast.error('Error al limpiar habitaciones en lote')
+    }
   }
 
   const handleRefresh = () => {
@@ -279,7 +256,7 @@ const Rooms = () => {
         if (!matchesSearch) return false
       }
 
-      // Filtro por estado
+      // Filtro por estado simplificado
       if (filters.status !== 'all' && room.status !== filters.status) return false
       
       // Filtro por tipo
@@ -288,12 +265,20 @@ const Rooms = () => {
       // Filtro por piso
       if (filters.floor !== 'all' && room.floor.toString() !== filters.floor) return false
       
-      // Filtro por estado de limpieza
-      if (filters.cleaningStatus !== 'all' && room.cleaning_status !== filters.cleaningStatus) return false
-      
       return true
     })
   }, [rooms, filters])
+
+  // Obtener conteos para indicadores
+  const cleaningCounts = React.useMemo(() => {
+    if (!rooms) return { needsCleaning: 0, available: 0, occupied: 0 }
+    
+    return {
+      needsCleaning: rooms.filter(r => r.status === ROOM_STATUS.NEEDS_CLEANING).length,
+      available: rooms.filter(r => r.status === ROOM_STATUS.AVAILABLE).length,
+      occupied: rooms.filter(r => r.status === ROOM_STATUS.OCCUPIED).length
+    }
+  }, [rooms, ROOM_STATUS])
 
   // Manejar estado de error
   if (error) {
@@ -329,34 +314,30 @@ const Rooms = () => {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Gestión de Habitaciones</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Panel de Habitaciones</h1>
           <p className="text-gray-600 mt-1">
-            Administra habitaciones, reservas, limpieza y mantenimiento
+            Sistema simplificado: Disponible · Ocupada · Necesita Limpieza
           </p>
-          {reservations && reservations.length > 0 && (
-            <p className="text-sm text-blue-600 mt-1">
-              {reservations.length} reserva{reservations.length !== 1 ? 's' : ''} activa{reservations.length !== 1 ? 's' : ''}
-            </p>
+          {cleaningCounts.needsCleaning > 0 && (
+            <div className="mt-2 inline-flex items-center px-3 py-1 rounded-full text-sm bg-orange-100 text-orange-800">
+              <Sparkles className="w-4 h-4 mr-1" />
+              {cleaningCounts.needsCleaning} habitación{cleaningCounts.needsCleaning > 1 ? 'es' : ''} necesitan limpieza
+            </div>
           )}
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 mt-4 lg:mt-0">
-          {/* Acciones en lote */}
-          {selectedRooms.length > 0 && (
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">
-                {selectedRooms.length} seleccionada{selectedRooms.length > 1 ? 's' : ''}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={Sparkles}
-                onClick={handleBulkAssignCleaning}
-                disabled={loading}
-              >
-                Asignar Limpieza
-              </Button>
-            </div>
+          {/* Acción de limpieza masiva */}
+          {cleaningCounts.needsCleaning > 0 && (
+            <Button
+              variant="warning"
+              icon={Sparkles}
+              onClick={handleCleanAllRooms}
+              disabled={loading}
+              className="font-semibold"
+            >
+              🧹 Limpiar Todas ({cleaningCounts.needsCleaning})
+            </Button>
           )}
           
           {/* Botón de actualizar */}
@@ -381,151 +362,137 @@ const Rooms = () => {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-          {tabs.map((tab) => {
-            const Icon = tab.icon
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 transition-colors`}
-                disabled={loading}
-              >
-                <Icon size={18} />
-                <span>{tab.label}</span>
-              </button>
-            )
-          })}
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'rooms' && (
-        <div className="space-y-6">
-          {/* Statistics */}
-          <RoomStats 
-            stats={roomStats} 
-            roomsByType={[]} // Simplificado
-            loading={loading} 
-          />
-
-          {/* Filters */}
-          <RoomFilters
-            filters={filters}
-            onFiltersChange={setFilters}
-            roomTypes={roomTypes || []}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            loading={loading}
-          />
-
-          {/* Loading State para la lista */}
-          {loading && (
-            <div className="bg-white rounded-lg shadow p-8 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Cargando habitaciones...</p>
+      {/* Indicadores de estado rápido */}
+      {!loading && (
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
+          <div className="flex flex-wrap gap-6 items-center justify-between">
+            <div className="flex flex-wrap gap-6 text-sm">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                <span>{cleaningCounts.available} Disponibles</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                <span>{cleaningCounts.occupied} Ocupadas</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
+                <span>{cleaningCounts.needsCleaning} Necesitan Limpieza</span>
+              </div>
             </div>
-          )}
-
-          {/* Rooms Display */}
-          {!loading && (
-            <>
-              {viewMode === 'grid' ? (
-                <RoomGrid
-                  rooms={filteredRooms}
-                  loading={loading}
-                  selectedRooms={selectedRooms}
-                  onSelectRoom={setSelectedRooms}
-                  onStatusChange={handleStatusChange}
-                  onEdit={handleEditRoom}
-                  onDelete={handleDeleteRoom}
-                  // NUEVAS PROPS para manejo de reservas
-                  onViewReservation={handleViewReservation}
-                  onProcessCheckIn={handleProcessCheckIn}
-                  onProcessCheckOut={handleProcessCheckOut}
-                />
-              ) : (
-                <RoomList
-                  rooms={filteredRooms}
-                  loading={loading}
-                  selectedRooms={selectedRooms}
-                  onSelectRoom={setSelectedRooms}
-                  onStatusChange={handleStatusChange}
-                  onEdit={handleEditRoom}
-                  onDelete={handleDeleteRoom}
-                  // NUEVAS PROPS para manejo de reservas
-                  onViewReservation={handleViewReservation}
-                  onProcessCheckIn={handleProcessCheckIn}
-                  onProcessCheckOut={handleProcessCheckOut}
-                />
-              )}
-            </>
-          )}
-
-          {/* Empty State para habitaciones filtradas */}
-          {!loading && filteredRooms.length === 0 && rooms && rooms.length > 0 && (
-            <div className="text-center py-12 bg-white rounded-lg shadow">
-              <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No se encontraron habitaciones
-              </h3>
-              <p className="text-gray-600 mb-4">
-                Intenta ajustar los filtros de búsqueda
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => setFilters({
-                  status: 'all',
-                  type: 'all',
-                  floor: 'all',
-                  cleaningStatus: 'all',
-                  search: ''
-                })}
-              >
-                Limpiar Filtros
-              </Button>
-            </div>
-          )}
-
-          {/* Empty State para no hay habitaciones en absoluto */}
-          {!loading && (!rooms || rooms.length === 0) && (
-            <div className="text-center py-12 bg-white rounded-lg shadow">
-              <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No hay habitaciones registradas
-              </h3>
-              <p className="text-gray-600 mb-4">
-                Comienza creando la primera habitación del hotel
-              </p>
-              <Button
-                variant="primary"
-                icon={Plus}
-                onClick={() => setShowCreateModal(true)}
-              >
-                Crear Primera Habitación
-              </Button>
-            </div>
-          )}
+            
+            {cleaningCounts.needsCleaning === 0 && rooms && rooms.length > 0 && (
+              <div className="flex items-center text-green-600 text-sm font-medium">
+                <CheckCircle className="w-4 h-4 mr-1" />
+                ¡Todas las habitaciones están limpias!
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Tab de Gestión de Limpieza */}
-      {activeTab === 'cleaning' && (
-        <CleaningManagement
-          rooms={rooms || []}
-          cleaningStaff={cleaningStaff || []}
-          cleaningStats={getCleaningStats()}
-          roomsNeedingCleaning={getRoomsNeedingCleaning()}
-          onAssignCleaning={handleAssignCleaning}
-          onCleaningStatusChange={handleCleaningStatusChange}
-          loading={loading}
-        />
+      {/* Statistics */}
+      <RoomStats 
+        stats={roomStats} 
+        roomsByType={[]} // Simplificado
+        loading={loading} 
+      />
+
+      {/* Filters */}
+      <RoomFilters
+        filters={filters}
+        onFiltersChange={setFilters}
+        roomTypes={roomTypes || []}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        loading={loading}
+      />
+
+      {/* Loading State */}
+      {loading && (
+        <div className="bg-white rounded-lg shadow p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Cargando habitaciones...</p>
+        </div>
+      )}
+
+      {/* Rooms Display */}
+      {!loading && (
+        <>
+          {viewMode === 'grid' ? (
+            <RoomGrid
+              rooms={filteredRooms}
+              loading={loading}
+              selectedRooms={selectedRooms}
+              onSelectRoom={setSelectedRooms}
+              onStatusChange={handleStatusChange}
+              onEdit={handleEditRoom}
+              onDelete={handleDeleteRoom}
+              onViewReservation={handleViewReservation}
+              onProcessCheckIn={handleProcessCheckIn}
+              onProcessCheckOut={handleProcessCheckOut}
+              // FUNCIÓN PRINCIPAL: Click para limpiar
+              onRoomCleanClick={handleRoomCleanClick}
+            />
+          ) : (
+            <RoomList
+              rooms={filteredRooms}
+              loading={loading}
+              selectedRooms={selectedRooms}
+              onSelectRoom={setSelectedRooms}
+              onStatusChange={handleStatusChange}
+              onEdit={handleEditRoom}
+              onDelete={handleDeleteRoom}
+              onViewReservation={handleViewReservation}
+              onProcessCheckIn={handleProcessCheckIn}
+              onProcessCheckOut={handleProcessCheckOut}
+            />
+          )}
+        </>
+      )}
+
+      {/* Empty State para habitaciones filtradas */}
+      {!loading && filteredRooms.length === 0 && rooms && rooms.length > 0 && (
+        <div className="text-center py-12 bg-white rounded-lg shadow">
+          <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            No se encontraron habitaciones
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Intenta ajustar los filtros de búsqueda
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => setFilters({
+              status: 'all',
+              type: 'all',
+              floor: 'all',
+              search: ''
+            })}
+          >
+            Limpiar Filtros
+          </Button>
+        </div>
+      )}
+
+      {/* Empty State para no hay habitaciones */}
+      {!loading && (!rooms || rooms.length === 0) && (
+        <div className="text-center py-12 bg-white rounded-lg shadow">
+          <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            No hay habitaciones registradas
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Comienza creando la primera habitación del hotel
+          </p>
+          <Button
+            variant="primary"
+            icon={Plus}
+            onClick={() => setShowCreateModal(true)}
+          >
+            Crear Primera Habitación
+          </Button>
+        </div>
       )}
 
       {/* Modal para crear habitación */}
@@ -539,87 +506,40 @@ const Rooms = () => {
         />
       )}
 
-      {/* Modal para asignar limpieza en lote */}
-      {showAssignCleaning && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Asignar Limpieza a {selectedRooms.length} Habitación{selectedRooms.length > 1 ? 'es' : ''}
-            </h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Seleccionar Personal de Limpieza
-                </label>
-                <select
-                  id="cleaning-staff"
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  defaultValue=""
-                >
-                  <option value="" disabled>Seleccionar personal...</option>
-                  {cleaningStaff
-                    ?.filter(staff => staff.is_active)
-                    .map(staff => (
-                      <option key={staff.id} value={staff.id}>
-                        {staff.name} - {staff.shift}
-                      </option>
-                    ))
-                  }
-                </select>
+      {/* Información de sistema simplificado */}
+      {!loading && rooms && rooms.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <Sparkles className="w-6 h-6 text-blue-600 mt-0.5" />
+            <div>
+              <h3 className="text-lg font-semibold text-blue-900">Sistema de Limpieza Simplificado</h3>
+              <div className="text-blue-700 text-sm mt-2 space-y-1">
+                <p>• <strong>Verde (Disponible):</strong> Habitación limpia y lista para nuevos huéspedes</p>
+                <p>• <strong>Azul (Ocupada):</strong> Habitación con huésped actualmente</p>
+                <p>• <strong>Naranja (Necesita Limpieza):</strong> Haz click para marcar como limpia</p>
               </div>
-
-              <div className="bg-gray-50 rounded-md p-3">
-                <p className="text-sm text-gray-600 mb-1">Habitaciones seleccionadas:</p>
-                <div className="text-sm font-medium text-gray-900">
-                  {selectedRooms
-                    .map(roomId => rooms.find(r => r.id === roomId)?.number)
-                    .filter(Boolean)
-                    .join(', ')
-                  }
+              {cleaningCounts.needsCleaning > 0 && (
+                <div className="mt-3 p-2 bg-orange-100 border border-orange-300 rounded">
+                  <p className="text-orange-800 text-sm font-medium">
+                    🧹 {cleaningCounts.needsCleaning} habitación{cleaningCounts.needsCleaning > 1 ? 'es' : ''} esperando limpieza. 
+                    Haz click en las habitaciones naranjas o usa el botón "Limpiar Todas".
+                  </p>
                 </div>
-              </div>
-
-              <div className="flex space-x-3">
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    const staffSelect = document.getElementById('cleaning-staff')
-                    const staffId = parseInt(staffSelect.value)
-                    if (staffId) {
-                      handleAssignCleaning(selectedRooms, staffId)
-                    } else {
-                      toast.warning('Selecciona un miembro del personal')
-                    }
-                  }}
-                  className="flex-1"
-                  disabled={loading}
-                >
-                  Asignar Limpieza
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowAssignCleaning(false)}
-                  className="flex-1"
-                >
-                  Cancelar
-                </Button>
-              </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Información de estado en la parte inferior */}
+      {/* Footer con estadísticas */}
       {!loading && (
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex flex-wrap gap-4 text-sm text-gray-600">
               <span>Total: {rooms?.length || 0} habitaciones</span>
-              <span>Disponibles: {roomStats.available}</span>
-              <span>Ocupadas: {roomStats.occupied}</span>
-              <span>Limpieza: {roomStats.cleaning}</span>
-              <span>Mantenimiento: {roomStats.maintenance}</span>
+              <span>Disponibles: {cleaningCounts.available}</span>
+              <span>Ocupadas: {cleaningCounts.occupied}</span>
+              <span>Pendientes limpieza: {cleaningCounts.needsCleaning}</span>
               {reservations && reservations.length > 0 && (
                 <span className="text-blue-600 font-medium">
                   {reservations.length} reserva{reservations.length !== 1 ? 's' : ''} activa{reservations.length !== 1 ? 's' : ''}
@@ -630,37 +550,6 @@ const Rooms = () => {
               <span>Ocupación: {roomStats.occupancyRate}%</span>
               <span>Ingresos hoy: {roomStats.revenue ? `S/ ${roomStats.revenue.today.toFixed(2)}` : 'S/ 0.00'}</span>
               <span>Última actualización: {new Date().toLocaleTimeString()}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Estadísticas adicionales de reservas */}
-      {!loading && reservations && reservations.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="text-lg font-semibold text-blue-900 mb-2">
-            Resumen de Reservas Activas
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {reservations.filter(r => r.status === 'checked_in').length}
-              </div>
-              <div className="text-blue-700">Check-in realizados</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {reservations.filter(r => r.status === 'confirmed' && 
-                  new Date(r.check_in).toDateString() === new Date().toDateString()).length}
-              </div>
-              <div className="text-blue-700">Llegadas hoy</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-orange-600">
-                {reservations.filter(r => r.status === 'checked_in' && 
-                  new Date(r.check_out).toDateString() === new Date().toDateString()).length}
-              </div>
-              <div className="text-blue-700">Salidas hoy</div>
             </div>
           </div>
         </div>
