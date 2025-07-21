@@ -247,7 +247,7 @@ export const useRooms = () => {
       const newRoomData = {
         number: roomData.number,
         floor: parseInt(roomData.floor),
-        room_type: roomData.room_type || 'Habitación Estándar',
+        //room_type: roomData.room_type || 'Habitación Estándar',
         base_rate: parseFloat(roomData.rate || roomData.base_rate || 100),
         capacity: parseInt(roomData.capacity || 2),
         status: 'available', // Estado en BD
@@ -435,10 +435,10 @@ export const useRooms = () => {
     const typesMap = new Map()
     
     rooms.forEach(room => {
-      const type = room.room_type
+      //const type = room.room_type
       if (type && !typesMap.has(type)) {
         // Calcular estadísticas para este tipo
-        const roomsOfType = rooms.filter(r => r.room_type === type)
+        //const roomsOfType = rooms.filter(r => r.room_type === type)
         const available = roomsOfType.filter(r => r.status === ROOM_STATUS.AVAILABLE).length
         const occupied = roomsOfType.filter(r => r.status === ROOM_STATUS.OCCUPIED).length
         const averageRate = roomsOfType.reduce((sum, r) => sum + (r.base_rate || 0), 0) / roomsOfType.length
