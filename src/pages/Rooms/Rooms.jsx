@@ -9,6 +9,7 @@ import RoomFilters from '../../components/rooms/RoomFilters'
 import RoomGrid from '../../components/rooms/RoomGrid'
 import RoomList from '../../components/rooms/RoomList'
 import CreateRoomModal from '../../components/rooms/CreateRoomModal'
+import EditRoomModal from '../../components/rooms/EditRoomModal' // NUEVO
 import toast from 'react-hot-toast'
 
 const Rooms = () => {
@@ -17,6 +18,8 @@ const Rooms = () => {
   // Estados principales
   const [viewMode, setViewMode] = useState('grid')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false) // NUEVO
+  const [editingRoom, setEditingRoom] = useState(null) // NUEVO
   const [selectedRooms, setSelectedRooms] = useState([])
   
   // Filtros simplificados (sin tipo de habitación)
@@ -69,16 +72,40 @@ const Rooms = () => {
   }
 
   const handleEditRoom = async (roomId, roomData) => {
+    console.log('handleEditRoom called with:', { roomId, roomData });
+    
+    // Si se llama con solo roomId, abrir modal de edición
+    if (!roomData) {
+      const room = rooms.find(r => r.id === roomId)
+      console.log('Found room for editing:', room);
+      
+      if (room) {
+        setEditingRoom(room)
+        setShowEditModal(true)
+      } else {
+        toast.error('Habitación no encontrada')
+      }
+      return
+    }
+
+    // Si se llama con roomData, procesar la actualización
     try {
+      console.log('Processing room update...', { roomId, roomData });
+      
       const { data, error } = await updateRoom(roomId, roomData)
       
       if (error) {
+        console.error('Update error:', error);
         toast.error(error.message || 'Error al actualizar habitación')
         return
       }
       
+      console.log('Room updated successfully');
+      setShowEditModal(false)
+      setEditingRoom(null)
       toast.success('Habitación actualizada exitosamente')
     } catch (error) {
+      console.error('Unexpected error updating room:', error);
       toast.error('Error inesperado al actualizar habitación')
     }
   }
@@ -493,7 +520,22 @@ const Rooms = () => {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateRoom}
+          existingRooms={rooms}
           loading={loading}
+        />
+      )}
+
+      {/* Modal para editar habitación */}
+      {showEditModal && editingRoom && (
+        <EditRoomModal
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false)
+            setEditingRoom(null)
+          }}
+          onSubmit={handleEditRoom}
+          roomData={editingRoom}
+          existingRooms={rooms}
         />
       )}
 
