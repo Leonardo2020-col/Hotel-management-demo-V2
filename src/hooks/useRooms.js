@@ -429,6 +429,56 @@ export const useRooms = () => {
     }
   }
 
+  // ============================================
+// ACTUALIZACIÓN DEL HOOK useRooms.js 
+// ============================================
+
+// Agregar esta función al hook useRooms
+const handleQuickClean = async (roomId) => {
+  try {
+    const room = rooms.find(r => r.id === roomId);
+    if (!room) {
+      toast.error('Habitación no encontrada');
+      return { data: null, error: 'Room not found' };
+    }
+
+    console.log(`🧹 Quick cleaning room ${room.number} (ID: ${roomId})`);
+
+    // Actualizar en base de datos usando la nueva función
+    const { data, error } = await db.cleanRoomWithClick(roomId);
+    
+    if (error) {
+      console.error('Error cleaning room:', error);
+      throw error;
+    }
+
+    // Actualizar estado local inmediatamente
+    setRooms(prev => 
+      prev.map(r => r.id === roomId ? { 
+        ...r, 
+        status: 'available',
+        cleaning_status: 'clean',
+        displayStatus: 'available',
+        last_cleaned: new Date().toISOString(),
+        cleaned_by: 'Reception Staff'
+      } : r)
+    );
+    
+    toast.success(`✨ Habitación ${room.number} limpiada y disponible`, {
+      icon: '🧹',
+      duration: 3000
+    });
+    
+    return { data: true, error: null };
+    
+  } catch (error) {
+    console.error('Error in handleQuickClean:', error);
+    toast.error('Error al limpiar la habitación');
+    return { data: null, error };
+  }
+};
+
+
   return {
     // Datos
     rooms,

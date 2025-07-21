@@ -295,4 +295,128 @@ const RoomGrid = ({
   );
 };
 
+// Para src/components/checkin/RoomGrid.jsx - Versión simplificada
+const SimplifiedCheckInRoomCard = ({ 
+  room, 
+  onRoomClick, 
+  onQuickClean,
+  selectedRoom,
+  checkoutMode = false 
+}) => {
+  // Determinar estado simplificado
+  const getDisplayStatus = () => {
+    if (room.status === 'occupied') return 'occupied';
+    if (room.cleaning_status === 'dirty' || room.status === 'cleaning') return 'needs_cleaning';
+    return 'available';
+  };
+  
+  const displayStatus = getDisplayStatus();
+  
+  // Colores por estado
+  const getStatusColor = () => {
+    switch (displayStatus) {
+      case 'available':
+        return 'bg-green-500 hover:bg-green-600 text-white';
+      case 'occupied':
+        return 'bg-red-500 hover:bg-red-600 text-white';
+      case 'needs_cleaning':
+        return 'bg-yellow-500 hover:bg-yellow-600 text-white';
+      default:
+        return 'bg-gray-500 hover:bg-gray-600 text-white';
+    }
+  };
+  
+  const getStatusText = () => {
+    switch (displayStatus) {
+      case 'available': return 'Disponible';
+      case 'occupied': return 'Ocupada';  
+      case 'needs_cleaning': return 'Necesita Limpieza';
+      default: return 'Desconocido';
+    }
+  };
+  
+  const isClickable = checkoutMode 
+    ? displayStatus === 'occupied' 
+    : displayStatus === 'available';
+    
+  const isSelected = selectedRoom?.number === room.number;
+  
+  // Handler principal del click
+  const handleMainClick = () => {
+    if (displayStatus === 'needs_cleaning') {
+      // Si necesita limpieza, limpiar directamente
+      handleQuickClean();
+    } else if (isClickable) {
+      // Si es clickeable, acción normal
+      onRoomClick(room);
+    }
+  };
+  
+  // Handler para limpieza rápida
+  const handleQuickClean = (event) => {
+    if (event) event.stopPropagation();
+    
+    if (displayStatus === 'needs_cleaning' && onQuickClean) {
+      onQuickClean(room.id || room.room_id);
+    }
+  };
+  
+  return (
+    <div className="relative">
+      {/* Botón principal de la habitación */}
+      <button
+        onClick={handleMainClick}
+        disabled={!isClickable && displayStatus !== 'needs_cleaning'}
+        className={`
+          relative p-4 rounded-lg font-bold text-lg transition-all duration-200 transform hover:scale-105
+          ${getStatusColor()}
+          ${isSelected ? 'ring-4 ring-blue-400 ring-opacity-50' : ''}
+          ${!isClickable && displayStatus !== 'needs_cleaning' ? 'opacity-50 cursor-not-allowed' : ''}
+          ${displayStatus === 'needs_cleaning' ? 'animate-pulse' : ''}
+          w-full
+        `}
+      >
+        {/* Número de habitación */}
+        <div className="text-center mb-2">
+          <div className="text-2xl font-bold">{room.number}</div>
+          <div className="text-sm opacity-90">{getStatusText()}</div>
+        </div>
+        
+        {/* Información de la habitación */}
+        <div className="text-xs opacity-75">
+          <div className="flex items-center justify-center space-x-1 mb-1">
+            <span>👥 {room.capacity || 2}</span>
+          </div>
+          <div className="text-center">
+            S/ {parseFloat(room.rate || room.base_rate || 100).toFixed(0)}
+          </div>
+        </div>
+        
+        {/* Información del huésped para habitaciones ocupadas */}
+        {displayStatus === 'occupied' && (room.guestName || room.currentGuest) && (
+          <div className="absolute top-1 left-1 bg-white bg-opacity-90 rounded px-1 py-0.5 text-xs text-gray-800 max-w-[80%] truncate">
+            {room.guestName || room.currentGuest?.name || 'Huésped'}
+          </div>
+        )}
+      </button>
+
+      {/* Botón de limpieza rápida flotante */}
+      {displayStatus === 'needs_cleaning' && (
+        <button
+          onClick={handleQuickClean}
+          className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-green-500 hover:bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110"
+          title="Click para marcar como limpia"
+        >
+          ✨
+        </button>
+      )}
+      
+      {/* Indicador de necesita limpieza */}
+      {displayStatus === 'needs_cleaning' && (
+        <div className="absolute top-1 right-1 w-3 h-3 bg-orange-500 rounded-full animate-ping"></div>
+      )}
+    </div>
+  );
+};
+
 export default RoomGrid;

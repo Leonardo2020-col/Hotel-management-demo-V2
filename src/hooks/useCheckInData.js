@@ -830,6 +830,63 @@ export const useCheckInData = () => {
     return occupied
   }
 
+  // Agregar esta función al hook useCheckInData
+const quickCleanRoom = async (roomId) => {
+  try {
+    console.log(`✨ Quick clean requested for room ID: ${roomId}`);
+    
+    // Llamar función de limpieza de Supabase
+    const { data, error } = await db.cleanRoomWithClick(roomId);
+    
+    if (error) {
+      throw new Error(`Error updating room status: ${error.message}`);
+    }
+    
+    // Actualizar estado local inmediatamente en roomsByFloor
+    setRoomsByFloor(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(floor => {
+        if (Array.isArray(updated[floor])) {
+          updated[floor] = updated[floor].map(room => 
+            room.id === roomId || room.room_id === roomId
+              ? { 
+                  ...room, 
+                  status: 'available', 
+                  cleaning_status: 'clean',
+                  displayStatus: 'available',
+                  last_cleaned: new Date().toISOString(),
+                  cleaned_by: 'Reception Staff'
+                }
+              : room
+          );
+        }
+      });
+      return updated;
+    });
+    
+    // Encontrar el número de habitación para el toast
+    let roomNumber = 'desconocida';
+    Object.values(roomsByFloor).flat().forEach(room => {
+      if ((room.id === roomId || room.room_id === roomId)) {
+        roomNumber = room.number;
+      }
+    });
+    
+    console.log('✅ Room cleaned successfully');
+    toast.success(`Habitación ${roomNumber} marcada como limpia y disponible`, {
+      icon: '✨',
+      duration: 3000
+    });
+    
+    return { data, error: null };
+    
+  } catch (error) {
+    console.error('❌ Error in quickCleanRoom:', error);
+    toast.error(`Error al limpiar habitación: ${error.message}`);
+    return { data: null, error };
+  }
+};
+
   // Actualizar datos en tiempo real
   const refreshData = () => {
     console.log('🔄 Refreshing data...')
