@@ -1,4 +1,4 @@
-// src/lib/supabase.js - SIN ROOM_TYPES NI DESCRIPTIONS
+// src/lib/supabase.js - COMPLETAMENTE SIN ROOM_TYPES Y ERROR CORREGIDO
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -69,282 +69,282 @@ export const getRoomsByFloor = async (branchId = null) => {
 export const db = {
 
   // 1. FUNCIÓN PRINCIPAL: Limpiar habitación con un click
-async cleanRoomWithClick(roomId) {
-  try {
-    console.log(`🧹 Cleaning room with ID: ${roomId}`);
-    
-    const updateData = {
-      status: 'available',
-      cleaning_status: 'clean',
-      last_cleaned: new Date().toISOString(),
-      cleaned_by: 'Reception Staff',
-      updated_at: new Date().toISOString()
-    };
-    
-    const { data, error } = await supabase
-      .from('rooms')
-      .update(updateData)
-      .eq('id', roomId)
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Error cleaning room:', error);
-      throw error;
-    }
-    
-    console.log('✅ Room cleaned successfully:', data);
-    return { data, error: null };
-    
-  } catch (error) {
-    console.error('Error in cleanRoomWithClick:', error);
-    return { data: null, error };
-  }
-},
-
-// 2. FUNCIÓN: Limpiar múltiples habitaciones
-async cleanMultipleRooms(roomIds) {
-  try {
-    console.log(`🧹 Cleaning multiple rooms:`, roomIds);
-    
-    const updateData = {
-      status: 'available',
-      cleaning_status: 'clean', 
-      last_cleaned: new Date().toISOString(),
-      cleaned_by: 'Reception Staff',
-      updated_at: new Date().toISOString()
-    };
-    
-    const { data, error } = await supabase
-      .from('rooms')
-      .update(updateData)
-      .in('id', roomIds)
-      .select();
-    
-    if (error) throw error;
-    
-    return { data, error: null };
-    
-  } catch (error) {
-    console.error('Error in cleanMultipleRooms:', error);
-    return { data: null, error };
-  }
-},
-
-// 3. FUNCIÓN: Obtener habitaciones que necesitan limpieza
-async getRoomsNeedingCleaning(branchId = null) {
-  try {
-    let query = supabase
-      .from('rooms')
-      .select('*')
-      .or('cleaning_status.eq.dirty,status.eq.cleaning')
-      .order('floor')
-      .order('number');
-    
-    if (branchId) {
-      query = query.eq('branch_id', branchId);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) throw error;
-    
-    return { data: data || [], error: null };
-    
-  } catch (error) {
-    console.error('Error getting rooms needing cleaning:', error);
-    return { data: [], error };
-  }
-},
-
-// 4. FUNCIÓN: Determinar estado simplificado de habitación
-getRoomSimplifiedStatus(room) {
-  // Si está ocupada, siempre mostrar ocupada
-  if (room.status === 'occupied') {
-    return 'occupied';
-  }
-  
-  // Si necesita limpieza (por cualquier motivo)
-  if (room.cleaning_status === 'dirty' || 
-      room.status === 'cleaning' || 
-      room.status === 'maintenance') {
-    return 'needs_cleaning';
-  }
-  
-  // En cualquier otro caso, está disponible
-  return 'available';
-},
-
-// 5. FUNCIÓN: Obtener estadísticas simplificadas
-async getRoomStats(branchId = null) {
-  try {
-    let query = supabase
-      .from('rooms')
-      .select('*');
-    
-    if (branchId) {
-      query = query.eq('branch_id', branchId);
-    }
-    
-    const { data: rooms, error } = await query;
-    
-    if (error) throw error;
-    
-    const stats = {
-      total: rooms.length,
-      available: 0,
-      occupied: 0,
-      needsCleaning: 0,
-      occupancyRate: 0
-    };
-    
-    rooms.forEach(room => {
-      const status = this.getRoomSimplifiedStatus(room);
-      switch (status) {
-        case 'available':
-          stats.available++;
-          break;
-        case 'occupied':
-          stats.occupied++;
-          break;
-        case 'needs_cleaning':
-          stats.needsCleaning++;
-          break;
-      }
-    });
-    
-    stats.occupancyRate = stats.total > 0 
-      ? Math.round((stats.occupied / stats.total) * 100) 
-      : 0;
-    
-    return { data: stats, error: null };
-    
-  } catch (error) {
-    console.error('Error getting room stats:', error);
-    return { data: null, error };
-  }
-},
-
-// 6. FUNCIÓN MEJORADA: getRooms con estados simplificados
-async getRoomsWithSimplifiedStatus(filters = {}) {
-  try {
-    console.log('Loading rooms with simplified status...');
-    
-    // Obtener habitaciones básicas
-    let roomQuery = supabase
-      .from('rooms')
-      .select('*')
-      .order('floor')
-      .order('number');
-
-    // Aplicar filtros
-    if (filters.branchId) {
-      roomQuery = roomQuery.eq('branch_id', filters.branchId);
-    }
-    if (filters.floor && filters.floor !== 'all') {
-      roomQuery = roomQuery.eq('floor', filters.floor);
-    }
-    if (filters.search) {
-      roomQuery = roomQuery.or(`number.ilike.%${filters.search}%`);
-    }
-
-    const { data: rooms, error: roomsError } = await roomQuery;
-
-    if (roomsError) {
-      throw roomsError;
-    }
-
-    // Obtener reservas activas para enriquecer datos
-    const { data: reservations } = await supabase
-      .from('reservations')
-      .select(`
-        *,
-        guest:guests(
-          id,
-          first_name,
-          last_name,
-          full_name,
-          email,
-          phone
-        )
-      `)
-      .in('status', ['checked_in', 'confirmed']);
-
-    // Enriquecer habitaciones con información de reservas y estado simplificado
-    const enrichedRooms = rooms.map(room => {
-      // Buscar reserva activa
-      const activeReservation = reservations?.find(
-        res => res.room_id === room.id && res.status === 'checked_in'
-      );
+  async cleanRoomWithClick(roomId) {
+    try {
+      console.log(`🧹 Cleaning room with ID: ${roomId}`);
       
-      // Determinar estado simplificado
-      const simplifiedStatus = this.getRoomSimplifiedStatus(room);
-      
-      return {
-        ...room,
-        // Estado simplificado como propiedad principal
-        displayStatus: simplifiedStatus,
-        
-        // Información del huésped actual
-        currentGuest: activeReservation ? {
-          id: activeReservation.guest?.id,
-          name: activeReservation.guest?.full_name || 
-                `${activeReservation.guest?.first_name || ''} ${activeReservation.guest?.last_name || ''}`.trim(),
-          email: activeReservation.guest?.email,
-          phone: activeReservation.guest?.phone,
-          checkIn: activeReservation.check_in,
-          checkOut: activeReservation.check_out,
-          confirmationCode: activeReservation.confirmation_code
-        } : null,
-        
-        // Reserva activa completa
-        activeReservation: activeReservation || null,
-        
-        // Estados originales para compatibilidad
-        original_status: room.status,
-        original_cleaning_status: room.cleaning_status
-      };
-    });
-
-    // Filtrar por estado simplificado si se solicita
-    const filteredRooms = filters.displayStatus && filters.displayStatus !== 'all'
-      ? enrichedRooms.filter(room => room.displayStatus === filters.displayStatus)
-      : enrichedRooms;
-
-    console.log(`✅ Loaded ${filteredRooms.length} rooms with simplified status`);
-    return { data: filteredRooms, error: null };
-
-  } catch (error) {
-    console.error('Error in getRoomsWithSimplifiedStatus:', error);
-    return { data: null, error };
-  }
-},
-
-// 7. FUNCIÓN: Marcar habitación como sucia después del check-out
-async markRoomAsDirtyAfterCheckout(roomId) {
-  try {
-    console.log(`🧽 Marking room ${roomId} as dirty after checkout`);
-    
-    const { data, error } = await supabase
-      .from('rooms')
-      .update({
-        status: 'available',  // Disponible pero...
-        cleaning_status: 'dirty',  // Necesita limpieza
+      const updateData = {
+        status: 'available',
+        cleaning_status: 'clean',
+        last_cleaned: new Date().toISOString(),
+        cleaned_by: 'Reception Staff',
         updated_at: new Date().toISOString()
-      })
-      .eq('id', roomId)
-      .select()
-      .single();
+      };
+      
+      const { data, error } = await supabase
+        .from('rooms')
+        .update(updateData)
+        .eq('id', roomId)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Error cleaning room:', error);
+        throw error;
+      }
+      
+      console.log('✅ Room cleaned successfully:', data);
+      return { data, error: null };
+      
+    } catch (error) {
+      console.error('Error in cleanRoomWithClick:', error);
+      return { data: null, error };
+    }
+  },
+
+  // 2. FUNCIÓN: Limpiar múltiples habitaciones
+  async cleanMultipleRooms(roomIds) {
+    try {
+      console.log(`🧹 Cleaning multiple rooms:`, roomIds);
+      
+      const updateData = {
+        status: 'available',
+        cleaning_status: 'clean', 
+        last_cleaned: new Date().toISOString(),
+        cleaned_by: 'Reception Staff',
+        updated_at: new Date().toISOString()
+      };
+      
+      const { data, error } = await supabase
+        .from('rooms')
+        .update(updateData)
+        .in('id', roomIds)
+        .select();
+      
+      if (error) throw error;
+      
+      return { data, error: null };
+      
+    } catch (error) {
+      console.error('Error in cleanMultipleRooms:', error);
+      return { data: null, error };
+    }
+  },
+
+  // 3. FUNCIÓN: Obtener habitaciones que necesitan limpieza
+  async getRoomsNeedingCleaning(branchId = null) {
+    try {
+      let query = supabase
+        .from('rooms')
+        .select('*')
+        .or('cleaning_status.eq.dirty,status.eq.cleaning')
+        .order('floor')
+        .order('number');
+      
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      
+      return { data: data || [], error: null };
+      
+    } catch (error) {
+      console.error('Error getting rooms needing cleaning:', error);
+      return { data: [], error };
+    }
+  },
+
+  // 4. FUNCIÓN: Determinar estado simplificado de habitación
+  getRoomSimplifiedStatus(room) {
+    // Si está ocupada, siempre mostrar ocupada
+    if (room.status === 'occupied') {
+      return 'occupied';
+    }
     
-    if (error) throw error;
+    // Si necesita limpieza (por cualquier motivo)
+    if (room.cleaning_status === 'dirty' || 
+        room.status === 'cleaning' || 
+        room.status === 'maintenance') {
+      return 'needs_cleaning';
+    }
     
-    return { data, error: null };
-    
-  } catch (error) {
-    console.error('Error marking room as dirty:', error);
-    return { data: null, error };
-  }
-},
+    // En cualquier otro caso, está disponible
+    return 'available';
+  },
+
+  // 5. FUNCIÓN: Obtener estadísticas simplificadas
+  async getRoomStats(branchId = null) {
+    try {
+      let query = supabase
+        .from('rooms')
+        .select('*');
+      
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      }
+      
+      const { data: rooms, error } = await query;
+      
+      if (error) throw error;
+      
+      const stats = {
+        total: rooms.length,
+        available: 0,
+        occupied: 0,
+        needsCleaning: 0,
+        occupancyRate: 0
+      };
+      
+      rooms.forEach(room => {
+        const status = this.getRoomSimplifiedStatus(room);
+        switch (status) {
+          case 'available':
+            stats.available++;
+            break;
+          case 'occupied':
+            stats.occupied++;
+            break;
+          case 'needs_cleaning':
+            stats.needsCleaning++;
+            break;
+        }
+      });
+      
+      stats.occupancyRate = stats.total > 0 
+        ? Math.round((stats.occupied / stats.total) * 100) 
+        : 0;
+      
+      return { data: stats, error: null };
+      
+    } catch (error) {
+      console.error('Error getting room stats:', error);
+      return { data: null, error };
+    }
+  },
+
+  // 6. FUNCIÓN MEJORADA: getRooms con estados simplificados
+  async getRoomsWithSimplifiedStatus(filters = {}) {
+    try {
+      console.log('Loading rooms with simplified status...');
+      
+      // Obtener habitaciones básicas
+      let roomQuery = supabase
+        .from('rooms')
+        .select('*')
+        .order('floor')
+        .order('number');
+
+      // Aplicar filtros
+      if (filters.branchId) {
+        roomQuery = roomQuery.eq('branch_id', filters.branchId);
+      }
+      if (filters.floor && filters.floor !== 'all') {
+        roomQuery = roomQuery.eq('floor', filters.floor);
+      }
+      if (filters.search) {
+        roomQuery = roomQuery.or(`number.ilike.%${filters.search}%`);
+      }
+
+      const { data: rooms, error: roomsError } = await roomQuery;
+
+      if (roomsError) {
+        throw roomsError;
+      }
+
+      // Obtener reservas activas para enriquecer datos
+      const { data: reservations } = await supabase
+        .from('reservations')
+        .select(`
+          *,
+          guest:guests(
+            id,
+            first_name,
+            last_name,
+            full_name,
+            email,
+            phone
+          )
+        `)
+        .in('status', ['checked_in', 'confirmed']);
+
+      // Enriquecer habitaciones con información de reservas y estado simplificado
+      const enrichedRooms = rooms.map(room => {
+        // Buscar reserva activa
+        const activeReservation = reservations?.find(
+          res => res.room_id === room.id && res.status === 'checked_in'
+        );
+        
+        // Determinar estado simplificado
+        const simplifiedStatus = this.getRoomSimplifiedStatus(room);
+        
+        return {
+          ...room,
+          // Estado simplificado como propiedad principal
+          displayStatus: simplifiedStatus,
+          
+          // Información del huésped actual
+          currentGuest: activeReservation ? {
+            id: activeReservation.guest?.id,
+            name: activeReservation.guest?.full_name || 
+                  `${activeReservation.guest?.first_name || ''} ${activeReservation.guest?.last_name || ''}`.trim(),
+            email: activeReservation.guest?.email,
+            phone: activeReservation.guest?.phone,
+            checkIn: activeReservation.check_in,
+            checkOut: activeReservation.check_out,
+            confirmationCode: activeReservation.confirmation_code
+          } : null,
+          
+          // Reserva activa completa
+          activeReservation: activeReservation || null,
+          
+          // Estados originales para compatibilidad
+          original_status: room.status,
+          original_cleaning_status: room.cleaning_status
+        };
+      });
+
+      // Filtrar por estado simplificado si se solicita
+      const filteredRooms = filters.displayStatus && filters.displayStatus !== 'all'
+        ? enrichedRooms.filter(room => room.displayStatus === filters.displayStatus)
+        : enrichedRooms;
+
+      console.log(`✅ Loaded ${filteredRooms.length} rooms with simplified status`);
+      return { data: filteredRooms, error: null };
+
+    } catch (error) {
+      console.error('Error in getRoomsWithSimplifiedStatus:', error);
+      return { data: null, error };
+    }
+  },
+
+  // 7. FUNCIÓN: Marcar habitación como sucia después del check-out
+  async markRoomAsDirtyAfterCheckout(roomId) {
+    try {
+      console.log(`🧽 Marking room ${roomId} as dirty after checkout`);
+      
+      const { data, error } = await supabase
+        .from('rooms')
+        .update({
+          status: 'available',  // Disponible pero...
+          cleaning_status: 'dirty',  // Necesita limpieza
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', roomId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return { data, error: null };
+      
+    } catch (error) {
+      console.error('Error marking room as dirty:', error);
+      return { data: null, error };
+    }
+  },
   
   // =============================================
   // ROOMS MANAGEMENT - SIN ROOM_TYPES
@@ -616,15 +616,21 @@ async markRoomAsDirtyAfterCheckout(roomId) {
 
   async updateRoom(roomId, updates) {
     try {
-      // Filtrar campos que ya no existen
-      //const { room_type, description, ...validUpdates } = updates
+      // CORREGIDO: Definir validUpdates correctamente
+      const validUpdates = {
+        number: updates.number,
+        floor: updates.floor,
+        base_rate: updates.base_rate,
+        capacity: updates.capacity,
+        size: updates.size,
+        features: updates.features,
+        beds: updates.beds,
+        updated_at: new Date().toISOString()
+      }
       
       const { data, error } = await supabase
         .from('rooms')
-        .update({
-          ...validUpdates,
-          updated_at: new Date().toISOString()
-        })
+        .update(validUpdates)
         .eq('id', roomId)
         .select()
         .single()
