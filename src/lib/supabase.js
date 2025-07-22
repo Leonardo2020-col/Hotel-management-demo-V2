@@ -68,6 +68,660 @@ export const getRoomsByFloor = async (branchId = null) => {
 // Database helpers - SIN ROOM_TYPES
 export const db = {
 
+  // =============================================
+  // SNACKS MANAGEMENT - ENHANCED
+  // =============================================
+
+  async getSnackCategories() {
+    try {
+      const { data, error } = await supabase
+        .from('snack_categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order');
+      
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error getting snack categories:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createSnackCategory(categoryData) {
+    try {
+      const { data, error } = await supabase
+        .from('snack_categories')
+        .insert([{
+          name: categoryData.name,
+          description: categoryData.description,
+          display_order: categoryData.display_order || 0,
+          is_active: true
+        }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating snack category:', error);
+      return { data: null, error };
+    }
+  },
+
+  async getAllSnackItems() {
+    try {
+      const { data, error } = await supabase
+        .from('snack_items')
+        .select(`
+          *,
+          category:snack_categories(
+            id,
+            name,
+            description
+          )
+        `)
+        .eq('is_available', true)
+        .order('name');
+      
+      if (error) throw error;
+      
+      // Transform to match supplies format
+      const formattedItems = data.map(item => ({
+        id: item.id,
+        name: item.name,
+        description: item.description || '',
+        sku: `SNACK-${item.id}`,
+        category: item.category?.name || 'Sin categoría',
+        supplier: 'Proveedor de Snacks',
+        unit: 'unidad',
+        unitPrice: parseFloat(item.price || 0),
+        currentStock: 100, // Mock stock - you can add this field to snack_items table
+        minStock: 10,
+        maxStock: 500,
+        location: 'Área de Snacks',
+        notes: '',
+        is_active: item.is_available,
+        branch_id: item.branch_id,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        lastUpdated: item.updated_at,
+        // Additional fields to identify as snack
+        item_type: 'snack',
+        original_table: 'snack_items'
+      }));
+      
+      return { data: formattedItems, error: null };
+    } catch (error) {
+      console.error('Error getting snack items:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createSnackItem(itemData) {
+    try {
+      // First get or create category
+      let categoryId = null;
+      
+      if (itemData.category && itemData.category !== 'Sin categoría') {
+        const { data: categories } = await this.getSnackCategories();
+        const existingCategory = categories.find(cat => cat.name === itemData.category);
+        
+        if (existingCategory) {
+          categoryId = existingCategory.id;
+        } else {
+          const { data: newCategory } = await this.createSnackCategory({
+            name: itemData.category,
+            description: `Categoría: ${itemData.category}`
+          });
+          categoryId = newCategory?.id;
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('snack_items')
+        .insert([{
+          category_id: categoryId,
+          name: itemData.name,
+          description: itemData.description,
+          price: parseFloat(itemData.unitPrice),
+          is_available: itemData.is_active !== false,
+          branch_id: itemData.branch_id || 1
+        }])
+        .select(`
+          *,
+          category:snack_categories(
+            id,
+            name,
+            description
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating snack item:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateSnackItem(itemId, updateData) {
+    try {
+      // Handle category
+      let categoryId = null;
+      
+      if (updateData.category && updateData.category !== 'Sin categoría') {
+        const { data: categories } = await this.getSnackCategories();
+        const existingCategory = categories.find(cat => cat.name === updateData.category);
+        
+        if (existingCategory) {
+          categoryId = existingCategory.id;
+        } else {
+          const { data: newCategory } = await this.createSnackCategory({
+            name: updateData.category,
+            description: `Categoría: ${updateData.category}`
+          });
+          categoryId = newCategory?.id;
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('snack_items')
+        .update({
+          category_id: categoryId,
+          name: updateData.name,
+          description: updateData.description,
+          price: parseFloat(updateData.unitPrice),
+          is_available: updateData.is_active !== false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', itemId)
+        .select(`
+          *,
+          category:snack_categories(
+            id,
+            name,
+            description
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating snack item:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteSnackItem(itemId) {
+    try {
+      const { data, error } = await supabase
+        .from('snack_items')
+        .delete()
+        .eq('id', itemId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error deleting snack item:', error);
+      return { data: null, error };
+    }
+  },
+
+  // =============================================
+  // SUPPLIES MANAGEMENT - ENHANCED
+  // =============================================
+
+  async getSupplyCategories() {
+    try {
+      const { data, error } = await supabase
+        .from('supply_categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+      
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error getting supply categories:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createSupplyCategory(categoryData) {
+    try {
+      const { data, error } = await supabase
+        .from('supply_categories')
+        .insert([{
+          name: categoryData.name,
+          description: categoryData.description,
+          color: categoryData.color || '#6B7280',
+          is_active: true
+        }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating supply category:', error);
+      return { data: null, error };
+    }
+  },
+
+  async getSuppliers() {
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+      
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Error getting suppliers:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createSupplier(supplierData) {
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .insert([{
+          name: supplierData.name,
+          contact_person: supplierData.contact_person,
+          email: supplierData.email,
+          phone: supplierData.phone,
+          address: supplierData.address,
+          tax_id: supplierData.tax_id,
+          payment_terms: supplierData.payment_terms,
+          is_active: true
+        }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating supplier:', error);
+      return { data: null, error };
+    }
+  },
+
+  async getAllSupplies() {
+    try {
+      const { data, error } = await supabase
+        .from('supplies')
+        .select(`
+          *,
+          category:supply_categories(
+            id,
+            name,
+            description,
+            color
+          ),
+          supplier:suppliers(
+            id,
+            name,
+            contact_person,
+            email,
+            phone
+          )
+        `)
+        .eq('is_active', true)
+        .order('name');
+      
+      if (error) throw error;
+      
+      // Transform to consistent format
+      const formattedSupplies = data.map(supply => ({
+        id: supply.id,
+        name: supply.name,
+        description: supply.description || '',
+        sku: supply.sku || `SUP-${supply.id}`,
+        category: supply.category?.name || 'Sin categoría',
+        supplier: supply.supplier?.name || 'Sin proveedor',
+        unit: supply.unit,
+        unitPrice: parseFloat(supply.unit_price || 0),
+        currentStock: parseFloat(supply.current_stock || 0),
+        minStock: parseFloat(supply.min_stock || 0),
+        maxStock: parseFloat(supply.max_stock || 0),
+        location: supply.location || '',
+        notes: supply.notes || '',
+        is_active: supply.is_active,
+        branch_id: supply.branch_id,
+        created_at: supply.created_at,
+        updated_at: supply.updated_at,
+        lastUpdated: supply.updated_at,
+        // Additional fields to identify as supply
+        item_type: 'supply',
+        original_table: 'supplies'
+      }));
+      
+      return { data: formattedSupplies, error: null };
+    } catch (error) {
+      console.error('Error getting supplies:', error);
+      return { data: [], error };
+    }
+  },
+
+  async createSupply(supplyData) {
+    try {
+      // Handle category
+      let categoryId = null;
+      
+      if (supplyData.category && supplyData.category !== 'Sin categoría') {
+        const { data: categories } = await this.getSupplyCategories();
+        const existingCategory = categories.find(cat => cat.name === supplyData.category);
+        
+        if (existingCategory) {
+          categoryId = existingCategory.id;
+        } else {
+          const { data: newCategory } = await this.createSupplyCategory({
+            name: supplyData.category,
+            description: `Categoría: ${supplyData.category}`
+          });
+          categoryId = newCategory?.id;
+        }
+      }
+
+      // Handle supplier
+      let supplierId = null;
+      
+      if (supplyData.supplier && supplyData.supplier !== 'Sin proveedor') {
+        const { data: suppliers } = await this.getSuppliers();
+        const existingSupplier = suppliers.find(sup => sup.name === supplyData.supplier);
+        
+        if (existingSupplier) {
+          supplierId = existingSupplier.id;
+        } else {
+          const { data: newSupplier } = await this.createSupplier({
+            name: supplyData.supplier,
+            contact_person: 'Por definir',
+            email: '',
+            phone: ''
+          });
+          supplierId = newSupplier?.id;
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('supplies')
+        .insert([{
+          name: supplyData.name,
+          description: supplyData.description,
+          sku: supplyData.sku || `SUP-${Date.now()}`,
+          category_id: categoryId,
+          supplier_id: supplierId,
+          unit: supplyData.unit,
+          unit_price: parseFloat(supplyData.unitPrice),
+          current_stock: parseFloat(supplyData.currentStock),
+          min_stock: parseFloat(supplyData.minStock),
+          max_stock: parseFloat(supplyData.maxStock),
+          location: supplyData.location || '',
+          notes: supplyData.notes || '',
+          is_active: supplyData.is_active !== false,
+          branch_id: supplyData.branch_id || 1
+        }])
+        .select(`
+          *,
+          category:supply_categories(
+            id,
+            name,
+            description,
+            color
+          ),
+          supplier:suppliers(
+            id,
+            name,
+            contact_person,
+            email,
+            phone
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error creating supply:', error);
+      return { data: null, error };
+    }
+  },
+
+  async updateSupply(supplyId, updateData) {
+    try {
+      // Handle category
+      let categoryId = null;
+      
+      if (updateData.category && updateData.category !== 'Sin categoría') {
+        const { data: categories } = await this.getSupplyCategories();
+        const existingCategory = categories.find(cat => cat.name === updateData.category);
+        
+        if (existingCategory) {
+          categoryId = existingCategory.id;
+        } else {
+          const { data: newCategory } = await this.createSupplyCategory({
+            name: updateData.category,
+            description: `Categoría: ${updateData.category}`
+          });
+          categoryId = newCategory?.id;
+        }
+      }
+
+      // Handle supplier
+      let supplierId = null;
+      
+      if (updateData.supplier && updateData.supplier !== 'Sin proveedor') {
+        const { data: suppliers } = await this.getSuppliers();
+        const existingSupplier = suppliers.find(sup => sup.name === updateData.supplier);
+        
+        if (existingSupplier) {
+          supplierId = existingSupplier.id;
+        } else {
+          const { data: newSupplier } = await this.createSupplier({
+            name: updateData.supplier,
+            contact_person: 'Por definir',
+            email: '',
+            phone: ''
+          });
+          supplierId = newSupplier?.id;
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('supplies')
+        .update({
+          name: updateData.name,
+          description: updateData.description,
+          sku: updateData.sku,
+          category_id: categoryId,
+          supplier_id: supplierId,
+          unit: updateData.unit,
+          unit_price: parseFloat(updateData.unitPrice),
+          current_stock: parseFloat(updateData.currentStock),
+          min_stock: parseFloat(updateData.minStock),
+          max_stock: parseFloat(updateData.maxStock),
+          location: updateData.location || '',
+          notes: updateData.notes || '',
+          is_active: updateData.is_active !== false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', supplyId)
+        .select(`
+          *,
+          category:supply_categories(
+            id,
+            name,
+            description,
+            color
+          ),
+          supplier:suppliers(
+            id,
+            name,
+            contact_person,
+            email,
+            phone
+          )
+        `)
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error updating supply:', error);
+      return { data: null, error };
+    }
+  },
+
+  async deleteSupply(supplyId) {
+    try {
+      const { data, error } = await supabase
+        .from('supplies')
+        .delete()
+        .eq('id', supplyId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error deleting supply:', error);
+      return { data: null, error };
+    }
+  },
+
+  // =============================================
+  // UNIFIED INVENTORY MANAGEMENT
+  // =============================================
+
+  async getAllInventoryItems() {
+    try {
+      console.log('Loading unified inventory (supplies + snacks)...');
+      
+      // Get both supplies and snacks in parallel
+      const [suppliesResult, snacksResult] = await Promise.all([
+        this.getAllSupplies(),
+        this.getAllSnackItems()
+      ]);
+
+      if (suppliesResult.error) {
+        console.warn('Error loading supplies:', suppliesResult.error);
+      }
+      
+      if (snacksResult.error) {
+        console.warn('Error loading snacks:', snacksResult.error);
+      }
+
+      // Combine both arrays
+      const allItems = [
+        ...(suppliesResult.data || []),
+        ...(snacksResult.data || [])
+      ];
+
+      console.log(`Loaded ${allItems.length} total items (${suppliesResult.data?.length || 0} supplies + ${snacksResult.data?.length || 0} snacks)`);
+      
+      return { data: allItems, error: null };
+    } catch (error) {
+      console.error('Error getting unified inventory:', error);
+      return { data: [], error };
+    }
+  },
+
+  async getAllCategories() {
+    try {
+      const [supplyCategoriesResult, snackCategoriesResult] = await Promise.all([
+        this.getSupplyCategories(),
+        this.getSnackCategories()
+      ]);
+
+      const allCategories = [
+        ...(supplyCategoriesResult.data || []).map(cat => cat.name),
+        ...(snackCategoriesResult.data || []).map(cat => cat.name)
+      ];
+
+      // Remove duplicates and sort
+      const uniqueCategories = [...new Set(allCategories)].sort();
+      
+      return { data: uniqueCategories, error: null };
+    } catch (error) {
+      console.error('Error getting all categories:', error);
+      return { data: [], error };
+    }
+  },
+
+  async getAllSupplierNames() {
+    try {
+      const { data: suppliers, error } = await this.getSuppliers();
+      
+      if (error) {
+        return { data: ['Proveedor de Snacks'], error: null };
+      }
+
+      const supplierNames = [
+        'Proveedor de Snacks', // Default for snacks
+        ...(suppliers || []).map(sup => sup.name)
+      ];
+
+      return { data: [...new Set(supplierNames)].sort(), error: null };
+    } catch (error) {
+      console.error('Error getting supplier names:', error);
+      return { data: ['Proveedor de Snacks'], error };
+    }
+  },
+
+  // =============================================
+  // CONSUMPTION TRACKING
+  // =============================================
+
+  async recordSupplyConsumption(consumptionData) {
+    try {
+      // Record in supply_movements table
+      const { data, error } = await supabase
+        .from('supply_movements')
+        .insert([{
+          supply_id: consumptionData.supplyId,
+          movement_type: 'consumption',
+          quantity: parseFloat(consumptionData.quantity),
+          unit_price: parseFloat(consumptionData.unitPrice || 0),
+          reason: consumptionData.reason || 'Consumo registrado',
+          room_number: consumptionData.room_number,
+          department: consumptionData.department,
+          consumed_by: consumptionData.consumed_by,
+          notes: consumptionData.notes,
+          created_by: null // You can add user context here
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update supply stock
+      const { error: updateError } = await supabase
+        .from('supplies')
+        .update({
+          current_stock: supabase.raw(`current_stock - ${parseFloat(consumptionData.quantity)}`),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', consumptionData.supplyId);
+
+      if (updateError) {
+        console.warn('Error updating supply stock:', updateError);
+      }
+
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error recording supply consumption:', error);
+      return { data: null, error };
+    }
+  },
+
   // 1. FUNCIÓN PRINCIPAL: Limpiar habitación con un click
   async cleanRoomWithClick(roomId) {
     try {

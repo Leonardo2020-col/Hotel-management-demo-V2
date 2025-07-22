@@ -1,6 +1,7 @@
-// hooks/useSupplies.js
+// src/hooks/useSupplies.js - Enhanced with Snacks & Supplies Integration
 import { useState, useEffect, useMemo } from 'react';
-import { suppliesMockData } from '../utils/suppliesMockData';
+import { db } from '../lib/supabase';
+import toast from 'react-hot-toast';
 
 export const useSupplies = () => {
   const [supplies, setSupplies] = useState([]);
@@ -15,9 +16,13 @@ export const useSupplies = () => {
     if (!supplies || supplies.length === 0) {
       return {
         totalSupplies: 0,
+        totalSnacks: 0,
+        totalItems: 0,
         lowStockItems: 0,
         outOfStockItems: 0,
         totalValue: 0,
+        snacksValue: 0,
+        suppliesValue: 0,
         monthlyConsumption: 0,
         categoriesCount: 0,
         suppliersCount: 0,
@@ -25,10 +30,22 @@ export const useSupplies = () => {
       };
     }
 
-    const totalSupplies = supplies.length;
-    const lowStockItems = supplies.filter(s => s.currentStock <= s.minStock && s.currentStock > 0).length;
-    const outOfStockItems = supplies.filter(s => s.currentStock === 0).length;
-    const totalValue = supplies.reduce((sum, s) => sum + (s.currentStock * s.unitPrice), 0);
+    // Separar snacks y supplies
+    const snackItems = supplies.filter(item => item.item_type === 'snack');
+    const supplyItems = supplies.filter(item => item.item_type === 'supply');
+
+    const totalSupplies = supplyItems.length;
+    const totalSnacks = snackItems.length;
+    const totalItems = supplies.length;
+    
+    // Solo calcular stock bajo/agotado para supplies (los snacks no tienen stock real)
+    const lowStockItems = supplyItems.filter(s => s.currentStock <= s.minStock && s.currentStock > 0).length;
+    const outOfStockItems = supplyItems.filter(s => s.currentStock === 0).length;
+    
+    // Calcular valores
+    const suppliesValue = supplyItems.reduce((sum, s) => sum + (s.currentStock * s.unitPrice), 0);
+    const snacksValue = snackItems.reduce((sum, s) => sum + (100 * s.unitPrice), 0); // Mock stock for snacks
+    const totalValue = suppliesValue + snacksValue;
     
     // Calcular consumo mensual
     const now = new Date();
@@ -48,9 +65,13 @@ export const useSupplies = () => {
 
     return {
       totalSupplies,
+      totalSnacks,
+      totalItems,
       lowStockItems,
       outOfStockItems,
       totalValue,
+      snacksValue,
+      suppliesValue,
       monthlyConsumption,
       categoriesCount: categories.length,
       suppliersCount: suppliers.length,
@@ -58,25 +79,49 @@ export const useSupplies = () => {
     };
   }, [supplies, consumptionHistory, categories, suppliers]);
 
-  // Simular carga inicial de datos
+  // Cargar datos iniciales
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
+        setError(null);
         
-        // Simular delay de API
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('🔄 Loading unified inventory data...');
         
-        const data = suppliesMockData();
+        // Cargar todos los items (supplies + snacks)
+        const { data: allItems, error: itemsError } = await db.getAllInventoryItems();
+        if (itemsError) {
+          console.error('Error loading items:', itemsError);
+          throw new Error('Error al cargar inventario: ' + itemsError.message);
+        }
+
+        // Cargar categorías
+        const { data: allCategories, error: categoriesError } = await db.getAllCategories();
+        if (categoriesError) {
+          console.warn('Error loading categories:', categoriesError);
+        }
+
+        // Cargar proveedores
+        const { data: allSuppliers, error: suppliersError } = await db.getAllSupplierNames();
+        if (suppliersError) {
+          console.warn('Error loading suppliers:', suppliersError);
+        }
+
+        // Mock consumption history - you can implement real tracking later
+        const mockConsumptionHistory = generateMockConsumptionHistory(allItems || []);
         
-        setSupplies(data.supplies);
-        setCategories(data.categories);
-        setSuppliers(data.suppliers);
-        setConsumptionHistory(data.consumptionHistory);
+        setSupplies(allItems || []);
+        setCategories(allCategories || []);
+        setSuppliers(allSuppliers || []);
+        setConsumptionHistory(mockConsumptionHistory);
         
-        setLoading(false);
+        console.log(`✅ Loaded ${allItems?.length || 0} total items`);
+        
       } catch (err) {
-        setError('Error al cargar los datos de insumos');
+        console.error('❌ Error loading data:', err);
+        setError(err.message || 'Error al cargar los datos de inventario');
+        toast.error('Error al cargar inventario');
+      } finally {
         setLoading(false);
       }
     };
@@ -84,67 +129,197 @@ export const useSupplies = () => {
     loadData();
   }, []);
 
-  // Crear nuevo insumo
+  // Generar historial mock de consumo
+  const generateMockConsumptionHistory = (items) => {
+    const history = [];
+    const supplyItems = items.filter(item => item.item_type === 'supply');
+    
+    // Generate some mock consumption for the last 30 days
+    for (let i = 0; i < 20; i++) {
+      const randomSupply = supplyItems[Math.floor(Math.random() * supplyItems.length)];
+      if (randomSupply) {
+        const randomDaysAgo = Math.floor(Math.random() * 30);
+        const date = new Date();
+        date.setDate(date.getDate() - randomDaysAgo);
+        
+        history.push({
+          id: `mock-${i}`,
+          supplyId: randomSupply.id,
+          supplyName: randomSupply.name,
+          quantity: Math.floor(Math.random() * 10) + 1,
+          unitPrice: randomSupply.unitPrice,
+          unit: randomSupply.unit,
+          reason: 'Uso en operaciones',
+          consumedBy: 'Personal',
+          department: 'Housekeeping',
+          timestamp: date.toISOString(),
+          type: 'consumption'
+        });
+      }
+    }
+    
+    return history.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  };
+
+  // Crear nuevo item (supply o snack)
   const createSupply = async (supplyData) => {
     try {
-      const newSupply = {
-        id: Date.now().toString(),
-        ...supplyData,
-        createdAt: new Date().toISOString(),
-        lastUpdated: new Date().toISOString()
-      };
+      setLoading(true);
+      
+      let newItem;
+      
+      // Determine if it's a snack based on category or explicit flag
+      const isSnack = supplyData.item_type === 'snack' || 
+                     ['FRUTAS', 'BEBIDAS', 'SNACKS', 'POSTRES'].includes(supplyData.category) ||
+                     supplyData.category.toLowerCase().includes('snack');
 
-      setSupplies(prev => [...prev, newSupply]);
-      
-      // Actualizar categorías y proveedores si son nuevos
-      if (!categories.includes(supplyData.category)) {
-        setCategories(prev => [...prev, supplyData.category]);
+      if (isSnack) {
+        console.log('Creating snack item:', supplyData);
+        const { data, error } = await db.createSnackItem(supplyData);
+        if (error) throw new Error('Error al crear snack: ' + error.message);
+        newItem = data;
+      } else {
+        console.log('Creating supply item:', supplyData);
+        const { data, error } = await db.createSupply(supplyData);
+        if (error) throw new Error('Error al crear insumo: ' + error.message);
+        newItem = data;
       }
-      if (!suppliers.includes(supplyData.supplier)) {
-        setSuppliers(prev => [...prev, supplyData.supplier]);
-      }
+
+      // Refresh data
+      const { data: allItems } = await db.getAllInventoryItems();
+      const { data: allCategories } = await db.getAllCategories();
+      const { data: allSuppliers } = await db.getAllSupplierNames();
       
-      return newSupply;
+      setSupplies(allItems || []);
+      setCategories(allCategories || []);
+      setSuppliers(allSuppliers || []);
+      
+      toast.success(`${isSnack ? 'Snack' : 'Insumo'} creado exitosamente`);
+      return newItem;
+      
     } catch (error) {
-      throw new Error('Error al crear el insumo');
+      console.error('Error creating item:', error);
+      toast.error(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Actualizar insumo
+  // Actualizar item
   const updateSupply = async (supplyId, updateData) => {
     try {
-      setSupplies(prev => prev.map(supply => 
-        supply.id === supplyId 
-          ? { ...supply, ...updateData, lastUpdated: new Date().toISOString() }
-          : supply
-      ));
+      setLoading(true);
       
+      // Find the item to determine type
+      const item = supplies.find(s => s.id === supplyId);
+      if (!item) {
+        throw new Error('Item no encontrado');
+      }
+
+      const isSnack = item.item_type === 'snack';
+      
+      if (isSnack) {
+        console.log('Updating snack item:', supplyId, updateData);
+        const { data, error } = await db.updateSnackItem(supplyId, updateData);
+        if (error) throw new Error('Error al actualizar snack: ' + error.message);
+      } else {
+        console.log('Updating supply item:', supplyId, updateData);
+        const { data, error } = await db.updateSupply(supplyId, updateData);
+        if (error) throw new Error('Error al actualizar insumo: ' + error.message);
+      }
+
+      // Refresh data
+      const { data: allItems } = await db.getAllInventoryItems();
+      const { data: allCategories } = await db.getAllCategories();
+      const { data: allSuppliers } = await db.getAllSupplierNames();
+      
+      setSupplies(allItems || []);
+      setCategories(allCategories || []);
+      setSuppliers(allSuppliers || []);
+      
+      toast.success(`${isSnack ? 'Snack' : 'Insumo'} actualizado exitosamente`);
       return true;
+      
     } catch (error) {
-      throw new Error('Error al actualizar el insumo');
+      console.error('Error updating item:', error);
+      toast.error(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Eliminar insumo
+  // Eliminar item
   const deleteSupply = async (supplyId) => {
     try {
-      setSupplies(prev => prev.filter(supply => supply.id !== supplyId));
+      setLoading(true);
+      
+      // Find the item to determine type
+      const item = supplies.find(s => s.id === supplyId);
+      if (!item) {
+        throw new Error('Item no encontrado');
+      }
+
+      const isSnack = item.item_type === 'snack';
+      
+      if (isSnack) {
+        console.log('Deleting snack item:', supplyId);
+        const { data, error } = await db.deleteSnackItem(supplyId);
+        if (error) throw new Error('Error al eliminar snack: ' + error.message);
+      } else {
+        console.log('Deleting supply item:', supplyId);
+        const { data, error } = await db.deleteSupply(supplyId);
+        if (error) throw new Error('Error al eliminar insumo: ' + error.message);
+      }
+
+      // Refresh data
+      const { data: allItems } = await db.getAllInventoryItems();
+      setSupplies(allItems || []);
+      
+      toast.success(`${isSnack ? 'Snack' : 'Insumo'} eliminado exitosamente`);
       return true;
+      
     } catch (error) {
-      throw new Error('Error al eliminar el insumo');
+      console.error('Error deleting item:', error);
+      toast.error(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Registrar consumo
+  // Registrar consumo (solo para supplies, los snacks no tienen stock)
   const recordConsumption = async (consumptionData) => {
     try {
+      setLoading(true);
+      
+      // Find the item to determine type
+      const item = supplies.find(s => s.id === consumptionData.supplyId);
+      if (!item) {
+        throw new Error('Item no encontrado');
+      }
+
+      if (item.item_type === 'snack') {
+        toast.warning('Los snacks no tienen control de stock. Esta función es solo para insumos.');
+        return null;
+      }
+
+      console.log('Recording consumption for supply:', consumptionData);
+      
       const consumption = {
         id: Date.now().toString(),
         ...consumptionData,
         timestamp: new Date().toISOString()
       };
 
-      // Actualizar stock del insumo
+      // Record in database
+      const { data, error } = await db.recordSupplyConsumption(consumptionData);
+      if (error) {
+        console.warn('Error recording in database:', error);
+      }
+
+      // Update local stock
       setSupplies(prev => prev.map(supply => {
         if (supply.id === consumptionData.supplyId) {
           return {
@@ -156,28 +331,46 @@ export const useSupplies = () => {
         return supply;
       }));
 
-      // Agregar al historial de consumo
+      // Add to consumption history
       setConsumptionHistory(prev => [consumption, ...prev]);
       
+      toast.success('Consumo registrado exitosamente');
       return consumption;
+      
     } catch (error) {
-      throw new Error('Error al registrar el consumo');
+      console.error('Error recording consumption:', error);
+      toast.error('Error al registrar consumo: ' + error.message);
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Ajustar stock
+  // Ajustar stock (solo para supplies)
   const adjustStock = async (supplyId, adjustmentData) => {
     try {
-      const supply = supplies.find(s => s.id === supplyId);
-      if (!supply) throw new Error('Insumo no encontrado');
+      setLoading(true);
+      
+      // Find the item to determine type
+      const item = supplies.find(s => s.id === supplyId);
+      if (!item) {
+        throw new Error('Item no encontrado');
+      }
+
+      if (item.item_type === 'snack') {
+        toast.warning('Los snacks no tienen control de stock. Esta función es solo para insumos.');
+        return null;
+      }
+
+      console.log('Adjusting stock for supply:', supplyId, adjustmentData);
 
       const adjustment = {
         id: Date.now().toString(),
         supplyId,
-        supplyName: supply.name,
+        supplyName: item.name,
         quantity: adjustmentData.quantity,
-        unitPrice: supply.unitPrice,
-        unit: supply.unit,
+        unitPrice: item.unitPrice,
+        unit: item.unit,
         reason: adjustmentData.reason,
         consumedBy: 'Sistema',
         department: 'Administración',
@@ -185,7 +378,17 @@ export const useSupplies = () => {
         type: 'adjustment'
       };
 
-      // Actualizar stock del insumo
+      // Update supply stock in database
+      const { data, error } = await db.updateSupply(supplyId, {
+        ...item,
+        currentStock: adjustmentData.newStock
+      });
+      
+      if (error) {
+        console.warn('Error updating stock in database:', error);
+      }
+
+      // Update local state
       setSupplies(prev => prev.map(supply => {
         if (supply.id === supplyId) {
           return {
@@ -197,25 +400,46 @@ export const useSupplies = () => {
         return supply;
       }));
 
-      // Agregar al historial
+      // Add to history
       setConsumptionHistory(prev => [adjustment, ...prev]);
       
+      toast.success('Stock ajustado exitosamente');
       return adjustment;
+      
     } catch (error) {
-      throw new Error('Error al ajustar el stock');
+      console.error('Error adjusting stock:', error);
+      toast.error('Error al ajustar stock: ' + error.message);
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Obtener insumos con stock bajo
+  // Obtener items con stock bajo (solo supplies)
   const getLowStockSupplies = () => {
     return supplies.filter(supply => 
-      supply.currentStock <= supply.minStock && supply.currentStock > 0
+      supply.item_type === 'supply' && 
+      supply.currentStock <= supply.minStock && 
+      supply.currentStock > 0
     );
   };
 
-  // Obtener insumos sin stock
+  // Obtener items sin stock (solo supplies)
   const getOutOfStockSupplies = () => {
-    return supplies.filter(supply => supply.currentStock === 0);
+    return supplies.filter(supply => 
+      supply.item_type === 'supply' && 
+      supply.currentStock === 0
+    );
+  };
+
+  // Obtener solo snacks
+  const getSnackItems = () => {
+    return supplies.filter(supply => supply.item_type === 'snack');
+  };
+
+  // Obtener solo supplies
+  const getSupplyItems = () => {
+    return supplies.filter(supply => supply.item_type === 'supply');
   };
 
   // Obtener estadísticas por categoría
@@ -228,24 +452,33 @@ export const useSupplies = () => {
           count: 0,
           totalValue: 0,
           lowStock: 0,
-          outOfStock: 0
+          outOfStock: 0,
+          snacks: 0,
+          supplies: 0
         };
       }
       
       categoryStats[supply.category].count++;
-      categoryStats[supply.category].totalValue += supply.currentStock * supply.unitPrice;
       
-      if (supply.currentStock === 0) {
-        categoryStats[supply.category].outOfStock++;
-      } else if (supply.currentStock <= supply.minStock) {
-        categoryStats[supply.category].lowStock++;
+      if (supply.item_type === 'snack') {
+        categoryStats[supply.category].snacks++;
+        categoryStats[supply.category].totalValue += 100 * supply.unitPrice; // Mock stock for snacks
+      } else {
+        categoryStats[supply.category].supplies++;
+        categoryStats[supply.category].totalValue += supply.currentStock * supply.unitPrice;
+        
+        if (supply.currentStock === 0) {
+          categoryStats[supply.category].outOfStock++;
+        } else if (supply.currentStock <= supply.minStock) {
+          categoryStats[supply.category].lowStock++;
+        }
       }
     });
     
     return categoryStats;
   };
 
-  // Obtener top consumos del mes
+  // Obtener top consumos del mes (solo supplies)
   const getTopConsumptions = (limit = 10) => {
     const now = new Date();
     const thisMonth = consumptionHistory.filter(c => {
@@ -276,9 +509,32 @@ export const useSupplies = () => {
       .slice(0, limit);
   };
 
+  // Refrescar datos
+  const refreshData = async () => {
+    try {
+      setLoading(true);
+      
+      const { data: allItems } = await db.getAllInventoryItems();
+      const { data: allCategories } = await db.getAllCategories();
+      const { data: allSuppliers } = await db.getAllSupplierNames();
+      
+      setSupplies(allItems || []);
+      setCategories(allCategories || []);
+      setSuppliers(allSuppliers || []);
+      
+      toast.success('Datos actualizados');
+      
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast.error('Error al actualizar datos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     // Datos
-    supplies,
+    supplies, // Unified list of supplies + snacks
     categories,
     suppliers,
     suppliesStats,
@@ -287,16 +543,30 @@ export const useSupplies = () => {
     error,
     
     // Métodos CRUD
-    createSupply,
-    updateSupply,
-    deleteSupply,
-    recordConsumption,
-    adjustStock,
+    createSupply, // Works for both supplies and snacks
+    updateSupply, // Works for both supplies and snacks
+    deleteSupply, // Works for both supplies and snacks
+    recordConsumption, // Only for supplies
+    adjustStock, // Only for supplies
     
     // Métodos de análisis
-    getLowStockSupplies,
-    getOutOfStockSupplies,
+    getLowStockSupplies, // Only supplies
+    getOutOfStockSupplies, // Only supplies
+    getSnackItems, // Only snacks
+    getSupplyItems, // Only supplies
     getStatsByCategory,
-    getTopConsumptions
+    getTopConsumptions,
+    
+    // Utilidades
+    refreshData,
+    
+    // Información adicional
+    hasUnifiedInventory: true,
+    supportedItemTypes: ['supply', 'snack'],
+    itemTypeCounts: {
+      supplies: supplies.filter(s => s.item_type === 'supply').length,
+      snacks: supplies.filter(s => s.item_type === 'snack').length,
+      total: supplies.length
+    }
   };
 };
