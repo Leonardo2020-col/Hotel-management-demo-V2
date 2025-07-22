@@ -1,5 +1,5 @@
-// src/components/supplies/CreateSupplyModal.jsx - Enhanced for Snacks & Supplies
-import React, { useState } from 'react';
+// src/components/supplies/CreateSupplyModal.jsx - CÓDIGO COMPLETADO
+import React, { useState, useEffect } from 'react';
 import { X, Package, Plus, AlertTriangle, Cookie, Wrench } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -65,7 +65,7 @@ const CreateSupplyModal = ({ isOpen, onClose, onSubmit, categories, suppliers })
   const watchedUnitPrice = watch('unitPrice');
 
   // Reset form when item type changes
-  React.useEffect(() => {
+  useEffect(() => {
     reset({
       unit: itemType === 'snack' ? 'unidad' : 'unidad',
       currentStock: itemType === 'snack' ? 100 : 0,
@@ -369,6 +369,40 @@ const CreateSupplyModal = ({ isOpen, onClose, onSubmit, categories, suppliers })
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Unidad de Medida *
+                    </label>
+                    <select
+                      {...register('unit')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {units.map(unit => (
+                        <option key={unit} value={unit}>
+                          {unit}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.unit && (
+                      <p className="text-red-600 text-sm mt-1">{errors.unit.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Stock Inicial *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      {...register('currentStock')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {errors.currentStock && (
+                      <p className="text-red-600 text-sm mt-1">{errors.currentStock.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Stock Mínimo *
                     </label>
                     <input
@@ -554,38 +588,4 @@ const CreateSupplyModal = ({ isOpen, onClose, onSubmit, categories, suppliers })
   );
 };
 
-export default CreateSupplyModal; font-medium text-gray-700 mb-2">
-                      Unidad de Medida *
-                    </label>
-                    <select
-                      {...register('unit')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      {units.map(unit => (
-                        <option key={unit} value={unit}>
-                          {unit}
-                        </option>
-                      ))}
-                    </select>
-                    {errors.unit && (
-                      <p className="text-red-600 text-sm mt-1">{errors.unit.message}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Stock Inicial *
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      {...register('currentStock')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    {errors.currentStock && (
-                      <p className="text-red-600 text-sm mt-1">{errors.currentStock.message}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm
+export default CreateSupplyModal;

@@ -1,4 +1,4 @@
-// src/pages/Supplies/Supplies.jsx - Complete Enhanced Version
+// src/pages/Supplies/Supplies.jsx - CÓDIGO COMPLETADO
 import React, { useState, useMemo } from 'react';
 import { Package, Plus, Search, Filter, TrendingDown, AlertTriangle, FileText, Cookie, Wrench, BarChart3 } from 'lucide-react';
 import { useSupplies } from '../../hooks/useSupplies';
@@ -708,4 +708,45 @@ const Supplies = () => {
       {showCreateModal && (
         <CreateSupplyModal
           isOpen={showCreateModal}
-          onClose={() => setShowCreate
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreateSupply}
+          categories={categories}
+          suppliers={suppliers}
+        />
+      )}
+
+      {showEditModal && selectedSupply && (
+        <EditSupplyModal
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setSelectedSupply(null);
+          }}
+          onSubmit={handleEditSupply}
+          supply={selectedSupply}
+          categories={categories}
+          suppliers={suppliers}
+        />
+      )}
+
+      {showConsumptionModal && (
+        <ConsumptionModal
+          isOpen={showConsumptionModal}
+          onClose={() => {
+            setShowConsumptionModal(false);
+            setSelectedSupply(null);
+            setSelectedSupplies([]);
+          }}
+          onSubmit={handleRecordConsumption}
+          supply={selectedSupply}
+          supplies={selectedSupplies.length > 0 
+            ? selectedSupplies.map(id => supplies.find(s => s.id === id)).filter(Boolean)
+            : (selectedSupply ? [selectedSupply] : [])
+          }
+        />
+      )}
+    </div>
+  );
+};
+
+export default Supplies;
