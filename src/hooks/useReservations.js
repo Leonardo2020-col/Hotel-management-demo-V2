@@ -34,9 +34,11 @@ export const useReservations = (initialFilters = {}) => {
     try {
       setLoading(true);
       
-      // Obtener reservas con información completa
+      console.log('🔄 Loading reservations...');
+      
+      // Obtener reservas con información completa usando la estructura corregida
       const { data, error } = await db.getReservations({
-        limit: 100, // Cargar más datos para filtros locales
+        limit: 100,
         offset: 0
       });
 
@@ -46,44 +48,59 @@ export const useReservations = (initialFilters = {}) => {
         return;
       }
 
-      // Transformar datos para compatibilidad con el frontend
-      const transformedReservations = data.map(reservation => ({
-        id: reservation.id,
-        confirmationCode: reservation.confirmation_code,
-        status: reservation.status,
-        checkIn: reservation.check_in,
-        checkOut: reservation.check_out,
-        nights: reservation.nights,
-        guests: reservation.adults + reservation.children,
-        adults: reservation.adults,
-        children: reservation.children,
-        totalAmount: parseFloat(reservation.total_amount),
-        paidAmount: parseFloat(reservation.paid_amount || 0),
-        paymentStatus: reservation.payment_status,
-        source: reservation.source || 'direct',
-        specialRequests: reservation.special_requests,
-        checkedInAt: reservation.checked_in_at,
-        checkedOutAt: reservation.checked_out_at,
-        createdAt: reservation.created_at,
-        createdBy: reservation.created_by,
-        guest: {
-          id: reservation.guest?.id,
-          name: reservation.guest?.full_name || reservation.guest?.first_name + ' ' + reservation.guest?.last_name,
-          email: reservation.guest?.email,
-          phone: reservation.guest?.phone,
-          document: reservation.guest?.document_number,
-          vipLevel: reservation.guest?.vip_level
-        },
-        room: {
-          id: reservation.room?.id,
-          number: reservation.room?.number,
-          floor: reservation.room?.floor,
-          type: reservation.room?.room_type || 'Habitación Estándar',
-          capacity: reservation.room?.capacity || 2,
-          rate: parseFloat(reservation.room?.base_rate || 100)
-        }
-      }));
+      console.log('📋 Raw reservations data:', data);
 
+      // Transformar datos para compatibilidad con el frontend
+      const transformedReservations = (data || []).map(reservation => {
+        // Asegurar que tenemos la estructura correcta
+        const guest = reservation.guest || {};
+        const room = reservation.room || {};
+        
+        return {
+          id: reservation.id,
+          confirmationCode: reservation.confirmation_code,
+          status: reservation.status,
+          checkIn: reservation.check_in,
+          checkOut: reservation.check_out,
+          nights: reservation.nights || Math.ceil((new Date(reservation.check_out) - new Date(reservation.check_in)) / (1000 * 60 * 60 * 24)),
+          guests: (reservation.adults || 0) + (reservation.children || 0),
+          adults: reservation.adults || 1,
+          children: reservation.children || 0,
+          totalAmount: parseFloat(reservation.total_amount || 0),
+          paidAmount: parseFloat(reservation.paid_amount || 0),
+          paymentStatus: reservation.payment_status || 'pending',
+          paymentMethod: reservation.payment_method || 'cash',
+          source: reservation.source || 'direct',
+          specialRequests: reservation.special_requests || '',
+          checkedInAt: reservation.checked_in_at,
+          checkedOutAt: reservation.checked_out_at,
+          createdAt: reservation.created_at,
+          createdBy: reservation.created_by,
+          
+          // Guest info con estructura simplificada
+          guest: {
+            id: guest.id,
+            name: guest.full_name || 'Huésped sin nombre',
+            email: guest.email || '',
+            phone: guest.phone || '',
+            document: guest.document_number || '',
+            // Eliminar vip_level ya que no existe en la nueva estructura
+            status: guest.status || 'active'
+          },
+          
+          // Room info con estructura corregida (sin room_types)
+          room: {
+            id: room.id,
+            number: room.number || '',
+            floor: room.floor || 1,
+            type: room.room_type || 'Habitación Estándar', // Campo directo ahora
+            capacity: room.capacity || 2,
+            rate: parseFloat(room.base_rate || 100) // Campo directo ahora
+          }
+        };
+      });
+
+      console.log('✅ Transformed reservations:', transformedReservations.length);
       setReservations(transformedReservations);
       
     } catch (error) {
@@ -97,6 +114,8 @@ export const useReservations = (initialFilters = {}) => {
   // Cargar habitaciones disponibles
   const loadAvailableRooms = useCallback(async () => {
     try {
+      console.log('🏨 Loading available rooms...');
+      
       const { data, error } = await db.getRooms();
       
       if (error) {
@@ -104,17 +123,19 @@ export const useReservations = (initialFilters = {}) => {
         return;
       }
 
-      const transformedRooms = data.map(room => ({
+      // Transformar habitaciones con estructura corregida
+      const transformedRooms = (data || []).map(room => ({
         id: room.id,
         number: room.number,
         floor: room.floor,
-        type: room.room_type || 'Habitación Estándar',
+        type: room.room_type || room.type || 'Habitación Estándar', // Campo directo
         capacity: room.capacity || 2,
-        rate: parseFloat(room.base_rate || 100),
+        rate: parseFloat(room.base_rate || room.rate || 100), // Campo directo
         status: room.status,
         features: room.features || []
       }));
 
+      console.log('✅ Available rooms loaded:', transformedRooms.length);
       setAvailableRooms(transformedRooms);
       
     } catch (error) {
@@ -202,28 +223,36 @@ export const useReservations = (initialFilters = {}) => {
     try {
       setLoading(true);
 
-      // Preparar datos para Supabase
+      console.log('➕ Creating reservation:', reservationData);
+
+      // Calcular noches
+      const nights = Math.ceil((new Date(reservationData.checkOut) - new Date(reservationData.checkIn)) / (1000 * 60 * 60 * 24));
+
+      // Preparar datos para Supabase con estructura corregida
       const supabaseData = {
         guest_id: reservationData.guest.id,
         room_id: reservationData.room.id,
-        branch_id: 1, // Por defecto, ajustar según necesidad
+        branch_id: 1, // Por defecto
         check_in: reservationData.checkIn,
         check_out: reservationData.checkOut,
-        adults: reservationData.guests || 1,
-        children: 0,
+        adults: reservationData.adults || reservationData.guests || 1,
+        children: reservationData.children || 0,
         rate: reservationData.room.rate,
-        total_amount: reservationData.nights * reservationData.room.rate,
-        source: 'direct',
+        total_amount: nights * reservationData.room.rate,
+        source: reservationData.source || 'direct',
         special_requests: reservationData.specialRequests || '',
-        status: RESERVATION_STATUS.PENDING
+        status: RESERVATION_STATUS.PENDING,
+        payment_method: reservationData.paymentMethod || 'cash',
+        payment_status: 'pending'
       };
 
       // Si no existe el huésped, crearlo primero
       let guestId = reservationData.guest.id;
       if (!guestId) {
+        console.log('👤 Creating new guest...');
+        
         const { data: newGuest, error: guestError } = await db.createGuest({
-          first_name: reservationData.guest.name.split(' ')[0] || '',
-          last_name: reservationData.guest.name.split(' ').slice(1).join(' ') || '',
+          full_name: reservationData.guest.name || 'Huésped sin nombre',
           email: reservationData.guest.email || '',
           phone: reservationData.guest.phone || '',
           document_type: 'DNI',
@@ -239,6 +268,7 @@ export const useReservations = (initialFilters = {}) => {
         supabaseData.guest_id = guestId;
       }
 
+      // Crear la reserva
       const { data, error } = await db.createReservation(supabaseData);
 
       if (error) {
@@ -263,7 +293,23 @@ export const useReservations = (initialFilters = {}) => {
   // Actualizar reserva
   const updateReservation = useCallback(async (id, updates) => {
     try {
-      const { data, error } = await db.updateReservation(id, updates);
+      console.log('🔄 Updating reservation:', id, updates);
+
+      // Convertir campos del frontend a formato Supabase
+      const supabaseUpdates = {};
+      
+      if (updates.checkIn !== undefined) supabaseUpdates.check_in = updates.checkIn;
+      if (updates.checkOut !== undefined) supabaseUpdates.check_out = updates.checkOut;
+      if (updates.status !== undefined) supabaseUpdates.status = updates.status;
+      if (updates.totalAmount !== undefined) supabaseUpdates.total_amount = updates.totalAmount;
+      if (updates.paidAmount !== undefined) supabaseUpdates.paid_amount = updates.paidAmount;
+      if (updates.paymentStatus !== undefined) supabaseUpdates.payment_status = updates.paymentStatus;
+      if (updates.paymentMethod !== undefined) supabaseUpdates.payment_method = updates.paymentMethod;
+      if (updates.specialRequests !== undefined) supabaseUpdates.special_requests = updates.specialRequests;
+      if (updates.adults !== undefined) supabaseUpdates.adults = updates.adults;
+      if (updates.children !== undefined) supabaseUpdates.children = updates.children;
+
+      const { data, error } = await db.updateReservation(id, supabaseUpdates);
 
       if (error) {
         throw new Error(error.message || 'Error al actualizar la reserva');
@@ -276,11 +322,11 @@ export const useReservations = (initialFilters = {}) => {
         reservation.id === id ? { 
           ...reservation, 
           ...updates,
-          // Transformar campos de Supabase a formato frontend
-          checkIn: updates.check_in || reservation.checkIn,
-          checkOut: updates.check_out || reservation.checkOut,
-          totalAmount: updates.total_amount || reservation.totalAmount,
-          confirmationCode: updates.confirmation_code || reservation.confirmationCode
+          // Asegurar que los campos se actualicen correctamente
+          checkIn: updates.checkIn || reservation.checkIn,
+          checkOut: updates.checkOut || reservation.checkOut,
+          totalAmount: updates.totalAmount || reservation.totalAmount,
+          confirmationCode: updates.confirmationCode || reservation.confirmationCode
         } : reservation
       ));
       
@@ -292,10 +338,9 @@ export const useReservations = (initialFilters = {}) => {
     }
   }, []);
 
-  // Eliminar reserva
+  // Eliminar reserva (cancelar)
   const deleteReservation = useCallback(async (id) => {
     try {
-      // En lugar de eliminar, cambiar estado a cancelado
       await updateReservation(id, { 
         status: RESERVATION_STATUS.CANCELLED,
         cancelled_at: new Date().toISOString(),
@@ -313,6 +358,8 @@ export const useReservations = (initialFilters = {}) => {
   // Cambiar estado de reserva
   const changeReservationStatus = useCallback(async (id, newStatus) => {
     try {
+      console.log(`🔄 Changing reservation ${id} status to ${newStatus}`);
+      
       const updates = { status: newStatus };
       
       // Agregar campos específicos según el estado
@@ -320,6 +367,8 @@ export const useReservations = (initialFilters = {}) => {
         updates.checked_in_at = new Date().toISOString();
       } else if (newStatus === RESERVATION_STATUS.CHECKED_OUT) {
         updates.checked_out_at = new Date().toISOString();
+        updates.payment_status = 'paid';
+        updates.paid_amount = reservations.find(r => r.id === id)?.totalAmount || 0;
       } else if (newStatus === RESERVATION_STATUS.CANCELLED) {
         updates.cancelled_at = new Date().toISOString();
       }
@@ -339,7 +388,7 @@ export const useReservations = (initialFilters = {}) => {
       toast.error('Error al cambiar el estado de la reserva');
       throw error;
     }
-  }, [updateReservation]);
+  }, [updateReservation, reservations]);
 
   // Obtener reserva por ID
   const getReservationById = useCallback((id) => {
@@ -379,6 +428,8 @@ export const useReservations = (initialFilters = {}) => {
   // Procesar check-in
   const processCheckIn = useCallback(async (reservationId) => {
     try {
+      console.log(`🏨 Processing check-in for reservation ${reservationId}`);
+      
       const reservation = getReservationById(reservationId);
       if (!reservation) {
         throw new Error('Reserva no encontrada');
@@ -391,9 +442,7 @@ export const useReservations = (initialFilters = {}) => {
         throw new Error(error.message || 'Error en el check-in');
       }
 
-      // Actualizar estado de la habitación
-      await db.updateRoomStatus(reservation.room.id, 'occupied', 'dirty');
-
+      // Actualizar estado local
       await changeReservationStatus(reservationId, RESERVATION_STATUS.CHECKED_IN);
       
       toast.success('Check-in realizado exitosamente');
@@ -408,6 +457,8 @@ export const useReservations = (initialFilters = {}) => {
   // Procesar check-out
   const processCheckOut = useCallback(async (reservationId, paymentMethod = 'cash') => {
     try {
+      console.log(`🏨 Processing check-out for reservation ${reservationId}`);
+      
       const reservation = getReservationById(reservationId);
       if (!reservation) {
         throw new Error('Reserva no encontrada');
@@ -420,9 +471,7 @@ export const useReservations = (initialFilters = {}) => {
         throw new Error(error.message || 'Error en el check-out');
       }
 
-      // Actualizar estado de la habitación
-      await db.updateRoomStatus(reservation.room.id, 'cleaning', 'dirty');
-
+      // Actualizar estado local
       await changeReservationStatus(reservationId, RESERVATION_STATUS.CHECKED_OUT);
       
       toast.success('Check-out realizado exitosamente');
@@ -437,6 +486,8 @@ export const useReservations = (initialFilters = {}) => {
   // Obtener habitaciones disponibles para fechas específicas
   const getAvailableRoomsForDates = useCallback(async (checkIn, checkOut) => {
     try {
+      console.log(`🔍 Searching available rooms for ${checkIn} to ${checkOut}`);
+      
       const { data, error } = await db.getAvailableRooms(checkIn, checkOut);
       
       if (error) {
@@ -444,13 +495,14 @@ export const useReservations = (initialFilters = {}) => {
         return [];
       }
 
-      return data.map(room => ({
+      // Transformar datos con estructura corregida
+      return (data || []).map(room => ({
         id: room.id,
         number: room.number,
         floor: room.floor,
-        type: room.room_type || 'Habitación Estándar',
+        type: room.room_type || 'Habitación Estándar', // Campo directo
         capacity: room.capacity || 2,
-        rate: parseFloat(room.base_rate || 100)
+        rate: parseFloat(room.base_rate || 100) // Campo directo
       }));
     } catch (error) {
       console.error('Error in getAvailableRoomsForDates:', error);
@@ -461,6 +513,12 @@ export const useReservations = (initialFilters = {}) => {
   // Buscar huéspedes
   const searchGuests = useCallback(async (searchTerm) => {
     try {
+      if (!searchTerm || searchTerm.trim() === '') {
+        return [];
+      }
+
+      console.log(`👤 Searching guests: ${searchTerm}`);
+      
       const { data, error } = await db.searchGuests(searchTerm);
       
       if (error) {
@@ -468,32 +526,108 @@ export const useReservations = (initialFilters = {}) => {
         return [];
       }
 
-      return data;
+      // Transformar datos con estructura simplificada
+      return (data || []).map(guest => ({
+        id: guest.id,
+        name: guest.full_name,
+        email: guest.email || '',
+        phone: guest.phone || '',
+        document: guest.document_number || '',
+        status: guest.status || 'active'
+      }));
     } catch (error) {
       console.error('Error in searchGuests:', error);
       return [];
     }
   }, []);
 
+  // Crear huésped rápido durante reserva
+  const createQuickGuest = useCallback(async (guestData) => {
+    try {
+      console.log('👤 Creating quick guest:', guestData);
+      
+      const { data, error } = await db.createGuest({
+        full_name: guestData.name || 'Huésped sin nombre',
+        email: guestData.email || '',
+        phone: guestData.phone || '',
+        document_type: 'DNI',
+        document_number: guestData.document || '',
+        status: 'active'
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Error al crear el huésped');
+      }
+
+      return {
+        id: data.id,
+        name: data.full_name,
+        email: data.email,
+        phone: data.phone,
+        document: data.document_number
+      };
+    } catch (error) {
+      console.error('Error creating quick guest:', error);
+      toast.error(error.message || 'Error al crear el huésped');
+      throw error;
+    }
+  }, []);
+
+  // Verificar disponibilidad de habitación
+  const checkRoomAvailability = useCallback(async (roomId, checkIn, checkOut) => {
+    try {
+      // Verificar si hay conflictos con reservas existentes
+      const conflictingReservations = reservations.filter(reservation => 
+        reservation.room.id === roomId &&
+        reservation.status !== RESERVATION_STATUS.CANCELLED &&
+        reservation.status !== RESERVATION_STATUS.NO_SHOW &&
+        (
+          (new Date(checkIn) < new Date(reservation.checkOut) && 
+           new Date(checkOut) > new Date(reservation.checkIn))
+        )
+      );
+
+      return {
+        available: conflictingReservations.length === 0,
+        conflicts: conflictingReservations
+      };
+    } catch (error) {
+      console.error('Error checking room availability:', error);
+      return { available: false, conflicts: [] };
+    }
+  }, [reservations]);
+
   return {
+    // Datos
     reservations: getPaginatedReservations(),
     allReservations: filteredReservations,
+    availableRooms,
     loading,
+    
+    // Filtros y paginación
     filters,
     setFilters,
     pagination,
     setPagination,
+    
+    // Operaciones CRUD
     createReservation,
     updateReservation,
     deleteReservation,
     changeReservationStatus,
-    getReservationById,
-    getReservationStats,
-    availableRooms,
+    
+    // Operaciones específicas
     processCheckIn,
     processCheckOut,
+    
+    // Búsqueda y utilidades
+    getReservationById,
+    getReservationStats,
     getAvailableRoomsForDates,
     searchGuests,
+    createQuickGuest,
+    checkRoomAvailability,
+    
     // Función para recargar datos
     refresh: loadReservations
   };
