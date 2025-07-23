@@ -1,269 +1,275 @@
-// hooks/useGuests.js
-import { useState, useEffect } from 'react';
-import { guestsMockData } from '../utils/guestsMockData';
+import { useState, useEffect, useCallback } from 'react';
+import { db } from '../lib/supabase';
+import toast from 'react-hot-toast';
 
 export const useGuests = () => {
   const [guests, setGuests] = useState([]);
   const [guestsStats, setGuestsStats] = useState(null);
-  const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Simular carga inicial de datos
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        
-        // Simular delay de API
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const data = guestsMockData();
-        
-        setGuests(data.guests);
-        setGuestsStats(data.stats);
-        setReservations(data.reservations);
-        
-        setLoading(false);
-      } catch (err) {
-        setError('Error al cargar los datos de huéspedes');
-        setLoading(false);
-      }
-    };
+  // Cargar huéspedes desde Supabase
+  const loadGuests = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const { data, error } = await db.getGuests();
 
-    loadData();
+      if (error) {
+        console.error('Error loading guests:', error);
+        setError('Error al cargar los huéspedes');
+        return;
+      }
+
+      // Transformar datos para compatibilidad con el frontend
+      const transformedGuests = data.map(guest => ({
+        id: guest.id,
+        fullName: guest.full_name,
+        full_name: guest.full_name, // Compatibilidad
+        email: guest.email,
+        phone: guest.phone,
+        documentType: guest.document_type,
+        document_type: guest.document_type, // Compatibilidad
+        documentNumber: guest.document_number,
+        document_number: guest.document_number, // Compatibilidad
+        status: guest.status,
+        totalVisits: guest.total_visits || 0,
+        total_visits: guest.total_visits || 0, // Compatibilidad
+        totalSpent: parseFloat(guest.total_spent || 0),
+        total_spent: parseFloat(guest.total_spent || 0), // Compatibilidad
+        lastVisit: guest.last_visit,
+        last_visit: guest.last_visit, // Compatibilidad
+        createdAt: guest.created_at,
+        created_at: guest.created_at, // Compatibilidad
+        updatedAt: guest.updated_at,
+        updated_at: guest.updated_at // Compatibilidad
+      }));
+
+      setGuests(transformedGuests);
+      calculateStats(transformedGuests);
+      
+    } catch (error) {
+      console.error('Error in loadGuests:', error);
+      setError('Error al cargar los huéspedes');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Crear nuevo huésped
-  const createGuest = async (guestData) => {
-    try {
-      const newGuest = {
-        id: Date.now().toString(),
-        ...guestData,
-        createdAt: new Date().toISOString(),
-        lastUpdated: new Date().toISOString(),
-        totalVisits: 0,
-        totalSpent: 0,
-        status: 'inactive',
-        vipLevel: 'none',
-        rating: null,
-        preferences: []
-      };
+  // Calcular estadísticas
+  const calculateStats = useCallback((guestsData) => {
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
 
-      setGuests(prev => [...prev, newGuest]);
-      updateStats();
-      
-      return newGuest;
-    } catch (error) {
-      throw new Error('Error al crear el huésped');
-    }
-  };
-
-  // Actualizar huésped
-  const updateGuest = async (guestId, updateData) => {
-    try {
-      setGuests(prev => prev.map(guest => 
-        guest.id === guestId 
-          ? { ...guest, ...updateData, lastUpdated: new Date().toISOString() }
-          : guest
-      ));
-      
-      updateStats();
-      
-      return true;
-    } catch (error) {
-      throw new Error('Error al actualizar el huésped');
-    }
-  };
-
-  // Eliminar huésped
-  const deleteGuest = async (guestId) => {
-    try {
-      setGuests(prev => prev.filter(guest => guest.id !== guestId));
-      updateStats();
-      return true;
-    } catch (error) {
-      throw new Error('Error al eliminar el huésped');
-    }
-  };
-
-  // Obtener reservas de un huésped
-  const getGuestReservations = (guestId) => {
-    return reservations.filter(reservation => reservation.guestId === guestId)
-      .sort((a, b) => new Date(b.checkIn) - new Date(a.checkIn));
-  };
-
-  // Obtener historial de un huésped
-  const getGuestHistory = (guestId) => {
-    const guestReservations = getGuestReservations(guestId);
-    
-    return guestReservations.map(reservation => ({
-      id: reservation.id,
-      type: 'reservation',
-      date: reservation.checkIn,
-      description: `Reserva en habitación ${reservation.roomNumber}`,
-      details: {
-        checkIn: reservation.checkIn,
-        checkOut: reservation.checkOut,
-        roomNumber: reservation.roomNumber,
-        roomType: reservation.roomType,
-        totalAmount: reservation.totalAmount,
-        status: reservation.status,
-        nights: reservation.nights
-      }
-    }));
-  };
-
-  // Actualizar estadísticas
-  const updateStats = () => {
-    const currentGuests = guests;
-    
     const stats = {
-      total: currentGuests.length,
-      active: currentGuests.filter(g => g.status === 'active').length,
-      vip: currentGuests.filter(g => g.vipLevel !== 'none').length,
-      frequent: currentGuests.filter(g => g.totalVisits >= 5).length,
-      newThisMonth: currentGuests.filter(g => {
+      total: guestsData.length,
+      active: guestsData.filter(g => g.status === 'active').length,
+      inactive: guestsData.filter(g => g.status === 'inactive').length,
+      newThisMonth: guestsData.filter(g => {
         const createdDate = new Date(g.createdAt);
-        const now = new Date();
-        return createdDate.getMonth() === now.getMonth() && 
-               createdDate.getFullYear() === now.getFullYear();
+        return createdDate.getMonth() === currentMonth && 
+               createdDate.getFullYear() === currentYear;
       }).length,
-      totalRevenue: currentGuests.reduce((sum, g) => sum + (g.totalSpent || 0), 0),
-      averageStay: calculateAverageStay(),
-      repeatRate: calculateRepeatRate(),
-      topCountries: getTopCountries(),
-      ageGroups: getAgeGroups(),
-      satisfactionScore: calculateSatisfactionScore(),
-      recommendationRate: calculateRecommendationRate()
+      totalRevenue: guestsData.reduce((sum, g) => sum + (g.totalSpent || 0), 0),
+      averageSpent: guestsData.length > 0 
+        ? guestsData.reduce((sum, g) => sum + (g.totalSpent || 0), 0) / guestsData.length 
+        : 0,
+      frequent: guestsData.filter(g => (g.totalVisits || 0) >= 3).length,
+      withEmail: guestsData.filter(g => g.email).length,
+      withPhone: guestsData.filter(g => g.phone).length,
+      // Distribución por tipo de documento
+      documentTypes: guestsData.reduce((acc, guest) => {
+        const docType = guest.documentType || 'Sin especificar';
+        acc[docType] = (acc[docType] || 0) + 1;
+        return acc;
+      }, {}),
+      // Huéspedes recientes
+      recentGuests: guestsData
+        .filter(g => {
+          const daysDiff = Math.floor((new Date() - new Date(g.createdAt)) / (1000 * 60 * 60 * 24));
+          return daysDiff <= 30;
+        })
+        .length
     };
 
     setGuestsStats(stats);
-  };
+  }, []);
 
-  // Calcular estancia promedio
-  const calculateAverageStay = () => {
-    const completedReservations = reservations.filter(r => r.status === 'completed');
-    if (completedReservations.length === 0) return 0;
-    
-    const totalNights = completedReservations.reduce((sum, r) => sum + r.nights, 0);
-    return Math.round(totalNights / completedReservations.length);
-  };
+  // Cargar datos iniciales
+  useEffect(() => {
+    loadGuests();
+  }, [loadGuests]);
 
-  // Calcular tasa de retorno
-  const calculateRepeatRate = () => {
-    const guestsWithMultipleVisits = guests.filter(g => g.totalVisits > 1).length;
-    if (guests.length === 0) return 0;
-    
-    return Math.round((guestsWithMultipleVisits / guests.length) * 100);
-  };
+  // Crear nuevo huésped
+  const createGuest = useCallback(async (guestData) => {
+    try {
+      const { data, error } = await db.createGuest(guestData);
 
-  // Obtener principales países
-  const getTopCountries = () => {
-    const countryCount = {};
-    
-    guests.forEach(guest => {
-      countryCount[guest.country] = (countryCount[guest.country] || 0) + 1;
-    });
-
-    return Object.entries(countryCount)
-      .map(([country, count]) => ({
-        name: country,
-        code: country.slice(0, 2).toUpperCase(),
-        count
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  };
-
-  // Obtener grupos de edad
-  const getAgeGroups = () => {
-    const ageGroups = {
-      '18-25': 0,
-      '26-35': 0,
-      '36-50': 0,
-      '51-65': 0,
-      '65+': 0
-    };
-
-    guests.forEach(guest => {
-      if (guest.birthDate) {
-        const age = new Date().getFullYear() - new Date(guest.birthDate).getFullYear();
-        
-        if (age >= 18 && age <= 25) ageGroups['18-25']++;
-        else if (age >= 26 && age <= 35) ageGroups['26-35']++;
-        else if (age >= 36 && age <= 50) ageGroups['36-50']++;
-        else if (age >= 51 && age <= 65) ageGroups['51-65']++;
-        else if (age > 65) ageGroups['65+']++;
+      if (error) {
+        toast.error('Error al crear el huésped: ' + error.message);
+        throw error;
       }
-    });
 
-    return ageGroups;
-  };
+      toast.success('Huésped creado exitosamente');
+      
+      // Recargar lista
+      await loadGuests();
+      
+      return data;
+    } catch (error) {
+      console.error('Error creating guest:', error);
+      throw error;
+    }
+  }, [loadGuests]);
 
-  // Calcular puntuación de satisfacción
-  const calculateSatisfactionScore = () => {
-    const guestsWithRating = guests.filter(g => g.rating);
-    if (guestsWithRating.length === 0) return 0;
-    
-    const totalRating = guestsWithRating.reduce((sum, g) => sum + g.rating, 0);
-    return (totalRating / guestsWithRating.length).toFixed(1);
-  };
+  // Actualizar huésped
+  const updateGuest = useCallback(async (guestId, updateData) => {
+    try {
+      const { data, error } = await db.updateGuest(guestId, updateData);
 
-  // Calcular tasa de recomendación
-  const calculateRecommendationRate = () => {
-    const guestsWithRating = guests.filter(g => g.rating);
-    if (guestsWithRating.length === 0) return 0;
-    
-    const promoters = guestsWithRating.filter(g => g.rating >= 4).length;
-    return Math.round((promoters / guestsWithRating.length) * 100);
-  };
+      if (error) {
+        toast.error('Error al actualizar el huésped: ' + error.message);
+        throw error;
+      }
+
+      toast.success('Huésped actualizado exitosamente');
+      
+      // Actualizar estado local
+      setGuests(prev => prev.map(guest => 
+        guest.id === guestId ? { ...guest, ...updateData } : guest
+      ));
+      
+      return data;
+    } catch (error) {
+      console.error('Error updating guest:', error);
+      throw error;
+    }
+  }, []);
+
+  // Eliminar huésped
+  const deleteGuest = useCallback(async (guestId) => {
+    try {
+      const { data, error } = await db.deleteGuest(guestId);
+
+      if (error) {
+        toast.error('Error al eliminar el huésped: ' + error.message);
+        throw error;
+      }
+
+      toast.success('Huésped eliminado exitosamente');
+      
+      // Remover del estado local
+      setGuests(prev => prev.filter(guest => guest.id !== guestId));
+      
+      return data;
+    } catch (error) {
+      console.error('Error deleting guest:', error);
+      toast.error('Error al eliminar el huésped');
+      throw error;
+    }
+  }, []);
 
   // Buscar huéspedes
-  const searchGuests = (searchTerm) => {
-    if (!searchTerm) return guests;
-    
-    const term = searchTerm.toLowerCase();
-    return guests.filter(guest => 
-      guest.fullName.toLowerCase().includes(term) ||
-      guest.email.toLowerCase().includes(term) ||
-      guest.phone.includes(term) ||
-      guest.documentNumber.includes(term) ||
-      guest.country.toLowerCase().includes(term)
-    );
-  };
+  const searchGuests = useCallback(async (searchTerm) => {
+    try {
+      if (!searchTerm || searchTerm.length < 2) {
+        return guests; // Devolver todos los huéspedes si no hay término de búsqueda
+      }
 
-  // Obtener huéspedes VIP
-  const getVipGuests = () => {
-    return guests.filter(guest => guest.vipLevel !== 'none')
-      .sort((a, b) => {
-        const vipOrder = { 'platinum': 3, 'gold': 2, 'silver': 1 };
-        return (vipOrder[b.vipLevel] || 0) - (vipOrder[a.vipLevel] || 0);
-      });
-  };
+      const { data, error } = await db.searchGuests(searchTerm);
+
+      if (error) {
+        console.error('Error searching guests:', error);
+        return guests;
+      }
+
+      // Transformar datos
+      const transformedResults = data.map(guest => ({
+        id: guest.id,
+        fullName: guest.full_name,
+        full_name: guest.full_name,
+        email: guest.email,
+        phone: guest.phone,
+        documentType: guest.document_type,
+        document_type: guest.document_type,
+        documentNumber: guest.document_number,
+        document_number: guest.document_number,
+        status: guest.status,
+        totalVisits: guest.total_visits || 0,
+        total_visits: guest.total_visits || 0,
+        totalSpent: parseFloat(guest.total_spent || 0),
+        total_spent: parseFloat(guest.total_spent || 0),
+        lastVisit: guest.last_visit,
+        last_visit: guest.last_visit,
+        createdAt: guest.created_at,
+        created_at: guest.created_at
+      }));
+
+      return transformedResults;
+    } catch (error) {
+      console.error('Error in searchGuests:', error);
+      return guests;
+    }
+  }, [guests]);
+
+  // Obtener huésped por ID
+  const getGuestById = useCallback((guestId) => {
+    return guests.find(guest => guest.id === parseInt(guestId));
+  }, [guests]);
+
+  // Filtrar huéspedes localmente
+  const filterGuests = useCallback((filters) => {
+    let filtered = [...guests];
+
+    // Filtro por estado
+    if (filters.status && filters.status !== 'all') {
+      filtered = filtered.filter(guest => guest.status === filters.status);
+    }
+
+    // Filtro por búsqueda
+    if (filters.search) {
+      const searchTerm = filters.search.toLowerCase();
+      filtered = filtered.filter(guest => 
+        guest.fullName?.toLowerCase().includes(searchTerm) ||
+        guest.email?.toLowerCase().includes(searchTerm) ||
+        guest.phone?.includes(searchTerm) ||
+        guest.documentNumber?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Filtro por tipo de documento
+    if (filters.documentType && filters.documentType !== 'all') {
+      filtered = filtered.filter(guest => guest.documentType === filters.documentType);
+    }
+
+    return filtered;
+  }, [guests]);
+
+  // Obtener huéspedes activos
+  const getActiveGuests = useCallback(() => {
+    return guests.filter(guest => guest.status === 'active');
+  }, [guests]);
 
   // Obtener huéspedes frecuentes
-  const getFrequentGuests = () => {
-    return guests.filter(guest => guest.totalVisits >= 5)
-      .sort((a, b) => b.totalVisits - a.totalVisits);
-  };
+  const getFrequentGuests = useCallback(() => {
+    return guests.filter(guest => (guest.totalVisits || 0) >= 3)
+      .sort((a, b) => (b.totalVisits || 0) - (a.totalVisits || 0));
+  }, [guests]);
 
-  // Obtener cumpleañeros del mes
-  const getBirthdayGuests = () => {
-    const currentMonth = new Date().getMonth();
+  // Obtener huéspedes recientes
+  const getRecentGuests = useCallback(() => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
-    return guests.filter(guest => {
-      if (!guest.birthDate) return false;
-      const guestMonth = new Date(guest.birthDate).getMonth();
-      return guestMonth === currentMonth;
-    });
-  };
+    return guests.filter(guest => new Date(guest.createdAt) >= thirtyDaysAgo)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [guests]);
 
   return {
     // Datos
     guests,
     guestsStats,
-    reservations,
     loading,
     error,
     
@@ -273,14 +279,15 @@ export const useGuests = () => {
     deleteGuest,
     
     // Métodos de consulta
-    getGuestReservations,
-    getGuestHistory,
     searchGuests,
-    getVipGuests,
+    getGuestById,
+    filterGuests,
+    getActiveGuests,
     getFrequentGuests,
-    getBirthdayGuests,
+    getRecentGuests,
     
     // Utilidades
-    updateStats
+    refresh: loadGuests,
+    calculateStats: () => calculateStats(guests)
   };
 };

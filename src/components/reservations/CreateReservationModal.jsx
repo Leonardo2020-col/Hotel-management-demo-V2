@@ -8,7 +8,7 @@ import { db } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
 const schema = yup.object().shape({
-  // Guest Information
+  // Guest Information - Simplificado
   guestName: yup.string().required('El nombre es obligatorio'),
   guestEmail: yup.string().email('Email inválido'),
   guestPhone: yup.string(),
@@ -139,14 +139,13 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
       if (selectedGuest) {
         guestData = selectedGuest;
       } else {
-        // Crear nuevo huésped
+        // Crear nuevo huésped con estructura simplificada
         const newGuestData = {
-          first_name: data.guestName.split(' ')[0] || '',
-          last_name: data.guestName.split(' ').slice(1).join(' ') || '',
-          email: data.guestEmail || '',
-          phone: data.guestPhone || '',
+          full_name: data.guestName.trim(),
+          email: data.guestEmail?.trim() || null,
+          phone: data.guestPhone?.trim() || null,
           document_type: 'DNI',
-          document_number: data.guestDocument,
+          document_number: data.guestDocument.trim(),
           status: 'active'
         };
 
@@ -164,7 +163,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
       const reservationData = {
         guest_id: guestData.id,
         room_id: selectedRoom.id,
-        branch_id: 1, // Por defecto
+        branch_id: 1,
         check_in: data.checkIn,
         check_out: data.checkOut,
         adults: data.adults,
@@ -190,13 +189,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
         onSubmit(reservation);
       }
 
-      // Resetear formulario
-      reset();
-      setCurrentStep(1);
-      setSelectedRoom(null);
-      setSelectedGuest(null);
-      setAvailableRooms([]);
-      onClose();
+      handleClose();
       
     } catch (error) {
       console.error('Error creating reservation:', error);
@@ -494,7 +487,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                       </option>
                       {availableRooms.map(room => (
                         <option key={room.id} value={room.id}>
-                          Habitación {room.number} - {room.room_type} - S/ {room.base_rate}/noche
+                          Habitación {room.number} - {room.room_type || 'Estándar'} - S/ {room.base_rate}/noche
                         </option>
                       ))}
                     </select>
@@ -544,14 +537,14 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                   <div className="border-t border-gray-200 pt-4">
                     <h4 className="font-semibold text-gray-900 mb-3">Detalles de la Reserva</h4>
                     <div className="space-y-2 text-sm">
-                      <p><span className="text-gray-600">Habitación:</span> <span className="font-medium">{selectedRoom?.number} - {selectedRoom?.room_type}</span></p>
+                      <p><span className="text-gray-600">Habitación:</span> <span className="font-medium">{selectedRoom?.number} - {selectedRoom?.room_type || 'Estándar'}</span></p>
                       <p><span className="text-gray-600">Check-in:</span> <span className="font-medium">{watchedValues.checkIn && new Date(watchedValues.checkIn).toLocaleDateString('es-ES')}</span></p>
                       <p><span className="text-gray-600">Check-out:</span> <span className="font-medium">{watchedValues.checkOut && new Date(watchedValues.checkOut).toLocaleDateString('es-ES')}</span></p>
                       <p><span className="text-gray-600">Huéspedes:</span> <span className="font-medium">{watchedValues.adults} adulto(s) {watchedValues.children > 0 && `, ${watchedValues.children} niño(s)`}</span></p>
-                      {watchedValues.checkIn && watchedValues.checkOut && (
+                      {watchedValues.checkIn && watchedValues.checkOut && selectedRoom && (
                         <>
                           <p><span className="text-gray-600">Noches:</span> <span className="font-medium">{Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24))}</span></p>
-                          <p><span className="text-gray-600">Total:</span> <span className="font-medium text-lg text-green-600">S/ {selectedRoom ? (Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24)) * selectedRoom.base_rate).toFixed(2) : '0.00'}</span></p>
+                          <p><span className="text-gray-600">Total:</span> <span className="font-medium text-lg text-green-600">S/ {(Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24)) * selectedRoom.base_rate).toFixed(2)}</span></p>
                         </>
                       )}
                     </div>
