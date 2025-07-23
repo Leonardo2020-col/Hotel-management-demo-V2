@@ -61,7 +61,7 @@ export const getRoomsByFloor = async (branchId = null) => {
           features: room.features,
           room_id: room.id,
           floor: room.floor,
-          type: room.room_type
+         // type: room.room_type
         })
         return acc
       }, {})
@@ -951,7 +951,7 @@ async cleanRoomWithClick(roomId) {
         return {
           ...room,
           // Usar campos directos (ya no room_type.name)
-          type: room.room_type,
+          //type: room.room_type,
           rate: room.base_rate,
           
           // Información del huésped actual
@@ -1004,7 +1004,7 @@ async cleanRoomWithClick(roomId) {
       const insertData = {
         number: roomData.number.toString(),
         floor: parseInt(roomData.floor),
-        room_type: roomData.room_type || roomData.type || 'Habitación Estándar',
+        //room_type: roomData.room_type || roomData.type || 'Habitación Estándar',
         base_rate: parseFloat(roomData.base_rate || roomData.rate || 100),
         capacity: parseInt(roomData.capacity || 2),
         branch_id: roomData.branch_id || 1,
@@ -1058,7 +1058,7 @@ async cleanRoomWithClick(roomId) {
       // Solo incluir campos válidos
       if (updates.number !== undefined) validUpdates.number = updates.number
       if (updates.floor !== undefined) validUpdates.floor = updates.floor
-      if (updates.room_type !== undefined) validUpdates.room_type = updates.room_type
+      //if (updates.room_type !== undefined) validUpdates.room_type = updates.room_type
       if (updates.base_rate !== undefined) validUpdates.base_rate = updates.base_rate
       if (updates.capacity !== undefined) validUpdates.capacity = updates.capacity
       if (updates.size !== undefined) validUpdates.size = updates.size
@@ -1247,7 +1247,6 @@ async cleanRoomWithClick(roomId) {
             id,
             number,
             floor,
-            room_type,
             capacity,
             base_rate
           )

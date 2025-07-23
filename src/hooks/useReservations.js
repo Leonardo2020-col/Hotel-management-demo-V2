@@ -93,7 +93,7 @@ export const useReservations = (initialFilters = {}) => {
             id: room.id,
             number: room.number || '',
             floor: room.floor || 1,
-            type: room.room_type || 'Habitación Estándar', // Campo directo ahora
+            //type: room.room_type || 'Habitación Estándar', // Campo directo ahora
             capacity: room.capacity || 2,
             rate: parseFloat(room.base_rate || 100) // Campo directo ahora
           }
@@ -128,7 +128,7 @@ export const useReservations = (initialFilters = {}) => {
         id: room.id,
         number: room.number,
         floor: room.floor,
-        type: room.room_type || room.type || 'Habitación Estándar', // Campo directo
+        //type: room.room_type || room.type || 'Habitación Estándar', // Campo directo
         capacity: room.capacity || 2,
         rate: parseFloat(room.base_rate || room.rate || 100), // Campo directo
         status: room.status,
@@ -500,7 +500,7 @@ export const useReservations = (initialFilters = {}) => {
         id: room.id,
         number: room.number,
         floor: room.floor,
-        type: room.room_type || 'Habitación Estándar', // Campo directo
+        //type: room.room_type || 'Habitación Estándar', // Campo directo
         capacity: room.capacity || 2,
         rate: parseFloat(room.base_rate || 100) // Campo directo
       }));
