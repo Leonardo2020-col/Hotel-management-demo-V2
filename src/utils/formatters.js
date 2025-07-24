@@ -4,206 +4,399 @@
  * @param {string} currency - Código de moneda (por defecto PEN para soles)
  * @returns {string} - Cantidad formateada como S/ X,XXX.XX
  */
-export const formatCurrency = (amount, currency = 'PEN') => {
-  if (amount === null || amount === undefined || isNaN(amount)) {
-    return 'S/ 0.00';
-  }
+// src/utils/formatters.js - FUNCIONES DE FORMATEO
+// Formatear moneda peruana
+export const formatCurrency = (amount) => {
+  if (!amount && amount !== 0) return 'S/ 0.00';
   
   return new Intl.NumberFormat('es-PE', {
     style: 'currency',
-    currency: currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+    currency: 'PEN',
+    minimumFractionDigits: 2
   }).format(amount);
 };
 
-/**
- * Formatea una fecha según el formato especificado
- * @param {Date|string} date - Fecha a formatear
- * @param {string} format - Formato deseado ('DD/MM/YYYY', 'HH:mm', etc.)
- * @returns {string} - Fecha formateada
- */
-export const formatDate = (date, format = 'DD/MM/YYYY') => {
-  const d = new Date(date);
-  
-  if (format === 'HH:mm') {
-    return d.toLocaleTimeString('es-PE', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  }
-  
-  if (format === 'DD/MM/YYYY') {
-    return d.toLocaleDateString('es-PE');
-  }
-  
-  return d.toLocaleDateString('es-PE');
-};
-
-/**
- * Formatea un número sin símbolo de moneda
- * @param {number} number - Número a formatear
- * @returns {string} - Número formateado con separadores de miles
- */
+// Formatear números con separadores de miles
 export const formatNumber = (number) => {
-  if (number === null || number === undefined || isNaN(number)) {
-    return '0';
-  }
+  if (!number && number !== 0) return '0';
   
   return new Intl.NumberFormat('es-PE').format(number);
 };
 
-/**
- * Formatea una fecha relativa (ej: "hace 2 horas")
- * @param {Date|string} date - Fecha a formatear
- * @returns {string} - Fecha relativa formateada
- */
-export const getRelativeTime = (date) => {
-  if (!date) return 'Nunca';
+// Formatear porcentajes
+export const formatPercentage = (percentage, decimals = 1) => {
+  if (!percentage && percentage !== 0) return '0%';
   
-  const now = new Date();
-  const targetDate = new Date(date);
-  const diffInMs = now - targetDate;
-  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  const diffInDays = Math.floor(diffInHours / 24);
-
-  if (diffInMinutes < 1) {
-    return 'Ahora mismo';
-  } else if (diffInMinutes < 60) {
-    return `hace ${diffInMinutes} minuto${diffInMinutes > 1 ? 's' : ''}`;
-  } else if (diffInHours < 24) {
-    return `hace ${diffInHours} hora${diffInHours > 1 ? 's' : ''}`;
-  } else if (diffInDays < 7) {
-    return `hace ${diffInDays} día${diffInDays > 1 ? 's' : ''}`;
-  } else {
-    return targetDate.toLocaleDateString('es-PE');
-  }
+  return `${parseFloat(percentage).toFixed(decimals)}%`;
 };
 
-/**
- * Formatea un porcentaje
- * @param {number} value - Valor entre 0 y 1 (o 0 y 100)
- * @param {boolean} isDecimal - Si el valor está en decimal (0-1) o entero (0-100)
- * @returns {string} - Porcentaje formateado
- */
-export const formatPercentage = (value, isDecimal = false) => {
-  if (value === null || value === undefined || isNaN(value)) {
-    return '0%';
-  }
+// Formatear fechas en español
+export const formatDate = (date, options = {}) => {
+  if (!date) return '';
   
-  const percentage = isDecimal ? value * 100 : value;
-  return `${percentage.toFixed(1)}%`;
+  const defaultOptions = {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'America/Lima',
+    ...options
+  };
+  
+  return new Date(date).toLocaleDateString('es-PE', defaultOptions);
 };
 
-/**
- * Formatea un número telefónico peruano
- * @param {string} phone - Número de teléfono
- * @returns {string} - Número formateado
- */
-export const formatPhone = (phone) => {
+// Formatear fecha corta
+export const formatShortDate = (date) => {
+  if (!date) return '';
+  
+  return new Date(date).toLocaleDateString('es-PE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'America/Lima'
+  });
+};
+
+// Formatear hora
+export const formatTime = (date) => {
+  if (!date) return '';
+  
+  return new Date(date).toLocaleTimeString('es-PE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Lima'
+  });
+};
+
+// Formatear fecha y hora completa
+export const formatDateTime = (date) => {
+  if (!date) return '';
+  
+  return new Date(date).toLocaleString('es-PE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Lima'
+  });
+};
+
+// Formatear duración en días
+export const formatDuration = (days) => {
+  if (!days && days !== 0) return '0 días';
+  
+  if (days === 1) return '1 día';
+  return `${days} días`;
+};
+
+// Formatear estado de habitación
+export const formatRoomStatus = (status) => {
+  const statusMap = {
+    'available': 'Disponible',
+    'occupied': 'Ocupada',
+    'cleaning': 'Limpieza',
+    'maintenance': 'Mantenimiento',
+    'out_of_order': 'Fuera de Servicio'
+  };
+  
+  return statusMap[status] || status;
+};
+
+// Formatear estado de limpieza
+export const formatCleaningStatus = (status) => {
+  const statusMap = {
+    'clean': 'Limpia',
+    'dirty': 'Sucia',
+    'in_progress': 'En Progreso',
+    'inspected': 'Inspeccionada'
+  };
+  
+  return statusMap[status] || status;
+};
+
+// Formatear estado de reserva
+export const formatReservationStatus = (status) => {
+  const statusMap = {
+    'pending': 'Pendiente',
+    'confirmed': 'Confirmada',
+    'checked_in': 'Check-in',
+    'checked_out': 'Check-out',
+    'cancelled': 'Cancelada',
+    'no_show': 'No Show'
+  };
+  
+  return statusMap[status] || status;
+};
+
+// Formatear método de pago
+export const formatPaymentMethod = (method) => {
+  const methodMap = {
+    'cash': 'Efectivo',
+    'card': 'Tarjeta',
+    'tarjeta': 'Tarjeta',
+    'efectivo': 'Efectivo',
+    'transfer': 'Transferencia',
+    'transferencia': 'Transferencia',
+    'digital': 'Digital',
+    'yape': 'Yape',
+    'plin': 'Plin'
+  };
+  
+  return methodMap[method] || method;
+};
+
+// Formatear estado de pago
+export const formatPaymentStatus = (status) => {
+  const statusMap = {
+    'pending': 'Pendiente',
+    'partial': 'Parcial',
+    'paid': 'Pagado',
+    'refunded': 'Reembolsado'
+  };
+  
+  return statusMap[status] || status;
+};
+
+// Formatear nivel VIP (si se vuelve a usar)
+export const formatVipLevel = (level) => {
+  const levelMap = {
+    'none': 'Regular',
+    'silver': 'Plata',
+    'gold': 'Oro',
+    'platinum': 'Platino'
+  };
+  
+  return levelMap[level] || level;
+};
+
+// Formatear prioridad
+export const formatPriority = (priority) => {
+  const priorityMap = {
+    'low': 'Baja',
+    'medium': 'Media',
+    'high': 'Alta',
+    'urgent': 'Urgente'
+  };
+  
+  return priorityMap[priority] || priority;
+};
+
+// Calcular y formatear diferencia de fechas
+export const formatDateDifference = (date1, date2) => {
+  if (!date1 || !date2) return '';
+  
+  const diffTime = Math.abs(new Date(date2) - new Date(date1));
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return formatDuration(diffDays);
+};
+
+// Formatear capacidad de habitación
+export const formatRoomCapacity = (capacity) => {
+  if (!capacity) return '';
+  
+  if (capacity === 1) return '1 persona';
+  return `${capacity} personas`;
+};
+
+// Formatear área de habitación
+export const formatRoomSize = (size) => {
+  if (!size) return '';
+  
+  return `${size} m²`;
+};
+
+// Formatear texto para URL amigable
+export const formatSlug = (text) => {
+  if (!text) return '';
+  
+  return text
+    .toLowerCase()
+    .replace(/[áàäâ]/g, 'a')
+    .replace(/[éèëê]/g, 'e')
+    .replace(/[íìïî]/g, 'i')
+    .replace(/[óòöô]/g, 'o')
+    .replace(/[úùüû]/g, 'u')
+    .replace(/[ñ]/g, 'n')
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+};
+
+// Formatear iniciiales de nombre
+export const formatInitials = (name) => {
+  if (!name) return '';
+  
+  return name
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase())
+    .slice(0, 2)
+    .join('');
+};
+
+// Truncar texto con elipsis
+export const truncateText = (text, maxLength = 50) => {
+  if (!text) return '';
+  
+  if (text.length <= maxLength) return text;
+  
+  return text.substring(0, maxLength).trim() + '...';
+};
+
+// Formatear número de teléfono peruano
+export const formatPhoneNumber = (phone) => {
   if (!phone) return '';
   
-  // Remover todos los caracteres no numéricos
+  // Remover caracteres no numéricos
   const cleaned = phone.replace(/\D/g, '');
   
-  // Formatear según el patrón peruano
+  // Si es número peruano (9 dígitos)
   if (cleaned.length === 9) {
-    // Celular: 999 999 999
-    return cleaned.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3');
-  } else if (cleaned.length === 7) {
-    // Fijo Lima: 999 9999
-    return cleaned.replace(/(\d{3})(\d{4})/, '$1 $2');
-  } else if (cleaned.length === 8) {
-    // Fijo provincial: 99 999 999
-    return cleaned.replace(/(\d{2})(\d{3})(\d{3})/, '$1 $2 $3');
+    return `+51 ${cleaned.substring(0, 3)}-${cleaned.substring(3, 6)}-${cleaned.substring(6)}`;
   }
   
-  return phone;
+  // Si ya incluye código de país
+  if (cleaned.length === 11 && cleaned.startsWith('51')) {
+    const number = cleaned.substring(2);
+    return `+51 ${number.substring(0, 3)}-${number.substring(3, 6)}-${number.substring(6)}`;
+  }
+  
+  return phone; // Devolver original si no coincide con formato esperado
 };
 
-/**
- * Formatea un documento de identidad peruano (DNI)
- * @param {string} dni - Número de DNI
- * @returns {string} - DNI formateado
- */
+// Formatear calificación en estrellas
+export const formatStars = (rating, maxStars = 5) => {
+  if (!rating && rating !== 0) return '';
+  
+  const fullStars = Math.floor(rating);
+  const hasHalfStar = rating % 1 >= 0.5;
+  const emptyStars = maxStars - fullStars - (hasHalfStar ? 1 : 0);
+  
+  return '★'.repeat(fullStars) + 
+         (hasHalfStar ? '☆' : '') + 
+         '☆'.repeat(emptyStars);
+};
+
+// Formatear tiempo relativo (hace cuánto)
+export const formatTimeAgo = (date) => {
+  if (!date) return '';
+  
+  const now = new Date();
+  const past = new Date(date);
+  const diffMs = now - past;
+  
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffDays > 0) {
+    return `hace ${diffDays} día${diffDays > 1 ? 's' : ''}`;
+  } else if (diffHours > 0) {
+    return `hace ${diffHours} hora${diffHours > 1 ? 's' : ''}`;
+  } else if (diffMinutes > 0) {
+    return `hace ${diffMinutes} minuto${diffMinutes > 1 ? 's' : ''}`;
+  } else {
+    return 'hace un momento';
+  }
+};
+
+// Validar email
+export const isValidEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+// Validar teléfono peruano
+export const isValidPeruvianPhone = (phone) => {
+  const cleaned = phone.replace(/\D/g, '');
+  return cleaned.length === 9 && cleaned.startsWith('9');
+};
+
+// Validar DNI peruano
+export const isValidDNI = (dni) => {
+  const cleaned = dni.replace(/\D/g, '');
+  return cleaned.length === 8;
+};
+
+// Formatear DNI
 export const formatDNI = (dni) => {
   if (!dni) return '';
   
   const cleaned = dni.replace(/\D/g, '');
-  
   if (cleaned.length === 8) {
-    return cleaned.replace(/(\d{2})(\d{3})(\d{3})/, '$1.$2.$3');
+    return `${cleaned.substring(0, 2)}.${cleaned.substring(2, 5)}.${cleaned.substring(5)}`;
   }
   
   return dni;
 };
 
-/**
- * Capitaliza la primera letra de cada palabra
- * @param {string} text - Texto a capitalizar
- * @returns {string} - Texto capitalizado
- */
-export const capitalizeWords = (text) => {
-  if (!text) return '';
+// Formatear rango de fechas
+export const formatDateRange = (startDate, endDate) => {
+  if (!startDate || !endDate) return '';
   
-  return text
-    .toLowerCase()
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
-
-/**
- * Formatea un número como moneda simple (para display sin Intl)
- * @param {number} amount - Cantidad a formatear
- * @returns {string} - Cantidad formateada como S/ X,XXX.XX
- */
-export const formatCurrencySimple = (amount) => {
-  if (amount === null || amount === undefined || isNaN(amount)) {
-    return 'S/ 0.00';
+  const start = formatShortDate(startDate);
+  const end = formatShortDate(endDate);
+  
+  if (start === end) {
+    return start;
   }
   
-  return `S/ ${amount.toLocaleString('es-PE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })}`;
+  return `${start} - ${end}`;
 };
 
-/**
- * Formatea tiempo transcurrido de manera más detallada
- * @param {Date|string} date - Fecha inicial
- * @returns {string} - Tiempo transcurrido detallado
- */
-export const formatDetailedTime = (date) => {
-  if (!date) return 'Sin fecha';
+// Calcular días entre fechas
+export const calculateDaysBetween = (startDate, endDate) => {
+  if (!startDate || !endDate) return 0;
   
-  const now = new Date();
-  const targetDate = new Date(date);
-  const diffInMs = now - targetDate;
-  const diffInSeconds = Math.floor(diffInMs / 1000);
-  const diffInMinutes = Math.floor(diffInSeconds / 60);
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  const diffInDays = Math.floor(diffInHours / 24);
-  const diffInWeeks = Math.floor(diffInDays / 7);
-  const diffInMonths = Math.floor(diffInDays / 30);
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffTime = Math.abs(end - start);
+  
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
 
-  if (diffInSeconds < 30) {
-    return 'Ahora mismo';
-  } else if (diffInSeconds < 60) {
-    return `hace ${diffInSeconds} segundo${diffInSeconds > 1 ? 's' : ''}`;
-  } else if (diffInMinutes < 60) {
-    return `hace ${diffInMinutes} minuto${diffInMinutes > 1 ? 's' : ''}`;
-  } else if (diffInHours < 24) {
-    return `hace ${diffInHours} hora${diffInHours > 1 ? 's' : ''}`;
-  } else if (diffInDays < 7) {
-    return `hace ${diffInDays} día${diffInDays > 1 ? 's' : ''}`;
-  } else if (diffInWeeks < 4) {
-    return `hace ${diffInWeeks} semana${diffInWeeks > 1 ? 's' : ''}`;
-  } else if (diffInMonths < 12) {
-    return `hace ${diffInMonths} mes${diffInMonths > 1 ? 'es' : ''}`;
-  } else {
-    const years = Math.floor(diffInMonths / 12);
-    return `hace ${years} año${years > 1 ? 's' : ''}`;
-  }
+// Formatear estado de stock
+export const formatStockStatus = (currentStock, minStock) => {
+  if (!currentStock && currentStock !== 0) return 'Sin datos';
+  if (!minStock) return 'Normal';
+  
+  const ratio = currentStock / minStock;
+  
+  if (currentStock === 0) return 'Agotado';
+  if (ratio <= 0.25) return 'Crítico';
+  if (ratio <= 0.5) return 'Bajo';
+  if (ratio <= 1) return 'Normal';
+  return 'Suficiente';
+};
+
+// Obtener color para estado de stock
+export const getStockStatusColor = (currentStock, minStock) => {
+  const status = formatStockStatus(currentStock, minStock);
+  
+  const colorMap = {
+    'Agotado': 'red',
+    'Crítico': 'red',
+    'Bajo': 'yellow',
+    'Normal': 'green',
+    'Suficiente': 'blue',
+    'Sin datos': 'gray'
+  };
+  
+  return colorMap[status] || 'gray';
+};
+
+// Formatear velocidad de consumo
+export const formatConsumptionRate = (consumption, period = 'month') => {
+  if (!consumption && consumption !== 0) return 'N/A';
+  
+  const periodMap = {
+    'day': 'día',
+    'week': 'semana',
+    'month': 'mes',
+    'year': 'año'
+  };
+  
+  return `${formatNumber(consumption)} por ${periodMap[period] || period}`;
 };

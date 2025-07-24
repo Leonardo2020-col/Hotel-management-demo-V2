@@ -1,4 +1,4 @@
-// hooks/useReports.js - CONECTADO A SUPABASE
+// hooks/useReports.js - CONECTADO A SUPABASE ACTUALIZADO
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '../lib/supabase';
 
@@ -156,9 +156,8 @@ export const useReports = (dateRange, selectedPeriod) => {
       // Ingresos por habitaciones
       const roomRevenue = completedReservations.reduce((sum, r) => sum + (r.total_amount || 0), 0);
       
-      // Ingresos por snacks (de checkin_orders si existe)
-      let snackRevenue = 0;
-      // Esto se puede implementar cuando tengas la tabla checkin_orders
+      // Ingresos por snacks (simulado - puedes conectar a checkin_orders si existe)
+      const snackRevenue = roomRevenue * 0.15; // Estimación del 15%
       
       const totalRevenue = roomRevenue + snackRevenue;
       
@@ -166,12 +165,14 @@ export const useReports = (dateRange, selectedPeriod) => {
         { 
           category: 'Habitaciones', 
           amount: roomRevenue, 
-          percentage: totalRevenue > 0 ? Math.round((roomRevenue / totalRevenue) * 100) : 100
+          percentage: totalRevenue > 0 ? Math.round((roomRevenue / totalRevenue) * 100) : 85,
+          color: '#3B82F6'
         },
         { 
           category: 'Snacks y Tienda', 
           amount: snackRevenue, 
-          percentage: totalRevenue > 0 ? Math.round((snackRevenue / totalRevenue) * 100) : 0
+          percentage: totalRevenue > 0 ? Math.round((snackRevenue / totalRevenue) * 100) : 15,
+          color: '#10B981'
         }
       ];
       
@@ -210,7 +211,7 @@ export const useReports = (dateRange, selectedPeriod) => {
       // Estadía promedio
       const completedReservations = filteredReservations.filter(r => r.status === 'checked_out');
       const avgStay = completedReservations.length > 0 
-        ? completedReservations.reduce((sum, r) => sum + (r.nights || 1), 0) / completedReservations.length
+        ? completedReservations.reduce((sum, r) => sum + (r.nights || calculateNights(r.check_in, r.check_out)), 0) / completedReservations.length
         : 0;
 
       return {
@@ -218,7 +219,7 @@ export const useReports = (dateRange, selectedPeriod) => {
         newGuests,
         returningGuests,
         averageStay: Math.round(avgStay * 10) / 10,
-        satisfactionScore: 4.6, // Esto se puede calcular si tienes ratings
+        satisfactionScore: 4.6, // Simulado - puedes agregar sistema de ratings
         demographics: calculateDemographics(guestStats)
       };
       
@@ -236,7 +237,7 @@ export const useReports = (dateRange, selectedPeriod) => {
       const { rooms, reservations } = rawData;
       const filteredReservations = filterReservationsByPeriod(reservations, dateRange);
       
-      // Agrupar por tipo de habitación
+      // Agrupar por tipo de habitación (usando campo directo)
       const roomsByType = rooms.reduce((acc, room) => {
         const type = room.room_type || 'Estándar';
         if (!acc[type]) {
@@ -271,7 +272,7 @@ export const useReports = (dateRange, selectedPeriod) => {
         totalRooms: rooms.length,
         roomTypes: Object.values(roomsByType),
         maintenanceStatus: {
-          operational: rooms.filter(r => r.status === 'available' || r.status === 'occupied').length,
+          operational: rooms.filter(r => ['available', 'occupied'].includes(r.status)).length,
           maintenance: rooms.filter(r => r.status === 'maintenance').length,
           outOfOrder: rooms.filter(r => r.status === 'out_of_order').length
         }
@@ -294,7 +295,7 @@ export const useReports = (dateRange, selectedPeriod) => {
       const actualSupplies = supplies.filter(s => s.item_type === 'supply' || !s.item_type);
       const snacks = supplies.filter(s => s.item_type === 'snack');
       
-      // Calcular valor total
+      // Calcular valor total del inventario
       const totalValue = actualSupplies.reduce((sum, supply) => {
         const stock = supply.currentStock || supply.current_stock || 0;
         const price = supply.unitPrice || supply.unit_price || 0;
@@ -333,7 +334,9 @@ export const useReports = (dateRange, selectedPeriod) => {
         totalValue,
         categoriesConsumption: categoriesArray,
         stockAlerts,
-        monthlyConsumption: totalValue * 0.15 // Estimación del 15% mensual
+        monthlyConsumption: totalValue * 0.15, // Estimación del 15% mensual
+        totalItems: actualSupplies.length,
+        snackItems: snacks.length
       };
       
     } catch (err) {
@@ -366,7 +369,7 @@ export const useReports = (dateRange, selectedPeriod) => {
   };
 
   // Exportar reporte a PDF
-  const exportReport = async (reportType, format = 'pdf', dateRange) => {
+  const exportReport = async (reportType, format = 'pdf') => {
     try {
       console.log(`📄 Exporting ${reportType} report as ${format}...`);
       
@@ -425,7 +428,15 @@ export const useReports = (dateRange, selectedPeriod) => {
 // Filtrar reservas por período
 function filterReservationsByPeriod(reservations, dateRange) {
   if (!dateRange?.startDate || !dateRange?.endDate) {
-    return reservations;
+    // Si no hay rango, usar último mes
+    const end = new Date();
+    const start = new Date();
+    start.setMonth(start.getMonth() - 1);
+    
+    return reservations.filter(reservation => {
+      const checkOut = new Date(reservation.checked_out_at || reservation.check_out);
+      return checkOut >= start && checkOut <= end;
+    });
   }
   
   const start = new Date(dateRange.startDate);
@@ -440,27 +451,52 @@ function filterReservationsByPeriod(reservations, dateRange) {
   });
 }
 
-// Calcular demografía de huéspedes
+// Calcular noches entre fechas
+function calculateNights(checkIn, checkOut) {
+  if (!checkIn || !checkOut) return 1;
+  
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const diffTime = Math.abs(end - start);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return Math.max(1, diffDays);
+}
+
+// Calcular demografía de huéspedes (simplificado)
 function calculateDemographics(guests) {
-  // Como eliminaste las columnas de nacionalidad, usar datos mock
-  const countries = ['Perú', 'Estados Unidos', 'España', 'Brasil', 'Otros'];
-  const demographics = countries.map((country, index) => {
-    const percentage = [52.6, 19.0, 9.4, 8.2, 10.8][index];
-    const guestCount = Math.round((guests.length * percentage) / 100);
+  // Ya que eliminaste las columnas de nacionalidad, usar datos basados en documento
+  const demographics = [];
+  
+  const peruvianGuests = guests.filter(g => 
+    g.document_type === 'DNI' || 
+    (g.document_number && g.document_number.length === 8)
+  ).length;
+  
+  const foreignGuests = guests.length - peruvianGuests;
+  
+  if (guests.length > 0) {
+    demographics.push({
+      country: 'Perú',
+      guests: peruvianGuests,
+      percentage: Math.round((peruvianGuests / guests.length) * 100)
+    });
     
-    return {
-      country,
-      guests: guestCount,
-      percentage
-    };
-  });
+    if (foreignGuests > 0) {
+      demographics.push({
+        country: 'Extranjeros',
+        guests: foreignGuests,
+        percentage: Math.round((foreignGuests / guests.length) * 100)
+      });
+    }
+  }
   
   return demographics;
 }
 
 // Generar contenido del reporte
 function generateReportContent(reportType, data) {
-  const { overviewStats, dateRange } = data;
+  const { dateRange } = data;
   
   const baseContent = {
     title: getReportTitle(reportType),
@@ -490,35 +526,6 @@ function generateReportContent(reportType, data) {
   }
 }
 
-// Generar PDF usando una librería como jsPDF
-async function generatePDFReport(reportType, reportData) {
-  // Esta función ya no se usa, se reemplazó por el generador modular
-  console.warn('generatePDFReport is deprecated, use generateReportPDF from pdfGenerator instead');
-}
-
-// Generar Excel
-async function generateExcelReport(reportType, reportData) {
-  // Esta función ya no se usa, se reemplazó por el generador modular  
-  console.warn('generateExcelReport is deprecated, use generateReportExcel from pdfGenerator instead');
-}
-
-// Convertir datos a CSV
-function convertToCSV(data) {
-  const headers = ['Métrica', 'Valor'];
-  const rows = [
-    ['Ocupación Promedio', `${data.overviewStats?.avgOccupancy || 0}%`],
-    ['Ingresos Totales', `S/ ${data.overviewStats?.totalRevenue || 0}`],
-    ['Total Huéspedes', data.overviewStats?.totalGuests || 0],
-    ['Tarifa Promedio', `S/ ${data.overviewStats?.avgRate || 0}`]
-  ];
-  
-  const csv = [headers, ...rows]
-    .map(row => row.join(','))
-    .join('\n');
-    
-  return csv;
-}
-
 // Títulos de reportes
 function getReportTitle(reportType) {
   const titles = {
@@ -536,7 +543,7 @@ function getReportTitle(reportType) {
 // Formatear período
 function formatPeriod(dateRange) {
   if (!dateRange?.startDate || !dateRange?.endDate) {
-    return 'Período no definido';
+    return 'Último mes';
   }
   
   const start = new Date(dateRange.startDate).toLocaleDateString('es-PE');
