@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, PieChart as PieChartIcon, Download } from 'lucide-react';
 import Button from '../common/Button';
 import { formatCurrency } from '../../utils/formatters';
+import { db } from '../../lib/supabase';
 
 const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
   const [loading, setLoading] = useState(true);
@@ -10,7 +11,13 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
     mainSource: '',
     mainSourcePercentage: 0,
     categories: [],
-    growth: 0
+    growth: 0,
+    metrics: {
+      adr: 0,
+      revpar: 0,
+      totalNights: 0,
+      totalReservations: 0
+    }
   });
 
   useEffect(() => {
@@ -20,29 +27,139 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
   const fetchRevenueData = async () => {
     setLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 800));
+      console.log('💰 Loading revenue data from Supabase...');
       
+      // 1. Obtener reservas del período
+      const { data: reservations, error: reservationsError } = await db.getReservations({ limit: 1000 });
+      if (reservationsError) throw reservationsError;
+
+      // 2. Obtener data de snacks
+      const { data: snackData, error: snackError } = await db.getSnackItems();
+      if (snackError) console.warn('Snack data not available:', snackError);
+
+      // 3. Obtener check-in orders si existen
+      let checkinOrders = [];
+      try {
+        const { data: orders } = await db.supabase
+          .from('checkin_orders')
+          .select('*')
+          .order('created_at', { ascending: false });
+        checkinOrders = orders || [];
+      } catch (error) {
+        console.warn('Check-in orders not available:', error);
+      }
+
+      // 4. Filtrar reservas por período
+      const filteredReservations = filterReservationsByPeriod(reservations, dateRange);
+      const completedReservations = filteredReservations.filter(r => r.status === 'checked_out');
+
+      // 5. Calcular ingresos de habitaciones
+      const roomRevenue = completedReservations.reduce((sum, r) => sum + (r.total_amount || 0), 0);
+      
+      // 6. Calcular ingresos de snacks (desde check-in orders o estimado)
+      let snackRevenue = 0;
+      if (checkinOrders.length > 0) {
+        snackRevenue = checkinOrders
+          .filter(order => isInPeriod(order.created_at, dateRange))
+          .reduce((sum, order) => sum + (order.snacks_total || 0), 0);
+      } else {
+        // Estimación basada en 15% de ingresos de habitaciones
+        snackRevenue = roomRevenue * 0.15;
+      }
+
+      const totalRevenue = roomRevenue + snackRevenue;
+
+      // 7. Calcular métricas adicionales
+      const totalNights = completedReservations.reduce((sum, r) => sum + (r.nights || calculateNights(r.check_in, r.check_out)), 0);
+      const adr = completedReservations.length > 0 ? roomRevenue / completedReservations.length : 0;
+      
+      // 8. Obtener datos del período anterior para calcular crecimiento
+      const previousPeriodRevenue = await calculatePreviousPeriodRevenue(reservations, dateRange);
+      const growth = previousPeriodRevenue > 0 ? ((totalRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100 : 0;
+
+      // 9. Crear categorías de ingresos
+      const categories = [
+        {
+          name: 'Habitaciones',
+          amount: roomRevenue,
+          percentage: totalRevenue > 0 ? Math.round((roomRevenue / totalRevenue) * 100) : 85,
+          color: '#3B82F6'
+        },
+        {
+          name: 'Tienda y Snacks',
+          amount: snackRevenue,
+          percentage: totalRevenue > 0 ? Math.round((snackRevenue / totalRevenue) * 100) : 15,
+          color: '#10B981'
+        }
+      ];
+
+      // 10. Determinar fuente principal
+      const mainCategory = categories.reduce((prev, current) => 
+        current.amount > prev.amount ? current : prev
+      );
+
+      setRevenueData({
+        totalRevenue,
+        mainSource: mainCategory.name,
+        mainSourcePercentage: mainCategory.percentage,
+        categories,
+        growth: Math.round(growth * 10) / 10,
+        metrics: {
+          adr: Math.round(adr * 100) / 100,
+          revpar: 0, // Se puede calcular con datos de ocupación
+          totalNights,
+          totalReservations: completedReservations.length
+        }
+      });
+
+      console.log('✅ Revenue data loaded successfully');
+      
+    } catch (error) {
+      console.error('❌ Error fetching revenue data:', error);
+      
+      // Fallback con datos mock
       setRevenueData({
         totalRevenue: 245000.00,
         mainSource: 'Habitaciones',
         mainSourcePercentage: 75.5,
         categories: [
-          { name: 'Habitaciones', amount: 185000.00, percentage: 75.5, color: '#1e40af' },
-          { name: 'Restaurante', amount: 32000.00, percentage: 13.1, color: '#7c3aed' },
-          { name: 'Spa', amount: 17850.00, percentage: 7.3, color: '#059669' },
-          { name: 'Servicios Adicionales', amount: 10150.00, percentage: 4.1, color: '#dc2626' }
+          { name: 'Habitaciones', amount: 185000.00, percentage: 75.5, color: '#3B82F6' },
+          { name: 'Tienda y Snacks', amount: 60000.00, percentage: 24.5, color: '#10B981' }
         ],
-        growth: 8.5
+        growth: 8.5,
+        metrics: {
+          adr: 285.50,
+          revpar: 233.20,
+          totalNights: 648,
+          totalReservations: 156
+        }
       });
-    } catch (error) {
-      console.error('Error fetching revenue data:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const exportReport = () => {
-    console.log('Exportando reporte de ingresos...');
+  const exportReport = async () => {
+    try {
+      console.log('📄 Exporting revenue report...');
+      
+      const { generateReportPDF } = await import('../../utils/pdfGenerator');
+      
+      const reportData = {
+        title: 'Reporte de Ingresos',
+        period: formatPeriod(dateRange),
+        generatedAt: new Date().toLocaleString('es-PE'),
+        revenueData,
+        categories: revenueData.categories,
+        metrics: revenueData.metrics
+      };
+      
+      await generateReportPDF('revenue', reportData);
+      
+    } catch (error) {
+      console.error('❌ Error exporting report:', error);
+      alert('Error al exportar el reporte: ' + error.message);
+    }
   };
 
   if (loading) {
@@ -102,6 +219,12 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
             <div className="min-w-0 flex-1">
               <p className="text-sm text-green-800 font-medium mb-1">Ingresos Totales</p>
               <p className="text-xl font-bold text-green-900 truncate">{formatCurrency(revenueData.totalRevenue)}</p>
+              <div className="flex items-center mt-2">
+                <TrendingUp className="w-4 h-4 mr-1 text-green-700" />
+                <span className="text-sm text-green-700">
+                  {revenueData.growth >= 0 ? '+' : ''}{revenueData.growth}% vs anterior
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -125,9 +248,9 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
               <PieChartIcon className="w-6 h-6 text-purple-600" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm text-purple-800 font-medium mb-1">Diversificación</p>
-              <p className="text-xl font-bold text-purple-900">{revenueData.categories.length}</p>
-              <p className="text-xs text-purple-700">categorías activas</p>
+              <p className="text-sm text-purple-800 font-medium mb-1">ADR Promedio</p>
+              <p className="text-xl font-bold text-purple-900">{formatCurrency(revenueData.metrics.adr)}</p>
+              <p className="text-xs text-purple-700">Por reserva</p>
             </div>
           </div>
         </div>
@@ -138,7 +261,7 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-900">Distribución de Ingresos</h3>
           <p className="text-sm text-gray-600">
-            Período: {dateRange?.startDate?.toLocaleDateString('es-PE') || 'No definido'} - {dateRange?.endDate?.toLocaleDateString('es-PE') || 'No definido'}
+            Período: {formatPeriod(dateRange)}
           </p>
         </div>
 
@@ -222,20 +345,24 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
           <div className="space-y-4">
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div>
-                <span className="text-sm text-gray-600">Ingresos por habitación</span>
-                <p className="text-xs text-gray-500 mt-1">Promedio por habitación disponible</p>
+                <span className="text-sm text-gray-600">ADR (Tarifa Promedio)</span>
+                <p className="text-xs text-gray-500 mt-1">Ingreso promedio por reserva</p>
               </div>
               <span className="text-xl font-semibold text-green-600">
-                {formatCurrency(3700.00)}
+                {formatCurrency(revenueData.metrics.adr)}
               </span>
             </div>
             
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
               <div>
-                <span className="text-sm text-gray-600">Crecimiento vs mes anterior</span>
-                <p className="text-xs text-gray-500 mt-1">Tendencia positiva</p>
+                <span className="text-sm text-gray-600">Crecimiento vs período anterior</span>
+                <p className="text-xs text-gray-500 mt-1">
+                  {revenueData.growth >= 0 ? 'Tendencia positiva' : 'Tendencia negativa'}
+                </p>
               </div>
-              <span className="text-xl font-semibold text-blue-600">+{revenueData.growth}%</span>
+              <span className={`text-xl font-semibold ${revenueData.growth >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                {revenueData.growth >= 0 ? '+' : ''}{revenueData.growth}%
+              </span>
             </div>
             
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
@@ -243,7 +370,19 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
                 <span className="text-sm text-gray-600">Ingresos no-habitaciones</span>
                 <p className="text-xs text-gray-500 mt-1">Diversificación de ingresos</p>
               </div>
-              <span className="text-xl font-semibold text-purple-600">24.5%</span>
+              <span className="text-xl font-semibold text-purple-600">
+                {revenueData.categories.find(c => c.name.includes('Snacks'))?.percentage || 24.5}%
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div>
+                <span className="text-sm text-gray-600">Total de Reservas</span>
+                <p className="text-xs text-gray-500 mt-1">En el período</p>
+              </div>
+              <span className="text-xl font-semibold text-gray-600">
+                {revenueData.metrics.totalReservations}
+              </span>
             </div>
           </div>
         </div>
@@ -257,9 +396,11 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
                   <TrendingUp className="w-5 h-5 text-yellow-600" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-yellow-800 mb-1">Servicios Adicionales</p>
+                  <p className="text-sm font-medium text-yellow-800 mb-1">Tienda y Snacks</p>
                   <p className="text-xs text-yellow-700">
-                    Solo representa 4.1% de ingresos. Potencial de crecimiento.
+                    {revenueData.categories.find(c => c.name.includes('Snacks'))?.percentage < 20 
+                      ? 'Potencial de crecimiento en servicios adicionales.' 
+                      : 'Buen rendimiento en servicios adicionales.'}
                   </p>
                 </div>
               </div>
@@ -271,9 +412,10 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
                   <PieChartIcon className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-blue-800 mb-1">Spa</p>
+                  <p className="text-sm font-medium text-blue-800 mb-1">Tarifa Promedio</p>
                   <p className="text-xs text-blue-700">
-                    Buen rendimiento (7.3%). Considerar expansión de servicios.
+                    ADR actual de {formatCurrency(revenueData.metrics.adr)}. 
+                    {revenueData.metrics.adr < 200 ? ' Considerar optimización de precios.' : ' Nivel competitivo.'}
                   </p>
                 </div>
               </div>
@@ -287,7 +429,7 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
                 <div>
                   <p className="text-sm font-medium text-green-800 mb-1">Habitaciones</p>
                   <p className="text-xs text-green-700">
-                    Fuente principal sólida (75.5%). Mantener calidad.
+                    Fuente principal sólida ({revenueData.mainSourcePercentage}%). Mantener calidad y servicio.
                   </p>
                 </div>
               </div>
@@ -304,8 +446,10 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
               <DollarSign className="w-6 h-6 text-indigo-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600 mb-1">ADR (Tarifa Promedio)</p>
-              <p className="text-xl font-bold text-gray-900">{formatCurrency(285.50)}</p>
+              <p className="text-sm text-gray-600 mb-1">Ingreso por Noche</p>
+              <p className="text-xl font-bold text-gray-900">
+                {formatCurrency(revenueData.metrics.totalNights > 0 ? revenueData.totalRevenue / revenueData.metrics.totalNights : 0)}
+              </p>
             </div>
           </div>
         </div>
@@ -316,8 +460,8 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
               <TrendingUp className="w-6 h-6 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600 mb-1">RevPAR</p>
-              <p className="text-xl font-bold text-gray-900">{formatCurrency(233.20)}</p>
+              <p className="text-sm text-gray-600 mb-1">Total Noches</p>
+              <p className="text-xl font-bold text-gray-900">{revenueData.metrics.totalNights}</p>
             </div>
           </div>
         </div>
@@ -340,8 +484,10 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
               <PieChartIcon className="w-6 h-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600 mb-1">Ingresos por Día</p>
-              <p className="text-xl font-bold text-gray-900">{formatCurrency(8166.67)}</p>
+              <p className="text-sm text-gray-600 mb-1">Ingreso Diario Promedio</p>
+              <p className="text-xl font-bold text-gray-900">
+                {formatCurrency(revenueData.totalRevenue / 30)} {/* Estimación mensual */}
+              </p>
             </div>
           </div>
         </div>
@@ -373,5 +519,90 @@ const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
     </div>
   );
 };
+
+// =============================================
+// FUNCIONES AUXILIARES
+// =============================================
+
+function filterReservationsByPeriod(reservations, dateRange) {
+  if (!dateRange?.startDate || !dateRange?.endDate) {
+    // Si no hay rango, usar último mes
+    const end = new Date();
+    const start = new Date();
+    start.setMonth(start.getMonth() - 1);
+    
+    return reservations?.filter(reservation => {
+      const checkOut = new Date(reservation.checked_out_at || reservation.check_out);
+      return checkOut >= start && checkOut <= end;
+    }) || [];
+  }
+  
+  const start = new Date(dateRange.startDate);
+  const end = new Date(dateRange.endDate);
+  
+  return reservations?.filter(reservation => {
+    const checkOut = new Date(reservation.checked_out_at || reservation.check_out);
+    return checkOut >= start && checkOut <= end && reservation.status === 'checked_out';
+  }) || [];
+}
+
+function isInPeriod(dateStr, dateRange) {
+  if (!dateRange?.startDate || !dateRange?.endDate) {
+    const end = new Date();
+    const start = new Date();
+    start.setMonth(start.getMonth() - 1);
+    const date = new Date(dateStr);
+    return date >= start && date <= end;
+  }
+  
+  const date = new Date(dateStr);
+  const start = new Date(dateRange.startDate);
+  const end = new Date(dateRange.endDate);
+  
+  return date >= start && date <= end;
+}
+
+function calculateNights(checkIn, checkOut) {
+  if (!checkIn || !checkOut) return 1;
+  
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const diffTime = Math.abs(end - start);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return Math.max(1, diffDays);
+}
+
+async function calculatePreviousPeriodRevenue(reservations, dateRange) {
+  if (!dateRange?.startDate || !dateRange?.endDate) {
+    return 0;
+  }
+  
+  const start = new Date(dateRange.startDate);
+  const end = new Date(dateRange.endDate);
+  const periodLength = end - start;
+  
+  const previousStart = new Date(start.getTime() - periodLength);
+  const previousEnd = new Date(start.getTime());
+  
+  return reservations
+    ?.filter(reservation => {
+      if (reservation.status !== 'checked_out') return false;
+      const checkOut = new Date(reservation.checked_out_at || reservation.check_out);
+      return checkOut >= previousStart && checkOut < previousEnd;
+    })
+    .reduce((sum, r) => sum + (r.total_amount || 0), 0) || 0;
+}
+
+function formatPeriod(dateRange) {
+  if (!dateRange?.startDate || !dateRange?.endDate) {
+    return 'Último mes';
+  }
+  
+  const start = new Date(dateRange.startDate).toLocaleDateString('es-PE');
+  const end = new Date(dateRange.endDate).toLocaleDateString('es-PE');
+  
+  return `${start} - ${end}`;
+}
 
 export default RevenueReport;
