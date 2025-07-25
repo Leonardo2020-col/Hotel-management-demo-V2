@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, PieChart as PieChartIcon, Download } from 'lucide-react';
 import Button from '../common/Button';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatDate, getRelativeTime } from '../../utils/formatters';
 import { db } from '../../lib/supabase';
 
 const RevenueReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
