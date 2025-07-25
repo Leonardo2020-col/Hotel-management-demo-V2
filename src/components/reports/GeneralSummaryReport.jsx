@@ -12,7 +12,7 @@ import {
   Calendar
 } from 'lucide-react';
 import Button from '../common/Button';
-import { formatCurrency, formatDate, getRelativeTime } from '../../utils/formatters';
+import { formatCurrency, formatNumber, formatPercentage } from '../../utils/formatters';
 import { db } from '../../lib/supabase';
 
 const GeneralSummaryReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
