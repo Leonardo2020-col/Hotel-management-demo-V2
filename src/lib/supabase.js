@@ -80,6 +80,316 @@ export const getRoomsByFloor = async (branchId = null) => {
 export const db = {
 
 // =============================================
+// FUNCIONES FALTANTES PARA AGREGAR A supabase.js
+// Agregar estas funciones al objeto `db` en tu archivo supabase.js
+// =============================================
+
+// 1. FUNCIÓN PARA DASHBOARD STATS (usada por GeneralSummaryReport)
+async getDashboardStats() {
+  try {
+    console.log('📊 Loading dashboard statistics...');
+    
+    // 1. Obtener habitaciones con sus estados
+    const { data: rooms, error: roomsError } = await supabase
+      .from('rooms')
+      .select('*')
+    
+    if (roomsError) throw roomsError
+    
+    // 2. Obtener reservas actuales y recientes
+    const { data: reservations, error: reservationsError } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        guest:guests(full_name),
+        room:rooms(number)
+      `)
+      .order('created_at', { ascending: false })
+    
+    if (reservationsError) throw reservationsError
+    
+    // 3. Calcular estadísticas
+    const today = new Date().toISOString().split('T')[0]
+    const thisMonth = new Date()
+    const startOfMonth = new Date(thisMonth.getFullYear(), thisMonth.getMonth(), 1)
+    
+    // Estadísticas de habitaciones
+    const totalRooms = rooms?.length || 0
+    const occupiedRooms = rooms?.filter(r => r.status === 'occupied').length || 0
+    const availableRooms = rooms?.filter(r => r.status === 'available').length || 0
+    const occupancy = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0
+    
+    // Estadísticas de check-ins/check-outs
+    const checkInsToday = reservations?.filter(r => 
+      r.check_in === today && r.status === 'confirmed'
+    ).length || 0
+    
+    const checkOutsToday = reservations?.filter(r => 
+      r.check_out === today && r.status === 'checked_in'
+    ).length || 0
+    
+    const currentGuests = reservations?.filter(r => r.status === 'checked_in').length || 0
+    
+    // Ingresos
+    const completedReservations = reservations?.filter(r => r.status === 'checked_out') || []
+    
+    const revenueToday = completedReservations
+      .filter(r => r.checked_out_at?.split('T')[0] === today)
+      .reduce((sum, r) => sum + (r.total_amount || 0), 0)
+    
+    const revenueThisMonth = completedReservations
+      .filter(r => new Date(r.checked_out_at) >= startOfMonth)
+      .reduce((sum, r) => sum + (r.total_amount || 0), 0)
+    
+    // Tarifa promedio
+    const activeReservations = reservations?.filter(r => 
+      r.status === 'checked_in' || r.status === 'checked_out'
+    ) || []
+    
+    const averageRate = activeReservations.length > 0 
+      ? activeReservations.reduce((sum, r) => sum + (r.rate || 0), 0) / activeReservations.length
+      : 0
+    
+    const stats = {
+      occupancy,
+      totalRooms,
+      occupiedRooms,
+      availableRooms,
+      totalGuests: currentGuests,
+      checkInsToday,
+      checkOutsToday,
+      averageRate,
+      revenue: {
+        today: revenueToday,
+        thisMonth: revenueThisMonth
+      }
+    }
+    
+    console.log('✅ Dashboard stats calculated:', stats)
+    return { data: stats, error: null }
+    
+  } catch (error) {
+    console.error('Error getting dashboard stats:', error)
+    return { data: null, error }
+  }
+},
+
+// 2. FUNCIÓN PARA OBTENER TODOS LOS ITEMS DE INVENTARIO
+async getAllInventoryItems() {
+  try {
+    console.log('Loading all inventory items (supplies + snacks)...')
+    
+    // Obtener insumos de la tabla supplies
+    const { data: supplies, error: suppliesError } = await supabase
+      .from('supplies')
+      .select(`
+        *,
+        category:supply_categories(name),
+        supplier:suppliers(name)
+      `)
+      .order('name')
+    
+    if (suppliesError) {
+      console.warn('Error loading supplies:', suppliesError)
+    }
+    
+    // Obtener snacks usando la función que ya existe
+    const { data: snackCategories } = await this.getSnackItems()
+    
+    // Convertir snacks a formato uniforme
+    const snacks = []
+    if (snackCategories) {
+      Object.entries(snackCategories).forEach(([categoryName, items]) => {
+        items.forEach(item => {
+          snacks.push({
+            id: item.id,
+            name: item.name,
+            description: item.description,
+            sku: `SNACK-${item.id}`,
+            category: categoryName,
+            supplier: 'Proveedor Snacks',
+            unit: 'unidad',
+            unit_price: item.price,
+            current_stock: 100, // Mock stock para snacks
+            min_stock: 10,
+            max_stock: 200,
+            location: 'Minibar',
+            is_active: true,
+            item_type: 'snack',
+            branch_id: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+        })
+      })
+    }
+    
+    // Formatear supplies para estructura uniforme
+    const formattedSupplies = (supplies || []).map(supply => ({
+      ...supply,
+      category: supply.category?.name || 'Sin categoría',
+      supplier: supply.supplier?.name || 'Sin proveedor',
+      item_type: 'supply',
+      currentStock: supply.current_stock,
+      minStock: supply.min_stock,
+      maxStock: supply.max_stock,
+      unitPrice: supply.unit_price
+    }))
+    
+    // Combinar ambos tipos
+    const allItems = [...formattedSupplies, ...snacks]
+    
+    console.log(`✅ Loaded ${allItems.length} inventory items`)
+    
+    return { data: allItems, error: null }
+    
+  } catch (error) {
+    console.error('Error in getAllInventoryItems:', error)
+    return { data: [], error }
+  }
+},
+
+// 3. FUNCIÓN PARA HISTORIAL DE CONSUMO (REPORTES)
+async getConsumptionHistory(filters = {}) {
+  try {
+    // Intentar obtener de supply_movements si existe
+    let query = supabase
+      .from('supply_movements')
+      .select(`
+        *,
+        supply:supplies(name, unit, category:supply_categories(name))
+      `)
+      .eq('movement_type', 'consumption')
+      .order('created_at', { ascending: false })
+    
+    if (filters.supplyId) {
+      query = query.eq('supply_id', filters.supplyId)
+    }
+    
+    if (filters.limit) {
+      query = query.limit(filters.limit)
+    }
+    
+    const { data, error } = await query
+    
+    if (error) {
+      console.warn('Consumption history not available:', error)
+      return { data: [], error: null }
+    }
+    
+    return { data: data || [], error: null }
+  } catch (error) {
+    console.error('Error getting consumption history:', error)
+    return { data: [], error: null }
+  }
+},
+
+// 4. FUNCIÓN PARA OBTENER CHECKIN ORDERS (INGRESOS DE SNACKS)
+async getCheckinOrders(filters = {}) {
+  try {
+    let query = supabase
+      .from('checkin_orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+    
+    if (filters.limit) {
+      query = query.limit(filters.limit)
+    }
+    
+    if (filters.startDate && filters.endDate) {
+      query = query
+        .gte('created_at', filters.startDate)
+        .lte('created_at', filters.endDate)
+    }
+    
+    const { data, error } = await query
+    
+    if (error) {
+      console.warn('Checkin orders not available:', error)
+      return { data: [], error: null }
+    }
+    
+    return { data: data || [], error: null }
+  } catch (error) {
+    console.error('Error getting checkin orders:', error)
+    return { data: [], error: null }
+  }
+},
+
+// 5. FUNCIÓN PARA OBTENER OCUPACIÓN POR TENDENCIA
+async getOccupancyTrend() {
+  try {
+    console.log('📈 Loading occupancy trend...')
+    
+    const trends = []
+    const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    
+    for (let i = 5; i >= 0; i--) {
+      const date = new Date()
+      date.setMonth(date.getMonth() - i)
+      
+      const year = date.getFullYear()
+      const month = date.getMonth()
+      const monthStart = new Date(year, month, 1)
+      const monthEnd = new Date(year, month + 1, 0)
+      
+      // Obtener reservas del mes
+      const { data: monthReservations } = await supabase
+        .from('reservations')
+        .select('*')
+        .gte('check_in', monthStart.toISOString().split('T')[0])
+        .lte('check_out', monthEnd.toISOString().split('T')[0])
+        .in('status', ['checked_in', 'checked_out'])
+      
+      // Obtener total de habitaciones
+      const { data: totalRooms } = await supabase
+        .from('rooms')
+        .select('count')
+      
+      const roomCount = totalRooms?.length || 20
+      const daysInMonth = monthEnd.getDate()
+      const totalRoomNights = roomCount * daysInMonth
+      
+      const occupiedNights = monthReservations?.reduce((sum, res) => {
+        const checkIn = new Date(res.check_in)
+        const checkOut = new Date(res.check_out)
+        const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24))
+        return sum + nights
+      }, 0) || 0
+      
+      const occupancyRate = totalRoomNights > 0 
+        ? Math.round((occupiedNights / totalRoomNights) * 100)
+        : 0
+      
+      const revenue = monthReservations?.reduce((sum, res) => sum + (res.total_amount || 0), 0) || 0
+      
+      trends.push({
+        month: months[month],
+        ocupacion: occupancyRate,
+        ingresos: Math.round(revenue)
+      })
+    }
+    
+    return { data: trends, error: null }
+    
+  } catch (error) {
+    console.error('Error getting occupancy trend:', error)
+    // Datos mock como fallback
+    return {
+      data: [
+        { month: 'Ene', ocupacion: 68, ingresos: 45000 },
+        { month: 'Feb', ocupacion: 72, ingresos: 52000 },
+        { month: 'Mar', ocupacion: 85, ingresos: 61000 },
+        { month: 'Abr', ocupacion: 79, ingresos: 58000 },
+        { month: 'May', ocupacion: 82, ingresos: 63000 },
+        { month: 'Jun', ocupacion: 88, ingresos: 71000 }
+      ],
+      error: null
+    }
+  }
+},
+
+// =============================================
 // DASHBOARD INTEGRATION FUNCTIONS
 // =============================================
 

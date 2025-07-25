@@ -11,7 +11,8 @@ import {
   Filter,
   Search,
   Plus,
-  Eye
+  Eye,
+  AlertCircle
 } from 'lucide-react';
 import { useReports } from '../../hooks/useReports';
 import Button from '../../components/common/Button';
@@ -22,7 +23,7 @@ import GuestsReport from '../../components/reports/GuestsReport';
 import RoomsReport from '../../components/reports/RoomsReport';
 import SuppliesReport from '../../components/reports/SuppliesReport';
 import CustomReport from '../../components/reports/CustomReport';
-import GeneralSummaryReport from '../../components/reports/GeneralSummaryReport'; // NUEVA IMPORTACIÓN
+import GeneralSummaryReport from '../../components/reports/GeneralSummaryReport';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
 const Reports = () => {
@@ -30,6 +31,7 @@ const Reports = () => {
   const [activeCategory, setActiveCategory] = useState('overview');
   const [selectedPeriod, setSelectedPeriod] = useState('thisMonth');
   const [showCustomReport, setShowCustomReport] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   
   // Filtros de fecha
   const [dateRange, setDateRange] = useState({
@@ -143,14 +145,48 @@ const Reports = () => {
     }
   ];
 
+  // Función para exportar reportes con validación mejorada
   const handleExportReport = async (reportType, format = 'pdf') => {
     try {
-      await exportReport(reportType, format, dateRange);
+      console.log(`📄 Exporting ${reportType} report as ${format}...`);
+      
+      // Verificar si hay datos para exportar
+      if (!overviewStats && reportType === 'overview') {
+        alert('No hay datos disponibles para exportar. Por favor, verifica que hay información en el período seleccionado.');
+        return;
+      }
+      
+      // Mostrar indicador de carga
+      const loadingToast = document.createElement('div');
+      loadingToast.className = 'fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+      loadingToast.textContent = 'Generando reporte...';
+      document.body.appendChild(loadingToast);
+      
+      await exportReport(reportType, format);
+      
+      // Remover indicador de carga
+      document.body.removeChild(loadingToast);
+      
+      // Mostrar éxito
+      const successToast = document.createElement('div');
+      successToast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+      successToast.textContent = 'Reporte exportado exitosamente';
+      document.body.appendChild(successToast);
+      
+      setTimeout(() => {
+        if (document.body.contains(successToast)) {
+          document.body.removeChild(successToast);
+        }
+      }, 3000);
+      
+      console.log('✅ Report exported successfully');
     } catch (error) {
-      console.error('Error exporting report:', error);
+      console.error('❌ Error exporting report:', error);
+      alert('Error al exportar el reporte: ' + error.message);
     }
   };
 
+  // Función para obtener clases de color
   const getColorClasses = (color) => {
     const colorMap = {
       blue: 'bg-blue-50 text-blue-600 border-blue-200',
@@ -163,13 +199,47 @@ const Reports = () => {
     return colorMap[color] || 'bg-gray-50 text-gray-600 border-gray-200';
   };
 
+  // Filtrar reportes por búsqueda
+  const filteredReports = predefinedReports.filter(report => {
+    const matchesSearch = !searchTerm || 
+      report.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      report.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = activeCategory === 'overview' || report.category === activeCategory;
+    
+    return matchesSearch && matchesCategory;
+  });
+
+  // Función para obtener el nombre del período
+  const getPeriodName = (period) => {
+    const periodNames = {
+      today: 'Hoy',
+      yesterday: 'Ayer',
+      thisWeek: 'Esta Semana',
+      lastWeek: 'Semana Pasada',
+      thisMonth: 'Este Mes',
+      lastMonth: 'Mes Pasado',
+      thisQuarter: 'Este Trimestre',
+      thisYear: 'Este Año',
+      custom: 'Personalizado'
+    };
+    return periodNames[period] || 'Personalizado';
+  };
+
+  // Manejo de errores
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+        <div className="text-center max-w-md">
+          <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">Error al cargar reportes</h3>
-          <p className="text-gray-600">{error}</p>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button 
+            variant="primary" 
+            onClick={() => window.location.reload()}
+          >
+            Reintentar
+          </Button>
         </div>
       </div>
     );
@@ -182,7 +252,7 @@ const Reports = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Informes</h1>
           <p className="text-gray-600 mt-1">
-            Reportes y análisis del hotel
+            Reportes y análisis del hotel - {getPeriodName(selectedPeriod)}
           </p>
         </div>
         
@@ -191,6 +261,7 @@ const Reports = () => {
             variant="outline"
             icon={Plus}
             onClick={() => setShowCustomReport(true)}
+            disabled={loading}
           >
             Reporte Personalizado
           </Button>
@@ -198,6 +269,8 @@ const Reports = () => {
             variant="primary"
             icon={Download}
             onClick={() => handleExportReport('overview', 'pdf')}
+            disabled={loading || !overviewStats}
+            loading={loading}
           >
             Exportar PDF
           </Button>
@@ -214,9 +287,9 @@ const Reports = () => {
       />
 
       {/* Stats Cards del Período Seleccionado */}
-      {overviewStats && (
+      {overviewStats && !loading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 mb-1">Ocupación Promedio</p>
@@ -229,7 +302,7 @@ const Reports = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 mb-1">Ingresos Totales</p>
@@ -242,7 +315,7 @@ const Reports = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 mb-1">Total Huéspedes</p>
@@ -255,7 +328,7 @@ const Reports = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 mb-1">Tarifa Promedio</p>
@@ -267,6 +340,24 @@ const Reports = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Loading state para stats */}
+      {loading && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 animate-pulse">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-8 bg-gray-200 rounded w-1/2 mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+                </div>
+                <div className="w-12 h-12 bg-gray-200 rounded-lg"></div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -282,9 +373,10 @@ const Reports = () => {
               <button
                 key={category.id}
                 onClick={() => setActiveCategory(category.id)}
-                className={`p-4 border-2 rounded-xl transition-all duration-200 text-left hover:shadow-md ${
+                disabled={loading}
+                className={`p-4 border-2 rounded-xl transition-all duration-200 text-left hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
                   isActive 
-                    ? `border-${category.color}-300 bg-${category.color}-50` 
+                    ? `border-${category.color}-300 bg-${category.color}-50 shadow-md` 
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
@@ -303,7 +395,7 @@ const Reports = () => {
 
       {/* Reportes Predefinidos */}
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
           <h3 className="text-lg font-semibold text-gray-900">Reportes Predefinidos</h3>
           <div className="flex items-center space-x-2">
             <div className="relative">
@@ -311,16 +403,17 @@ const Reports = () => {
               <input
                 type="text"
                 placeholder="Buscar reportes..."
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm w-64"
               />
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {predefinedReports
-            .filter(report => activeCategory === 'overview' || report.category === activeCategory)
-            .map((report) => {
+        {filteredReports.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredReports.map((report) => {
               const Icon = report.icon;
               
               return (
@@ -342,15 +435,15 @@ const Reports = () => {
                   
                   <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                     <span className="text-xs text-gray-500">
-                      Período: {selectedPeriod === 'thisMonth' ? 'Este mes' : 
-                               selectedPeriod === 'lastMonth' ? 'Mes pasado' : 
-                               'Personalizado'}
+                      Período: {getPeriodName(selectedPeriod)}
                     </span>
                     <div className="flex space-x-2">
                       <Button
                         size="sm"
                         variant="outline"
                         icon={Eye}
+                        onClick={() => setActiveCategory(report.category)}
+                        disabled={loading}
                       >
                         Ver
                       </Button>
@@ -359,6 +452,7 @@ const Reports = () => {
                         variant="outline"
                         icon={Download}
                         onClick={() => handleExportReport(report.id)}
+                        disabled={loading}
                       >
                         Exportar
                       </Button>
@@ -367,13 +461,19 @@ const Reports = () => {
                 </div>
               );
             })}
-        </div>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <Search className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+            <p>No se encontraron reportes que coincidan con la búsqueda</p>
+            <p className="text-sm">Intenta con otros términos o selecciona una categoría diferente</p>
+          </div>
+        )}
       </div>
 
       {/* Contenido del Reporte Activo */}
       <div className="min-h-[400px]">
         {activeCategory === 'overview' && (
-          // CAMBIÉ ESTA PARTE: Ahora usa GeneralSummaryReport completo
           <GeneralSummaryReport 
             dateRange={dateRange} 
             selectedPeriod={selectedPeriod} 
@@ -381,7 +481,11 @@ const Reports = () => {
         )}
         
         {activeCategory === 'occupancy' && (
-          <OccupancyReport data={occupancyData} loading={loading} detailed />
+          <OccupancyReport 
+            dateRange={dateRange} 
+            selectedPeriod={selectedPeriod} 
+            detailed={true}
+          />
         )}
         
         {activeCategory === 'revenue' && (
@@ -415,11 +519,28 @@ const Reports = () => {
 
       {/* Modal de Reporte Personalizado */}
       {showCustomReport && (
-        <CustomReport
-          dateRange={dateRange}
-          selectedPeriod={selectedPeriod}
-          onClose={() => setShowCustomReport(false)}
-        />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-7xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">Reporte Personalizado</h2>
+              <button
+                onClick={() => setShowCustomReport(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <CustomReport
+                dateRange={dateRange}
+                selectedPeriod={selectedPeriod}
+                onClose={() => setShowCustomReport(false)}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

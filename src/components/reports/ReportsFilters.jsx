@@ -208,8 +208,11 @@ const ReportsFilters = ({
           </span>
         </div>
         <div className="mt-1 text-xs text-blue-700">
-          {Math.ceil((dateRange.endDate - dateRange.startDate) / (1000 * 60 * 60 * 24))} día(s) de datos
-        </div>
+  {dateRange.endDate && dateRange.startDate 
+    ? Math.ceil((dateRange.endDate - dateRange.startDate) / (1000 * 60 * 60 * 24))
+    : 0
+  } día(s) de datos
+</div>
       </div>
 
       {/* Filtros rápidos adicionales */}
