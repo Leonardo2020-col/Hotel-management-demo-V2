@@ -14,7 +14,7 @@ import {
 import Button from '../common/Button';
 import { formatCurrency, formatNumber, formatPercentage } from '../../utils/formatters';
 import { db } from '../../lib/supabase';
-
+//
 const GeneralSummaryReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
   const [loading, setLoading] = useState(true);
   const [summaryData, setSummaryData] = useState({

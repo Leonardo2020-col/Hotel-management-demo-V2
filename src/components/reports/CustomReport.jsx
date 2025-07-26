@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Plus, Trash2, Download, BarChart3, PieChart, LineChart, Save } from 'lucide-react';
 import Button from '../common/Button';
 import { db } from '../../lib/supabase'; // ← AGREGAR ESTA IMPORTACIÓN
+import { generateCustomReportPDF } from '../../utils/pdfGenerator';
 
 const CustomReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
   const [loading, setLoading] = useState(false);
