@@ -255,7 +255,7 @@ const CustomReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
   };
 
   const deleteReport = async (reportId) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este reporte?')) {
+    if (!window.confirm('¿Estás seguro de que quieres eliminar este reporte?')) {
       return;
     }
 
