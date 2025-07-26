@@ -279,9 +279,8 @@ getAdvancedDashboardStats: async (branchId = null) => {
   }
 },
 
-// Agregar esta función al objeto `db` en src/lib/supabase.js
 
-// Agregar esta función al objeto `db` en src/lib/supabase.js
+// Reemplazar la función deleteGuest en el objeto `db` en src/lib/supabase.js
 
 async deleteGuest(guestId) {
   try {
@@ -312,27 +311,25 @@ async deleteGuest(guestId) {
       );
     }
     
-    // También verificar reservas históricas para prevenir problemas de integridad
-    const { data: allReservations, error: historyError } = await supabase
+    // Verificar si tiene reservas completadas (checked_out)
+    const { data: completedReservations, error: completedError } = await supabase
       .from('reservations')
       .select('id, status')
-      .eq('guest_id', guestId);
+      .eq('guest_id', guestId)
+      .eq('status', 'checked_out');
     
-    if (historyError) {
-      console.warn('Could not check reservation history:', historyError);
+    if (completedError) {
+      console.warn('Could not check completed reservations:', completedError);
     }
     
-    // Si tiene reservas históricas, considerar soft delete
-    if (allReservations && allReservations.length > 0) {
-      console.log(`Guest has ${allReservations.length} total reservations. Performing soft delete.`);
+    // Si tiene reservas completadas, cambiar solo el status a 'inactive'
+    if (completedReservations && completedReservations.length > 0) {
+      console.log(`Guest has ${completedReservations.length} completed reservations. Marking as inactive instead of deleting.`);
       
-      // Soft delete: marcar como eliminado en lugar de eliminar completamente
       const { data, error } = await supabase
         .from('guests')
         .update({
           status: 'inactive',
-          is_deleted: true,
-          deleted_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .eq('id', guestId)
@@ -340,15 +337,15 @@ async deleteGuest(guestId) {
         .single();
       
       if (error) {
-        console.error('Error soft deleting guest:', error);
+        console.error('Error marking guest as inactive:', error);
         throw new Error('Error al desactivar el huésped: ' + error.message);
       }
       
-      console.log('✅ Guest soft deleted successfully:', data);
+      console.log('✅ Guest marked as inactive successfully:', data);
       return { data, error: null };
     }
     
-    // Si no tiene reservas, proceder con eliminación completa
+    // Si no tiene reservas o solo tiene reservas canceladas, proceder con eliminación completa
     const { data, error } = await supabase
       .from('guests')
       .delete()
@@ -361,7 +358,7 @@ async deleteGuest(guestId) {
       
       // Manejar errores específicos de PostgreSQL
       if (error.code === '23503') {
-        throw new Error('No se puede eliminar el huésped porque tiene registros relacionados. Contacta al administrador.');
+        throw new Error('No se puede eliminar el huésped porque tiene registros relacionados. El huésped se marcará como inactivo.');
       }
       
       throw new Error('Error al eliminar el huésped: ' + error.message);
@@ -373,7 +370,35 @@ async deleteGuest(guestId) {
   } catch (error) {
     console.error('Error in deleteGuest:', error);
     
-    // Re-lanzar el error para que sea manejado por el componente
+    // Si es un error de integridad referencial, intentar marcar como inactivo
+    if (error.message.includes('registros relacionados') || error.code === '23503') {
+      try {
+        console.log('Attempting to mark guest as inactive due to foreign key constraint...');
+        
+        const { data, error: updateError } = await supabase
+          .from('guests')
+          .update({
+            status: 'inactive',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', guestId)
+          .select()
+          .single();
+        
+        if (updateError) {
+          throw new Error('Error al desactivar el huésped: ' + updateError.message);
+        }
+        
+        console.log('✅ Guest marked as inactive due to constraints:', data);
+        return { data, error: null };
+        
+      } catch (fallbackError) {
+        console.error('Fallback inactive marking also failed:', fallbackError);
+        throw fallbackError;
+      }
+    }
+    
+    // Re-lanzar el error original
     throw error;
   }
 },
