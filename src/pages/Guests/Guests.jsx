@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Users, Plus, UserX, Search, Filter } from 'lucide-react';
+import { Users, Plus, UserX, Search, Filter, AlertTriangle, CheckCircle, X } from 'lucide-react';
 import { useGuests } from '../../hooks/useGuests';
 import Button from '../../components/common/Button';
 import GuestsGrid from '../../components/guests/GuestsGrid';
 import GuestProfile from '../../components/guests/GuestProfile';
 import CreateGuestModal from '../../components/guests/CreateGuestModal';
 import EditGuestModal from '../../components/guests/EditGuestModal';
+import toast from 'react-hot-toast';
 
 const Guests = () => {
   // Estados principales
@@ -14,6 +15,7 @@ const Guests = () => {
   const [showProfile, setShowProfile] = useState(false);
   const [selectedGuest, setSelectedGuest] = useState(null);
   const [selectedGuests, setSelectedGuests] = useState([]);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Filtros
   const [filters, setFilters] = useState({
@@ -60,27 +62,100 @@ const Guests = () => {
   };
 
   const handleDeleteGuest = async (guestId) => {
-    if (window.confirm('¿Estás seguro de que quieres eliminar este huésped?')) {
-      try {
-        await deleteGuest(guestId);
-      } catch (error) {
-        console.error('Error deleting guest:', error);
+    try {
+      setIsDeleting(true);
+      
+      // Encontrar el huésped para mostrar su nombre
+      const guest = guests.find(g => g.id === guestId);
+      const guestName = guest?.fullName || guest?.full_name || 'este huésped';
+      
+      await deleteGuest(guestId);
+      
+      // Limpiar selección si el huésped eliminado estaba seleccionado
+      setSelectedGuests(prev => prev.filter(id => id !== guestId));
+      
+      toast.success(`${guestName} eliminado exitosamente`);
+      
+    } catch (error) {
+      console.error('Error deleting guest:', error);
+      
+      // Manejar diferentes tipos de errores
+      if (error.message.includes('reservas activas')) {
+        toast.error('No se puede eliminar: el huésped tiene reservas activas');
+      } else if (error.message.includes('registros relacionados')) {
+        toast.error('No se puede eliminar: el huésped tiene registros relacionados');
+      } else {
+        toast.error('Error al eliminar el huésped: ' + error.message);
       }
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const handleDeleteSelected = async () => {
     if (selectedGuests.length === 0) return;
     
-    if (window.confirm(`¿Estás seguro de que quieres eliminar ${selectedGuests.length} huésped(es)?`)) {
-      try {
-        for (const guestId of selectedGuests) {
+    const confirmed = window.confirm(
+      `¿Estás seguro de que quieres eliminar ${selectedGuests.length} huésped(es)?\n\n` +
+      '⚠️ Esta acción no se puede deshacer.\n' +
+      '• Se verificará que ninguno tenga reservas activas\n' +
+      '• Los que tengan reservas activas no se eliminarán'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      setIsDeleting(true);
+      
+      const errors = [];
+      let successCount = 0;
+      const guestsToDelete = [...selectedGuests]; // Copia para evitar modificaciones durante iteración
+      
+      // Procesar eliminación uno por uno para manejar errores individuales
+      for (const guestId of guestsToDelete) {
+        try {
+          const guest = guests.find(g => g.id === guestId);
+          const guestName = guest?.fullName || guest?.full_name || `ID: ${guestId}`;
+          
           await deleteGuest(guestId);
+          successCount++;
+          
+        } catch (error) {
+          const guest = guests.find(g => g.id === guestId);
+          const guestName = guest?.fullName || guest?.full_name || `ID: ${guestId}`;
+          
+          if (error.message.includes('reservas activas')) {
+            errors.push(`${guestName}: Tiene reservas activas`);
+          } else if (error.message.includes('registros relacionados')) {
+            errors.push(`${guestName}: Tiene registros relacionados`);
+          } else {
+            errors.push(`${guestName}: ${error.message}`);
+          }
         }
-        setSelectedGuests([]);
-      } catch (error) {
-        console.error('Error deleting guests:', error);
       }
+      
+      // Mostrar resumen de resultados
+      if (successCount > 0) {
+        toast.success(`${successCount} huésped(es) eliminado(s) exitosamente`);
+      }
+      
+      if (errors.length > 0) {
+        console.error('Errors during bulk delete:', errors);
+        toast.error(
+          `${errors.length} huésped(es) no pudieron eliminarse:\n` +
+          errors.slice(0, 3).join('\n') +
+          (errors.length > 3 ? `\n... y ${errors.length - 3} más` : '')
+        );
+      }
+      
+      // Limpiar selección
+      setSelectedGuests([]);
+      
+    } catch (error) {
+      console.error('Error in bulk delete:', error);
+      toast.error('Error durante la eliminación masiva');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -108,6 +183,15 @@ const Guests = () => {
 
   const hasActiveFilters = filters.search || filters.status !== 'all' || filters.documentType !== 'all';
 
+  // Seleccionar/deseleccionar todos
+  const handleSelectAll = () => {
+    if (selectedGuests.length === filteredGuests.length && filteredGuests.length > 0) {
+      setSelectedGuests([]);
+    } else {
+      setSelectedGuests(filteredGuests.map(g => g.id));
+    }
+  };
+
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -115,6 +199,13 @@ const Guests = () => {
           <UserX className="mx-auto h-12 w-12 text-red-500 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">Error al cargar datos</h3>
           <p className="text-gray-600">{error}</p>
+          <Button 
+            variant="outline" 
+            onClick={() => window.location.reload()} 
+            className="mt-4"
+          >
+            Reintentar
+          </Button>
         </div>
       </div>
     );
@@ -139,8 +230,11 @@ const Guests = () => {
               variant="danger"
               onClick={handleDeleteSelected}
               className="mr-2"
+              disabled={isDeleting}
+              loading={isDeleting}
+              icon={selectedGuests.length > 1 ? Users : UserX}
             >
-              Eliminar ({selectedGuests.length})
+              {isDeleting ? 'Eliminando...' : `Eliminar (${selectedGuests.length})`}
             </Button>
           )}
           
@@ -148,6 +242,7 @@ const Guests = () => {
             variant="primary"
             icon={Plus}
             onClick={() => setShowCreateModal(true)}
+            disabled={isDeleting}
           >
             Nuevo Huésped
           </Button>
@@ -172,7 +267,7 @@ const Guests = () => {
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="flex items-center">
               <div className="p-2 bg-green-100 rounded-lg">
-                <Users className="w-6 h-6 text-green-600" />
+                <CheckCircle className="w-6 h-6 text-green-600" />
               </div>
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-600">Activos</p>
@@ -207,6 +302,23 @@ const Guests = () => {
         </div>
       )}
 
+      {/* Alert de eliminación masiva */}
+      {isDeleting && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <AlertTriangle className="h-5 w-5 text-yellow-400 animate-pulse" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-yellow-700">
+                <span className="font-medium">Procesando eliminación...</span>
+                {' '}Por favor espera mientras se procesan las eliminaciones. No cierres esta ventana.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
         <div className="flex items-center justify-between mb-4">
@@ -225,6 +337,7 @@ const Guests = () => {
               variant="outline"
               size="sm"
               onClick={clearFilters}
+              icon={X}
             >
               Limpiar
             </Button>
@@ -267,23 +380,90 @@ const Guests = () => {
             <option value="Carnet">Carné de Extranjería</option>
           </select>
         </div>
+
+        {/* Filtros rápidos */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant={filters.status === 'active' ? 'primary' : 'outline'}
+            onClick={() => handleFilterChange('status', filters.status === 'active' ? 'all' : 'active')}
+            icon={CheckCircle}
+          >
+            Solo Activos
+          </Button>
+          
+          <Button
+            size="sm"
+            variant={filters.documentType === 'DNI' ? 'primary' : 'outline'}
+            onClick={() => handleFilterChange('documentType', filters.documentType === 'DNI' ? 'all' : 'DNI')}
+          >
+            Solo DNI
+          </Button>
+        </div>
       </div>
 
-      {/* Results Count */}
+      {/* Results Header */}
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-600">
-          {filteredGuests.length} huésped{filteredGuests.length !== 1 ? 'es' : ''} 
-          {hasActiveFilters ? ' encontrado' : ' registrado'}{filteredGuests.length !== 1 ? 's' : ''}
-        </span>
+        <div className="flex items-center space-x-4">
+          <span className="text-sm text-gray-600">
+            {filteredGuests.length} huésped{filteredGuests.length !== 1 ? 'es' : ''} 
+            {hasActiveFilters ? ' encontrado' : ' registrado'}{filteredGuests.length !== 1 ? 's' : ''}
+          </span>
+          
+          {filteredGuests.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={selectedGuests.length === filteredGuests.length && filteredGuests.length > 0}
+                onChange={handleSelectAll}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                disabled={isDeleting}
+              />
+              <span className="text-sm text-gray-500">
+                Seleccionar todos
+              </span>
+            </div>
+          )}
+        </div>
         
-        {filteredGuests.length > 0 && (
-          <div className="text-sm text-gray-500">
-            {selectedGuests.length > 0 && (
-              <span>{selectedGuests.length} seleccionado{selectedGuests.length !== 1 ? 's' : ''}</span>
-            )}
+        {selectedGuests.length > 0 && (
+          <div className="text-sm text-gray-500 flex items-center space-x-4">
+            <span>{selectedGuests.length} seleccionado{selectedGuests.length !== 1 ? 's' : ''}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSelectedGuests([])}
+              disabled={isDeleting}
+            >
+              Limpiar selección
+            </Button>
           </div>
         )}
       </div>
+
+      {/* Información adicional */}
+      {filteredGuests.length > 0 && guestsStats && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <Users className="h-5 w-5 text-blue-600 mt-0.5" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-sm font-medium text-blue-900 mb-1">
+                Información del sistema
+              </h4>
+              <div className="text-sm text-blue-700 space-y-1">
+                <p>• Los huéspedes con reservas activas no pueden eliminarse</p>
+                <p>• Se recomienda verificar el historial antes de eliminar</p>
+                <p>• Total de huéspedes registrados: {guestsStats.total}</p>
+                {guestsStats.documentTypes && (
+                  <p>• Tipos de documento más comunes: {Object.keys(guestsStats.documentTypes).slice(0, 2).join(', ')}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Guests Grid */}
       <GuestsGrid
@@ -296,14 +476,86 @@ const Guests = () => {
         onViewProfile={openProfile}
       />
 
-      {/* Modals */}
-      {showCreateModal && (
-        <CreateGuestModal
-          isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onSubmit={handleCreateGuest}
-        />
+      {/* Empty State - Sin huéspedes registrados */}
+      {!loading && filteredGuests.length === 0 && !hasActiveFilters && guests.length === 0 && (
+        <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
+          <div className="max-w-md mx-auto">
+            <Users className="mx-auto h-16 w-16 text-gray-400 mb-6" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              ¡Bienvenido al sistema de huéspedes!
+            </h3>
+            <p className="text-gray-600 mb-8">
+              Aún no tienes huéspedes registrados. Comienza agregando tu primer huésped para gestionar las reservas del hotel.
+            </p>
+            <div className="space-y-4">
+              <Button
+                variant="primary"
+                size="lg"
+                icon={Plus}
+                onClick={() => setShowCreateModal(true)}
+                className="px-8"
+              >
+                Registrar Primer Huésped
+              </Button>
+              <div className="text-sm text-gray-500">
+                El registro es rápido y solo requiere información básica
+              </div>
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* Empty State - Con filtros aplicados */}
+      {!loading && filteredGuests.length === 0 && hasActiveFilters && guests.length > 0 && (
+        <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+          <Search className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            No se encontraron huéspedes
+          </h3>
+          <p className="text-gray-600 mb-6">
+            No hay huéspedes que coincidan con los filtros aplicados.
+            <br />
+            Intenta con diferentes criterios de búsqueda.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button
+              variant="outline"
+              onClick={clearFilters}
+              icon={X}
+            >
+              Limpiar Todos los Filtros
+            </Button>
+            <span className="text-sm text-gray-500">o</span>
+            <Button
+              variant="primary"
+              icon={Plus}
+              onClick={() => setShowCreateModal(true)}
+            >
+              Registrar Nuevo Huésped
+            </Button>
+          </div>
+          <div className="mt-4 text-sm text-gray-500">
+            Total de huéspedes en el sistema: {guests.length}
+          </div>
+        </div>
+      )}
+
+      {/* Loading State específico para guests grid */}
+      {loading && (
+        <div className="bg-white rounded-xl border border-gray-200 p-8">
+          <div className="flex items-center justify-center space-x-3">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="text-gray-600">Cargando huéspedes...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      <CreateGuestModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={handleCreateGuest}
+      />
 
       {showEditModal && selectedGuest && (
         <EditGuestModal
@@ -327,6 +579,20 @@ const Guests = () => {
           guest={selectedGuest}
         />
       )}
+
+      {/* Floating Action Button para móviles (opcional) */}
+      <div className="fixed bottom-6 right-6 sm:hidden">
+        <Button
+          variant="primary"
+          size="lg"
+          icon={Plus}
+          onClick={() => setShowCreateModal(true)}
+          className="rounded-full w-14 h-14 shadow-lg"
+          disabled={isDeleting}
+        >
+          <span className="sr-only">Agregar huésped</span>
+        </Button>
+      </div>
     </div>
   );
 };

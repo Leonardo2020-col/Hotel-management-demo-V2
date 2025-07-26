@@ -279,6 +279,73 @@ getAdvancedDashboardStats: async (branchId = null) => {
   }
 },
 
+// Agregar esta función al objeto `db` en src/lib/supabase.js
+
+async deleteGuest(guestId) {
+  try {
+    console.log('🗑️ Deleting guest with ID:', guestId);
+    
+    // Verificar si el huésped tiene reservas activas
+    const { data: activeReservations, error: checkError } = await supabase
+      .from('reservations')
+      .select('id, status, confirmation_code')
+      .eq('guest_id', guestId)
+      .in('status', ['confirmed', 'checked_in', 'pending']);
+    
+    if (checkError) {
+      console.error('Error checking guest reservations:', checkError);
+      throw checkError;
+    }
+    
+    // Si tiene reservas activas, no permitir eliminación
+    if (activeReservations && activeReservations.length > 0) {
+      const activeStatuses = activeReservations.map(r => r.status).join(', ');
+      return { 
+        data: null, 
+        error: { 
+          message: `No se puede eliminar el huésped. Tiene ${activeReservations.length} reserva(s) activa(s) con estado: ${activeStatuses}. Cancela o completa las reservas primero.` 
+        }
+      };
+    }
+    
+    // Proceder con la eliminación
+    const { data, error } = await supabase
+      .from('guests')
+      .delete()
+      .eq('id', guestId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error deleting guest:', error);
+      throw error;
+    }
+    
+    console.log('✅ Guest deleted successfully:', data);
+    return { data, error: null };
+    
+  } catch (error) {
+    console.error('Error in deleteGuest:', error);
+    
+    // Manejar errores específicos de PostgreSQL
+    if (error.code === '23503') {
+      return { 
+        data: null, 
+        error: { 
+          message: 'No se puede eliminar el huésped porque tiene registros relacionados (reservas, históricos, etc.). Contacta al administrador.' 
+        }
+      };
+    }
+    
+    return { 
+      data: null, 
+      error: { 
+        message: error.message || 'Error desconocido al eliminar el huésped'
+      }
+    };
+  }
+},
+
 // =============================================
 // FUNCIONES FALTANTES PARA AGREGAR A supabase.js
 // Agregar estas funciones al objeto `db` en tu archivo supabase.js

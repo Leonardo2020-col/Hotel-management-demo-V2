@@ -148,28 +148,88 @@ export const useGuests = () => {
   }, []);
 
   // Eliminar huésped
-  const deleteGuest = useCallback(async (guestId) => {
-    try {
-      const { data, error } = await db.deleteGuest(guestId);
+  // Eliminar huésped con validaciones mejoradas
+const deleteGuest = useCallback(async (guestId) => {
+  try {
+    console.log('🗑️ Attempting to delete guest:', guestId);
+    
+    const { data, error } = await db.deleteGuest(guestId);
 
-      if (error) {
-        toast.error('Error al eliminar el huésped: ' + error.message);
-        throw error;
-      }
+    if (error) {
+      // Mostrar error específico al usuario
+      toast.error(error.message || 'Error al eliminar el huésped');
+      throw new Error(error.message);
+    }
 
-      toast.success('Huésped eliminado exitosamente');
-      
-      // Remover del estado local
-      setGuests(prev => prev.filter(guest => guest.id !== guestId));
-      
-      return data;
-    } catch (error) {
-      console.error('Error deleting guest:', error);
-      toast.error('Error al eliminar el huésped');
+    // Si la eliminación fue exitosa
+    toast.success('Huésped eliminado exitosamente');
+    
+    // Actualizar el estado local inmediatamente
+    setGuests(prev => prev.filter(guest => guest.id !== guestId));
+    
+    // Recalcular estadísticas
+    const updatedGuests = guests.filter(guest => guest.id !== guestId);
+    calculateStats(updatedGuests);
+    
+    return data;
+  } catch (error) {
+    console.error('Error deleting guest:', error);
+    // No mostrar toast aquí porque ya se mostró arriba
+    throw error;
+  }
+}, [guests, calculateStats]);
+
+// Función adicional para eliminación suave (soft delete)
+const softDeleteGuest = useCallback(async (guestId) => {
+  try {
+    const { data, error } = await db.softDeleteGuest(guestId);
+
+    if (error) {
+      toast.error(error.message || 'Error al desactivar el huésped');
       throw error;
     }
-  }, []);
 
+    toast.success('Huésped desactivado exitosamente');
+    
+    // Actualizar estado local
+    setGuests(prev => prev.map(guest => 
+      guest.id === guestId 
+        ? { ...guest, status: 'inactive', is_deleted: true }
+        : guest
+    ));
+    
+    return data;
+  } catch (error) {
+    console.error('Error soft deleting guest:', error);
+    throw error;
+  }
+}, []);
+
+// Función para restaurar huésped
+const restoreGuest = useCallback(async (guestId) => {
+  try {
+    const { data, error } = await db.restoreGuest(guestId);
+
+    if (error) {
+      toast.error('Error al restaurar el huésped: ' + error.message);
+      throw error;
+    }
+
+    toast.success('Huésped restaurado exitosamente');
+    
+    // Actualizar estado local
+    setGuests(prev => prev.map(guest => 
+      guest.id === guestId 
+        ? { ...guest, status: 'active', is_deleted: false }
+        : guest
+    ));
+    
+    return data;
+  } catch (error) {
+    console.error('Error restoring guest:', error);
+    throw error;
+  }
+}, []);
   // Buscar huéspedes
   const searchGuests = useCallback(async (searchTerm) => {
     try {
@@ -277,6 +337,7 @@ export const useGuests = () => {
     createGuest,
     updateGuest,
     deleteGuest,
+    restoreGuest,
     
     // Métodos de consulta
     searchGuests,
