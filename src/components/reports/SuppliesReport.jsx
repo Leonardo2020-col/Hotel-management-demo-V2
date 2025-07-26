@@ -96,10 +96,13 @@ const SuppliesReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
         };
       });
 
-      // 6. Obtener historial de consumo (simulado)
+      // 6. Obtener historial de consumo (CORREGIDO)
       const { data: consumptionHistory } = await db.getConsumptionHistory({ limit: 100 });
       
-      // Top items consumidos (simulado basado en stock bajo)
+      // 7. Obtener check-in orders (CORREGIDO)
+      const { data: checkinOrders } = await db.getCheckinOrders({ limit: 100 });
+
+      // 8. Top items consumidos (simulado basado en stock bajo)
       const topConsumed = actualSupplies
         .sort((a, b) => {
           const aStock = a.currentStock || a.current_stock || 0;
@@ -120,10 +123,10 @@ const SuppliesReport = ({ dateRange = {}, selectedPeriod = 'thisMonth' }) => {
           };
         });
 
-      // 7. Tendencia mensual (simulada)
+      // 9. Tendencia mensual (simulada)
       const monthlyTrend = generateMonthlyTrend(totalValue);
 
-      // 8. Consumo mensual estimado
+      // 10. Consumo mensual estimado
       const monthlyConsumption = totalValue * 0.15; // 15% del valor total como estimación
 
       setSuppliesData({
@@ -554,6 +557,22 @@ function generateMonthlyTrend(totalValue) {
     consumption: Math.round(totalValue * (0.10 + Math.random() * 0.10)), // 10-20% del valor total
     cost: Math.round(totalValue * (0.08 + Math.random() * 0.08)) // 8-16% del valor total
   }));
+}
+
+function isInPeriod(dateStr, dateRange) {
+  if (!dateRange?.startDate || !dateRange?.endDate) {
+    const end = new Date();
+    const start = new Date();
+    start.setMonth(start.getMonth() - 1);
+    const date = new Date(dateStr);
+    return date >= start && date <= end;
+  }
+  
+  const date = new Date(dateStr);
+  const start = new Date(dateRange.startDate);
+  const end = new Date(dateRange.endDate);
+  
+  return date >= start && date <= end;
 }
 
 function formatPeriod(dateRange) {

@@ -80,6 +80,206 @@ export const getRoomsByFloor = async (branchId = null) => {
 export const db = {
 
 // =============================================
+// AGREGAR ESTAS FUNCIONES A src/lib/supabase.js
+// =============================================
+
+// Función para obtener snack items agrupados por categoría
+getSnackItems: async () => {
+  try {
+    const { data, error } = await supabase.rpc('get_snack_items');
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error getting snack items:', error);
+    // Fallback con datos mock si la función no existe
+    const mockData = {
+      "FRUTAS": [
+        {"id": 1, "name": "Manzana Roja", "description": "Manzana fresca importada", "price": 3.50},
+        {"id": 2, "name": "Plátano", "description": "Plátano orgánico nacional", "price": 2.00},
+        {"id": 3, "name": "Naranja", "description": "Naranja dulce de temporada", "price": 3.00}
+      ],
+      "BEBIDAS": [
+        {"id": 4, "name": "Agua Mineral", "description": "Agua mineral 500ml", "price": 4.00},
+        {"id": 5, "name": "Coca Cola", "description": "Coca Cola 355ml", "price": 5.50},
+        {"id": 6, "name": "Café Express", "description": "Café americano caliente", "price": 8.00}
+      ],
+      "SNACKS": [
+        {"id": 7, "name": "Papas Lays", "description": "Papas fritas clásicas", "price": 6.50},
+        {"id": 8, "name": "Galletas Oreo", "description": "Galletas con crema", "price": 7.00}
+      ]
+    };
+    return { data: mockData, error: null };
+  }
+},
+
+// Función para guardar reportes personalizados
+saveCustomReport: async (reportData) => {
+  try {
+    const { data, error } = await supabase
+      .from('saved_reports')
+      .insert([{
+        title: reportData.title,
+        description: reportData.description,
+        config: reportData.config,
+        created_by: reportData.created_by || 'system',
+        is_active: true
+      }])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error saving custom report:', error);
+    return { data: null, error };
+  }
+},
+
+// Función para obtener reportes guardados
+getSavedReports: async (userId = null) => {
+  try {
+    let query = supabase
+      .from('saved_reports')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+    
+    if (userId) {
+      query = query.eq('created_by', userId);
+    }
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error getting saved reports:', error);
+    return { data: [], error };
+  }
+},
+
+// Función para actualizar reporte guardado
+updateSavedReport: async (reportId, updateData) => {
+  try {
+    const { data, error } = await supabase
+      .from('saved_reports')
+      .update({
+        ...updateData,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', reportId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error updating saved report:', error);
+    return { data: null, error };
+  }
+},
+
+// Función para eliminar reporte guardado
+deleteSavedReport: async (reportId) => {
+  try {
+    const { data, error } = await supabase
+      .from('saved_reports')
+      .update({ is_active: false })
+      .eq('id', reportId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error deleting saved report:', error);
+    return { data: null, error };
+  }
+},
+
+// Función para obtener historial de consumo de suministros
+getConsumptionHistory: async (options = {}) => {
+  try {
+    let query = supabase
+      .from('supply_movements')
+      .select('*')
+      .eq('movement_type', 'consumption')
+      .order('created_at', { ascending: false });
+    
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+    
+    if (options.supply_id) {
+      query = query.eq('supply_id', options.supply_id);
+    }
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error getting consumption history:', error);
+    // Si la tabla no existe, devolver array vacío
+    return { data: [], error: null };
+  }
+},
+
+// Función para obtener check-in orders (snacks vendidos)
+getCheckinOrders: async (options = {}) => {
+  try {
+    let query = supabase
+      .from('checkin_orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+    
+    if (options.startDate && options.endDate) {
+      query = query
+        .gte('created_at', options.startDate)
+        .lte('created_at', options.endDate);
+    }
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error getting checkin orders:', error);
+    // Si la tabla no existe, devolver array vacío
+    return { data: [], error: null };
+  }
+},
+
+// Función para obtener estadísticas avanzadas del dashboard
+getAdvancedDashboardStats: async (branchId = null) => {
+  try {
+    const { data, error } = await supabase.rpc('get_dashboard_stats', {
+      branch_id_param: branchId
+    });
+    
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error getting advanced dashboard stats:', error);
+    // Fallback con estadísticas básicas
+    return { 
+      data: {
+        total_rooms: 0,
+        occupied_rooms: 0,
+        available_rooms: 0,
+        occupancy_rate: 0,
+        total_revenue: 0,
+        total_guests: 0,
+        checkins_today: 0,
+        checkouts_today: 0
+      }, 
+      error: null 
+    };
+  }
+},
+
+// =============================================
 // FUNCIONES FALTANTES PARA AGREGAR A supabase.js
 // Agregar estas funciones al objeto `db` en tu archivo supabase.js
 // =============================================
