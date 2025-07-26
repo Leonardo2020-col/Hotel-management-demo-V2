@@ -61,103 +61,171 @@ const Guests = () => {
     }
   };
 
-  const handleDeleteGuest = async (guestId) => {
-    try {
-      setIsDeleting(true);
-      
-      // Encontrar el huésped para mostrar su nombre
-      const guest = guests.find(g => g.id === guestId);
-      const guestName = guest?.fullName || guest?.full_name || 'este huésped';
-      
-      await deleteGuest(guestId);
-      
-      // Limpiar selección si el huésped eliminado estaba seleccionado
-      setSelectedGuests(prev => prev.filter(id => id !== guestId));
-      
-      toast.success(`${guestName} eliminado exitosamente`);
-      
-    } catch (error) {
-      console.error('Error deleting guest:', error);
-      
-      // Manejar diferentes tipos de errores
-      if (error.message.includes('reservas activas')) {
-        toast.error('No se puede eliminar: el huésped tiene reservas activas');
-      } else if (error.message.includes('registros relacionados')) {
-        toast.error('No se puede eliminar: el huésped tiene registros relacionados');
-      } else {
-        toast.error('Error al eliminar el huésped: ' + error.message);
-      }
-    } finally {
-      setIsDeleting(false);
-    }
-  };
+  
 
-  const handleDeleteSelected = async () => {
-    if (selectedGuests.length === 0) return;
+// Reemplazar las funciones handleDeleteGuest y handleDeleteSelected en Guests.jsx
+
+const handleDeleteGuest = async (guestId) => {
+  try {
+    // Encontrar el huésped para mostrar su nombre
+    const guest = guests.find(g => g.id === guestId);
+    const guestName = guest?.fullName || guest?.full_name || 'este huésped';
     
+    // Confirmación más específica
     const confirmed = window.confirm(
-      `¿Estás seguro de que quieres eliminar ${selectedGuests.length} huésped(es)?\n\n` +
-      '⚠️ Esta acción no se puede deshacer.\n' +
-      '• Se verificará que ninguno tenga reservas activas\n' +
-      '• Los que tengan reservas activas no se eliminarán'
+      `¿Estás seguro de que quieres eliminar a ${guestName}?\n\n` +
+      '⚠️ Esta acción verificará:\n' +
+      '• Que no tenga reservas activas (confirmadas, check-in, pendientes)\n' +
+      '• Si tiene historial de reservas, se desactivará en lugar de eliminarse\n' +
+      '• Si no tiene reservas, se eliminará permanentemente\n\n' +
+      'Esta acción no se puede deshacer.'
     );
     
     if (!confirmed) return;
     
-    try {
-      setIsDeleting(true);
-      
-      const errors = [];
-      let successCount = 0;
-      const guestsToDelete = [...selectedGuests]; // Copia para evitar modificaciones durante iteración
-      
-      // Procesar eliminación uno por uno para manejar errores individuales
-      for (const guestId of guestsToDelete) {
-        try {
-          const guest = guests.find(g => g.id === guestId);
-          const guestName = guest?.fullName || guest?.full_name || `ID: ${guestId}`;
-          
-          await deleteGuest(guestId);
-          successCount++;
-          
-        } catch (error) {
-          const guest = guests.find(g => g.id === guestId);
-          const guestName = guest?.fullName || guest?.full_name || `ID: ${guestId}`;
-          
-          if (error.message.includes('reservas activas')) {
-            errors.push(`${guestName}: Tiene reservas activas`);
-          } else if (error.message.includes('registros relacionados')) {
-            errors.push(`${guestName}: Tiene registros relacionados`);
-          } else {
-            errors.push(`${guestName}: ${error.message}`);
-          }
-        }
+    await deleteGuest(guestId);
+    
+    // Limpiar selección si el huésped eliminado estaba seleccionado
+    setSelectedGuests(prev => prev.filter(id => id !== guestId));
+    
+    // El mensaje de éxito se maneja aquí porque deleteGuest no incluye toast
+    toast.success(`${guestName} eliminado/desactivado exitosamente`);
+    
+  } catch (error) {
+    console.error('Error deleting guest:', error);
+    
+    // Manejar diferentes tipos de errores con mensajes específicos
+    let errorMessage = 'Error desconocido al eliminar el huésped';
+    
+    if (error.message) {
+      if (error.message.includes('reserva(s) activa(s)')) {
+        errorMessage = error.message; // Usar el mensaje completo que incluye detalles
+      } else if (error.message.includes('registros relacionados')) {
+        errorMessage = 'No se puede eliminar: el huésped tiene registros relacionados en el sistema';
+      } else if (error.message.includes('Error al verificar')) {
+        errorMessage = 'Error al verificar las reservas del huésped. Intenta nuevamente.';
+      } else {
+        errorMessage = error.message;
       }
-      
-      // Mostrar resumen de resultados
-      if (successCount > 0) {
-        toast.success(`${successCount} huésped(es) eliminado(s) exitosamente`);
-      }
-      
-      if (errors.length > 0) {
-        console.error('Errors during bulk delete:', errors);
-        toast.error(
-          `${errors.length} huésped(es) no pudieron eliminarse:\n` +
-          errors.slice(0, 3).join('\n') +
-          (errors.length > 3 ? `\n... y ${errors.length - 3} más` : '')
-        );
-      }
-      
-      // Limpiar selección
-      setSelectedGuests([]);
-      
-    } catch (error) {
-      console.error('Error in bulk delete:', error);
-      toast.error('Error durante la eliminación masiva');
-    } finally {
-      setIsDeleting(false);
     }
-  };
+    
+    toast.error(errorMessage, {
+      duration: 6000, // Mostrar más tiempo para mensajes largos
+      style: {
+        maxWidth: '500px',
+      },
+    });
+  }
+};
+
+const handleDeleteSelected = async () => {
+  if (selectedGuests.length === 0) return;
+  
+  const confirmed = window.confirm(
+    `¿Estás seguro de que quieres eliminar ${selectedGuests.length} huésped(es)?\n\n` +
+    '⚠️ PROCESO DE ELIMINACIÓN MASIVA:\n' +
+    '• Se verificará cada huésped individualmente\n' +
+    '• Los que tengan reservas activas NO se eliminarán\n' +
+    '• Los que tengan historial se desactivarán\n' +
+    '• Los que no tengan reservas se eliminarán permanentemente\n' +
+    '• Recibirás un reporte detallado del proceso\n\n' +
+    'Esta acción no se puede deshacer.'
+  );
+  
+  if (!confirmed) return;
+  
+  try {
+    setIsDeleting(true);
+    
+    const results = {
+      successful: [],
+      failed: [],
+      softDeleted: []
+    };
+    
+    const guestsToDelete = [...selectedGuests]; // Copia para evitar modificaciones
+    
+    // Procesar eliminación uno por uno
+    for (const guestId of guestsToDelete) {
+      try {
+        const guest = guests.find(g => g.id === guestId);
+        const guestName = guest?.fullName || guest?.full_name || `ID: ${guestId}`;
+        
+        console.log(`Processing deletion for guest: ${guestName} (ID: ${guestId})`);
+        
+        await deleteGuest(guestId);
+        
+        results.successful.push(guestName);
+        
+      } catch (error) {
+        const guest = guests.find(g => g.id === guestId);
+        const guestName = guest?.fullName || guest?.full_name || `ID: ${guestId}`;
+        
+        console.error(`Failed to delete guest ${guestName}:`, error);
+        
+        let errorType = 'Error desconocido';
+        if (error.message.includes('reserva(s) activa(s)')) {
+          errorType = 'Tiene reservas activas';
+        } else if (error.message.includes('registros relacionados')) {
+          errorType = 'Tiene registros relacionados';
+        } else if (error.message.includes('Error al verificar')) {
+          errorType = 'Error de verificación';
+        }
+        
+        results.failed.push({
+          name: guestName,
+          reason: errorType,
+          fullError: error.message
+        });
+      }
+    }
+    
+    // Mostrar resumen detallado
+    const totalProcessed = results.successful.length + results.failed.length;
+    
+    if (results.successful.length > 0) {
+      toast.success(
+        `✅ ${results.successful.length} de ${totalProcessed} huésped(es) procesado(s) exitosamente:\n` +
+        results.successful.slice(0, 3).join(', ') +
+        (results.successful.length > 3 ? `\n... y ${results.successful.length - 3} más` : ''),
+        { duration: 5000 }
+      );
+    }
+    
+    if (results.failed.length > 0) {
+      const failureMessage = results.failed.slice(0, 3).map(f => 
+        `• ${f.name}: ${f.reason}`
+      ).join('\n');
+      
+      toast.error(
+        `❌ ${results.failed.length} huésped(es) no pudieron procesarse:\n` +
+        failureMessage +
+        (results.failed.length > 3 ? `\n... y ${results.failed.length - 3} más` : '') +
+        '\n\nRevisa la consola para más detalles.',
+        { 
+          duration: 8000,
+          style: { maxWidth: '600px' }
+        }
+      );
+      
+      // Log detallado en consola
+      console.group('🚨 Detalles de errores en eliminación masiva:');
+      results.failed.forEach(failure => {
+        console.error(`${failure.name}: ${failure.fullError}`);
+      });
+      console.groupEnd();
+    }
+    
+    // Limpiar selección
+    setSelectedGuests([]);
+    
+  } catch (error) {
+    console.error('Error in bulk delete process:', error);
+    toast.error('Error crítico durante la eliminación masiva: ' + error.message);
+  } finally {
+    setIsDeleting(false);
+  }
+};
 
   const openProfile = (guest) => {
     setSelectedGuest(guest);

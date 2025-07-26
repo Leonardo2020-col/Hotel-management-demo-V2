@@ -281,34 +281,74 @@ getAdvancedDashboardStats: async (branchId = null) => {
 
 // Agregar esta función al objeto `db` en src/lib/supabase.js
 
+// Agregar esta función al objeto `db` en src/lib/supabase.js
+
 async deleteGuest(guestId) {
   try {
-    console.log('🗑️ Deleting guest with ID:', guestId);
+    console.log('🗑️ Attempting to delete guest with ID:', guestId);
     
     // Verificar si el huésped tiene reservas activas
     const { data: activeReservations, error: checkError } = await supabase
       .from('reservations')
-      .select('id, status, confirmation_code')
+      .select('id, status, confirmation_code, check_in, check_out')
       .eq('guest_id', guestId)
       .in('status', ['confirmed', 'checked_in', 'pending']);
     
     if (checkError) {
       console.error('Error checking guest reservations:', checkError);
-      throw checkError;
+      throw new Error('Error al verificar las reservas del huésped');
     }
     
     // Si tiene reservas activas, no permitir eliminación
     if (activeReservations && activeReservations.length > 0) {
-      const activeStatuses = activeReservations.map(r => r.status).join(', ');
-      return { 
-        data: null, 
-        error: { 
-          message: `No se puede eliminar el huésped. Tiene ${activeReservations.length} reserva(s) activa(s) con estado: ${activeStatuses}. Cancela o completa las reservas primero.` 
-        }
-      };
+      console.log('Guest has active reservations:', activeReservations);
+      
+      const reservationDetails = activeReservations.map(r => 
+        `${r.confirmation_code || 'Sin código'} (${r.status})`
+      ).join(', ');
+      
+      throw new Error(
+        `No se puede eliminar el huésped. Tiene ${activeReservations.length} reserva(s) activa(s): ${reservationDetails}. Cancela o completa las reservas primero.`
+      );
     }
     
-    // Proceder con la eliminación
+    // También verificar reservas históricas para prevenir problemas de integridad
+    const { data: allReservations, error: historyError } = await supabase
+      .from('reservations')
+      .select('id, status')
+      .eq('guest_id', guestId);
+    
+    if (historyError) {
+      console.warn('Could not check reservation history:', historyError);
+    }
+    
+    // Si tiene reservas históricas, considerar soft delete
+    if (allReservations && allReservations.length > 0) {
+      console.log(`Guest has ${allReservations.length} total reservations. Performing soft delete.`);
+      
+      // Soft delete: marcar como eliminado en lugar de eliminar completamente
+      const { data, error } = await supabase
+        .from('guests')
+        .update({
+          status: 'inactive',
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', guestId)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Error soft deleting guest:', error);
+        throw new Error('Error al desactivar el huésped: ' + error.message);
+      }
+      
+      console.log('✅ Guest soft deleted successfully:', data);
+      return { data, error: null };
+    }
+    
+    // Si no tiene reservas, proceder con eliminación completa
     const { data, error } = await supabase
       .from('guests')
       .delete()
@@ -318,7 +358,13 @@ async deleteGuest(guestId) {
     
     if (error) {
       console.error('Error deleting guest:', error);
-      throw error;
+      
+      // Manejar errores específicos de PostgreSQL
+      if (error.code === '23503') {
+        throw new Error('No se puede eliminar el huésped porque tiene registros relacionados. Contacta al administrador.');
+      }
+      
+      throw new Error('Error al eliminar el huésped: ' + error.message);
     }
     
     console.log('✅ Guest deleted successfully:', data);
@@ -327,22 +373,8 @@ async deleteGuest(guestId) {
   } catch (error) {
     console.error('Error in deleteGuest:', error);
     
-    // Manejar errores específicos de PostgreSQL
-    if (error.code === '23503') {
-      return { 
-        data: null, 
-        error: { 
-          message: 'No se puede eliminar el huésped porque tiene registros relacionados (reservas, históricos, etc.). Contacta al administrador.' 
-        }
-      };
-    }
-    
-    return { 
-      data: null, 
-      error: { 
-        message: error.message || 'Error desconocido al eliminar el huésped'
-      }
-    };
+    // Re-lanzar el error para que sea manejado por el componente
+    throw error;
   }
 },
 

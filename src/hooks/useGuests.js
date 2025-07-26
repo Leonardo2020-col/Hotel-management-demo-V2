@@ -153,55 +153,52 @@ const deleteGuest = useCallback(async (guestId) => {
   try {
     console.log('🗑️ Attempting to delete guest:', guestId);
     
+    // Llamar a la función de Supabase
     const { data, error } = await db.deleteGuest(guestId);
 
     if (error) {
-      // Mostrar error específico al usuario
-      toast.error(error.message || 'Error al eliminar el huésped');
-      throw new Error(error.message);
-    }
-
-    // Si la eliminación fue exitosa
-    toast.success('Huésped eliminado exitosamente');
-    
-    // Actualizar el estado local inmediatamente
-    setGuests(prev => prev.filter(guest => guest.id !== guestId));
-    
-    // Recalcular estadísticas
-    const updatedGuests = guests.filter(guest => guest.id !== guestId);
-    calculateStats(updatedGuests);
-    
-    return data;
-  } catch (error) {
-    console.error('Error deleting guest:', error);
-    // No mostrar toast aquí porque ya se mostró arriba
-    throw error;
-  }
-}, [guests, calculateStats]);
-
-// Función adicional para eliminación suave (soft delete)
-const softDeleteGuest = useCallback(async (guestId) => {
-  try {
-    const { data, error } = await db.softDeleteGuest(guestId);
-
-    if (error) {
-      toast.error(error.message || 'Error al desactivar el huésped');
+      console.error('Database error:', error);
       throw error;
     }
 
-    toast.success('Huésped desactivado exitosamente');
-    
-    // Actualizar estado local
-    setGuests(prev => prev.map(guest => 
-      guest.id === guestId 
-        ? { ...guest, status: 'inactive', is_deleted: true }
-        : guest
-    ));
+    // Si la eliminación fue exitosa, actualizar el estado local
+    setGuests(prev => {
+      const updatedGuests = prev.filter(guest => guest.id !== guestId);
+      // Recalcular estadísticas inmediatamente
+      calculateStats(updatedGuests);
+      return updatedGuests;
+    });
     
     return data;
   } catch (error) {
-    console.error('Error soft deleting guest:', error);
+    console.error('Error deleting guest in hook:', error);
+    
+    // Re-lanzar el error para que sea manejado por el componente
     throw error;
+  }
+}, [calculateStats]);
+
+// Función para verificar reservas antes de eliminar (opcional - para UI)
+const checkGuestReservations = useCallback(async (guestId) => {
+  try {
+    const { data: reservations, error } = await db.supabase
+      .from('reservations')
+      .select('id, status, confirmation_code, check_in, check_out')
+      .eq('guest_id', guestId)
+      .in('status', ['confirmed', 'checked_in', 'pending']);
+    
+    if (error) {
+      console.error('Error checking reservations:', error);
+      return { hasActiveReservations: false, reservations: [] };
+    }
+    
+    return {
+      hasActiveReservations: reservations && reservations.length > 0,
+      reservations: reservations || []
+    };
+  } catch (error) {
+    console.error('Error in checkGuestReservations:', error);
+    return { hasActiveReservations: false, reservations: [] };
   }
 }, []);
 
@@ -342,6 +339,7 @@ const restoreGuest = useCallback(async (guestId) => {
     // Métodos de consulta
     searchGuests,
     getGuestById,
+    checkGuestReservations,
     filterGuests,
     getActiveGuests,
     getFrequentGuests,
