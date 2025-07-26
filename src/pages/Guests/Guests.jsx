@@ -202,7 +202,7 @@ const handleDeleteGuest = async (guestId) => {
         </div>
         
         <div className="flex items-center space-x-3 mt-4 lg:mt-0">
-          {selectedGuests.length > 0 && (
+          {/*selectedGuests.length > 0 && (/*
             <Button
               variant="danger"
               onClick={handleDeleteSelected}
@@ -213,7 +213,7 @@ const handleDeleteGuest = async (guestId) => {
             >
               {isDeleting ? 'Eliminando...' : `Eliminar (${selectedGuests.length})`}
             </Button>
-          )}
+          )*/}
           
           <Button
             variant="primary"
