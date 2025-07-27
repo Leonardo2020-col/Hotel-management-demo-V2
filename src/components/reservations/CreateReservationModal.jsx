@@ -75,36 +75,100 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
   // Seleccionar huésped existente
   const selectExistingGuest = (guest) => {
     setSelectedGuest(guest);
-    setValue('guestName', guest.full_name);
+    setValue('guestName', guest.full_name || guest.name);
     setValue('guestEmail', guest.email || '');
     setValue('guestPhone', guest.phone || '');
-    setValue('guestDocument', guest.document_number || '');
+    setValue('guestDocument', guest.document_number || guest.document || '');
     setExistingGuests([]);
   };
 
-  // Buscar habitaciones disponibles
+  // FUNCIÓN CORREGIDA: Buscar habitaciones disponibles
   const searchAvailableRooms = async () => {
     if (!watchedValues.checkIn || !watchedValues.checkOut) {
+      console.log('❌ Missing check-in or check-out dates');
+      setAvailableRooms([]);
       return;
     }
 
+    console.log('🔍 Searching available rooms for:', {
+      checkIn: watchedValues.checkIn,
+      checkOut: watchedValues.checkOut
+    });
+
     setLoadingRooms(true);
     try {
-      const { data, error } = await db.getAvailableRooms(
+      // Método 1: Intentar usar la función específica de disponibilidad
+      let { data: rooms, error } = await db.getAvailableRooms(
         watchedValues.checkIn,
         watchedValues.checkOut
       );
 
-      if (error) {
-        console.error('Error loading available rooms:', error);
-        toast.error('Error al buscar habitaciones disponibles');
-        return;
+      // Método 2: Si no funciona, usar método alternativo
+      if (error || !rooms || rooms.length === 0) {
+        console.log('🔄 Fallback: Using alternative room search method');
+        
+        // Obtener todas las habitaciones
+        const { data: allRooms, error: roomsError } = await db.getRooms();
+        
+        if (roomsError) {
+          throw new Error('Error al obtener habitaciones: ' + roomsError.message);
+        }
+
+        if (!allRooms || allRooms.length === 0) {
+          console.log('❌ No rooms found in database');
+          setAvailableRooms([]);
+          return;
+        }
+
+        // Obtener reservas que podrían conflictar
+        const { data: conflictingReservations, error: reservationsError } = await db.getReservations({
+          status: ['confirmed', 'checked_in', 'pending']
+        });
+
+        if (reservationsError) {
+          console.warn('Could not check for conflicts:', reservationsError);
+        }
+
+        // Filtrar habitaciones disponibles
+        const checkInDate = new Date(watchedValues.checkIn);
+        const checkOutDate = new Date(watchedValues.checkOut);
+
+        const availableRoomsList = allRooms.filter(room => {
+          // Solo habitaciones disponibles
+          if (room.status !== 'available') {
+            return false;
+          }
+
+          // Verificar conflictos con reservas existentes
+          const hasConflict = (conflictingReservations || []).some(reservation => {
+            if (reservation.room_id !== room.id) return false;
+            
+            const reservationCheckIn = new Date(reservation.check_in);
+            const reservationCheckOut = new Date(reservation.check_out);
+            
+            // Verificar solapamiento de fechas
+            return (
+              (checkInDate < reservationCheckOut && checkOutDate > reservationCheckIn)
+            );
+          });
+
+          return !hasConflict;
+        });
+
+        rooms = availableRoomsList;
       }
 
-      setAvailableRooms(data || []);
+      console.log(`✅ Found ${rooms?.length || 0} available rooms`);
+      setAvailableRooms(rooms || []);
+
+      if (!rooms || rooms.length === 0) {
+        toast.info('No hay habitaciones disponibles para las fechas seleccionadas');
+      }
+
     } catch (error) {
       console.error('Error loading available rooms:', error);
-      toast.error('Error al buscar habitaciones disponibles');
+      toast.error('Error al buscar habitaciones disponibles: ' + error.message);
+      setAvailableRooms([]);
     } finally {
       setLoadingRooms(false);
     }
@@ -112,23 +176,44 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
 
   // Actualizar habitación seleccionada
   React.useEffect(() => {
-    if (watchedValues.roomId && availableRooms) {
+    if (watchedValues.roomId && availableRooms && availableRooms.length > 0) {
       const room = availableRooms.find(r => r.id === parseInt(watchedValues.roomId));
       if (room) {
         setSelectedRoom(room);
+        console.log('🏠 Room selected:', room);
       }
     }
   }, [watchedValues.roomId, availableRooms]);
 
   // Buscar habitaciones cuando cambien las fechas
   React.useEffect(() => {
-    if (watchedValues.checkIn && watchedValues.checkOut) {
-      searchAvailableRooms();
-    }
+    const timeoutId = setTimeout(() => {
+      if (watchedValues.checkIn && watchedValues.checkOut) {
+        const checkIn = new Date(watchedValues.checkIn);
+        const checkOut = new Date(watchedValues.checkOut);
+        
+        if (checkOut > checkIn) {
+          searchAvailableRooms();
+        } else {
+          setAvailableRooms([]);
+        }
+      } else {
+        setAvailableRooms([]);
+      }
+    }, 500); // Debounce de 500ms
+
+    return () => clearTimeout(timeoutId);
   }, [watchedValues.checkIn, watchedValues.checkOut]);
 
   const onFormSubmit = async (data) => {
     try {
+      console.log('📝 Submitting reservation with data:', data);
+      
+      if (!selectedRoom) {
+        toast.error('Por favor selecciona una habitación');
+        return;
+      }
+
       const checkIn = new Date(data.checkIn);
       const checkOut = new Date(data.checkOut);
       const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
@@ -149,14 +234,18 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
           status: 'active'
         };
 
+        console.log('👤 Creating new guest:', newGuestData);
+
         const { data: createdGuest, error: guestError } = await db.createGuest(newGuestData);
         
         if (guestError) {
+          console.error('Guest creation error:', guestError);
           toast.error('Error al crear el huésped: ' + guestError.message);
           return;
         }
         
         guestData = createdGuest;
+        console.log('✅ Guest created:', guestData);
       }
 
       // Crear reserva
@@ -168,20 +257,24 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
         check_out: data.checkOut,
         adults: data.adults,
         children: data.children || 0,
-        rate: selectedRoom.base_rate,
-        total_amount: nights * selectedRoom.base_rate,
+        rate: selectedRoom.base_rate || selectedRoom.rate,
+        total_amount: nights * (selectedRoom.base_rate || selectedRoom.rate),
         source: 'direct',
         special_requests: data.specialRequests || '',
         status: 'pending'
       };
 
+      console.log('📋 Creating reservation:', reservationData);
+
       const { data: reservation, error: reservationError } = await db.createReservation(reservationData);
 
       if (reservationError) {
+        console.error('Reservation creation error:', reservationError);
         toast.error('Error al crear la reserva: ' + reservationError.message);
         return;
       }
 
+      console.log('✅ Reservation created successfully:', reservation);
       toast.success('Reserva creada exitosamente');
       
       // Llamar callback del padre
@@ -193,7 +286,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
       
     } catch (error) {
       console.error('Error creating reservation:', error);
-      toast.error('Error al crear la reserva');
+      toast.error('Error al crear la reserva: ' + (error.message || 'Error desconocido'));
     }
   };
 
@@ -318,9 +411,9 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                           onClick={() => selectExistingGuest(guest)}
                           className="w-full text-left px-4 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                         >
-                          <div className="font-medium">{guest.full_name}</div>
+                          <div className="font-medium">{guest.full_name || guest.name}</div>
                           <div className="text-sm text-gray-500">
-                            {guest.email} • {guest.document_number}
+                            {guest.email} • {guest.document_number || guest.document}
                           </div>
                         </button>
                       ))}
@@ -331,7 +424,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                 {selectedGuest && (
                   <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                     <p className="text-sm text-green-800">
-                      <strong>Huésped seleccionado:</strong> {selectedGuest.full_name}
+                      <strong>Huésped seleccionado:</strong> {selectedGuest.full_name || selectedGuest.name}
                     </p>
                   </div>
                 )}
@@ -475,24 +568,29 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                     <select
                       {...register('roomId')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      disabled={loadingRooms || availableRooms.length === 0}
+                      disabled={loadingRooms}
                     >
                       <option value="">
                         {loadingRooms 
                           ? 'Buscando habitaciones...' 
                           : availableRooms.length === 0
-                          ? 'No hay habitaciones disponibles'
+                          ? (watchedValues.checkIn && watchedValues.checkOut ? 'No hay habitaciones disponibles' : 'Selecciona las fechas primero')
                           : 'Seleccionar habitación'
                         }
                       </option>
                       {availableRooms.map(room => (
                         <option key={room.id} value={room.id}>
-                          Habitación {room.number} - {room.room_type || 'Estándar'} - S/ {room.base_rate}/noche
+                          Habitación {room.number} - {room.room_type || 'Estándar'} - S/ {room.base_rate || room.rate}/noche
                         </option>
                       ))}
                     </select>
                     {errors.roomId && (
                       <p className="text-red-600 text-sm mt-1">{errors.roomId.message}</p>
+                    )}
+                    {watchedValues.checkIn && watchedValues.checkOut && availableRooms.length === 0 && !loadingRooms && (
+                      <p className="text-yellow-600 text-sm mt-1">
+                        No hay habitaciones disponibles para las fechas seleccionadas
+                      </p>
                     )}
                   </div>
 
@@ -544,7 +642,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                       {watchedValues.checkIn && watchedValues.checkOut && selectedRoom && (
                         <>
                           <p><span className="text-gray-600">Noches:</span> <span className="font-medium">{Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24))}</span></p>
-                          <p><span className="text-gray-600">Total:</span> <span className="font-medium text-lg text-green-600">S/ {(Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24)) * selectedRoom.base_rate).toFixed(2)}</span></p>
+                          <p><span className="text-gray-600">Total:</span> <span className="font-medium text-lg text-green-600">S/ {(Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24)) * (selectedRoom.base_rate || selectedRoom.rate)).toFixed(2)}</span></p>
                         </>
                       )}
                     </div>
@@ -582,7 +680,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                   type="button"
                   variant="primary"
                   onClick={nextStep}
-                  disabled={currentStep === 2 && !selectedRoom}
+                  disabled={currentStep === 2 && (!selectedRoom || loadingRooms)}
                 >
                   Siguiente
                 </Button>
@@ -591,6 +689,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                   type="submit"
                   variant="primary"
                   loading={isSubmitting}
+                  disabled={!selectedRoom}
                 >
                   Crear Reserva
                 </Button>

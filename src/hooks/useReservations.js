@@ -111,6 +111,60 @@ export const useReservations = (initialFilters = {}) => {
     }
   }, []);
 
+  // 1. FUNCIÓN DE DEBUGGING - Agregar al inicio del hook
+const debugReservationCreation = async (data) => {
+  console.group('🐛 DEBUG: Reservation Creation Process');
+  
+  try {
+    // Verificar estado de la base de datos
+    console.log('1. Testing database connection...');
+    const { data: testRooms, error: testError } = await db.getRooms({ limit: 1 });
+    console.log('   Database test result:', { success: !testError, roomCount: testRooms?.length });
+    
+    // Verificar datos de entrada
+    console.log('2. Input data validation:');
+    console.log('   Guest data:', {
+      hasName: !!data.guest?.name,
+      hasDocument: !!data.guest?.document,
+      hasEmail: !!data.guest?.email
+    });
+    console.log('   Room data:', {
+      hasRoomId: !!data.room?.id,
+      roomNumber: data.room?.number,
+      roomRate: data.room?.rate
+    });
+    console.log('   Date data:', {
+      checkIn: data.checkIn,
+      checkOut: data.checkOut,
+      validDates: data.checkIn && data.checkOut && new Date(data.checkOut) > new Date(data.checkIn)
+    });
+    
+    // Verificar disponibilidad de la habitación
+    if (data.room?.id && data.checkIn && data.checkOut) {
+      console.log('3. Checking room availability...');
+      const availability = await db.checkSpecificRoomAvailability(
+        data.room.id, 
+        data.checkIn, 
+        data.checkOut
+      );
+      console.log('   Availability result:', availability);
+    }
+    
+    // Verificar si el huésped ya existe
+    if (data.guest?.document) {
+      console.log('4. Checking if guest exists...');
+      const existingGuests = await db.searchGuests(data.guest.document);
+      console.log('   Existing guests found:', existingGuests.data?.length || 0);
+    }
+    
+  } catch (error) {
+    console.error('Debug error:', error);
+  } finally {
+    console.groupEnd();
+  }
+};
+
+
   // Cargar habitaciones disponibles
   const loadAvailableRooms = useCallback(async () => {
     try {
@@ -218,77 +272,254 @@ export const useReservations = (initialFilters = {}) => {
     setPagination(prev => ({ ...prev, total: filtered.length, page: 1 }));
   }, [reservations, filters]);
 
-  // Crear nueva reserva
-  const createReservation = useCallback(async (reservationData) => {
-    try {
-      setLoading(true);
-
-      console.log('➕ Creating reservation:', reservationData);
-
-      // Calcular noches
-      const nights = Math.ceil((new Date(reservationData.checkOut) - new Date(reservationData.checkIn)) / (1000 * 60 * 60 * 24));
-
-      // Preparar datos para Supabase con estructura corregida
-      const supabaseData = {
-        guest_id: reservationData.guest.id,
-        room_id: reservationData.room.id,
-        branch_id: 1, // Por defecto
-        check_in: reservationData.checkIn,
-        check_out: reservationData.checkOut,
-        adults: reservationData.adults || reservationData.guests || 1,
-        children: reservationData.children || 0,
-        rate: reservationData.room.rate,
-        total_amount: nights * reservationData.room.rate,
-        source: reservationData.source || 'direct',
-        special_requests: reservationData.specialRequests || '',
-        status: RESERVATION_STATUS.PENDING,
-        payment_method: reservationData.paymentMethod || 'cash',
-        payment_status: 'pending'
-      };
-
-      // Si no existe el huésped, crearlo primero
-      let guestId = reservationData.guest.id;
-      if (!guestId) {
-        console.log('👤 Creating new guest...');
-        
-        const { data: newGuest, error: guestError } = await db.createGuest({
-          full_name: reservationData.guest.name || 'Huésped sin nombre',
-          email: reservationData.guest.email || '',
-          phone: reservationData.guest.phone || '',
-          document_type: 'DNI',
-          document_number: reservationData.guest.document || '',
-          status: 'active'
-        });
-
-        if (guestError) {
-          throw new Error('Error al crear el huésped: ' + guestError.message);
-        }
-
-        guestId = newGuest.id;
-        supabaseData.guest_id = guestId;
-      }
-
-      // Crear la reserva
-      const { data, error } = await db.createReservation(supabaseData);
-
-      if (error) {
-        throw new Error(error.message || 'Error al crear la reserva');
-      }
-
-      toast.success('Reserva creada exitosamente');
-      
-      // Recargar reservas
-      await loadReservations();
-      
-      return data;
-    } catch (error) {
-      console.error('Error creating reservation:', error);
-      toast.error(error.message || 'Error al crear la reserva');
-      throw error;
-    } finally {
-      setLoading(false);
+  // CREAR RESERVA
+  // 3. FUNCIÓN MEJORADA PARA CREAR RESERVA CON MEJOR MANEJO DE ERRORES
+const createReservation = useCallback(async (reservationData) => {
+  try {
+    setLoading(true);
+    
+    // Debug opcional (solo en desarrollo)
+    if (process.env.NODE_ENV === 'development') {
+      await debugReservationCreation(reservationData);
     }
-  }, [loadReservations]);
+    
+    console.log('➕ Creating reservation with improved error handling:', reservationData);
+
+    // Validaciones previas
+    if (!reservationData.guest || !reservationData.room) {
+      throw new Error('Faltan datos del huésped o habitación');
+    }
+    
+    if (!reservationData.checkIn || !reservationData.checkOut) {
+      throw new Error('Faltan fechas de check-in o check-out');
+    }
+    
+    const checkInDate = new Date(reservationData.checkIn);
+    const checkOutDate = new Date(reservationData.checkOut);
+    
+    if (checkOutDate <= checkInDate) {
+      throw new Error('La fecha de check-out debe ser posterior al check-in');
+    }
+
+    // Calcular noches
+    const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+    
+    if (nights <= 0) {
+      throw new Error('El número de noches debe ser mayor a 0');
+    }
+
+    // Verificar disponibilidad de la habitación antes de crear
+    const availability = await db.checkSpecificRoomAvailability(
+      reservationData.room.id,
+      reservationData.checkIn,
+      reservationData.checkOut
+    );
+    
+    if (!availability.available) {
+      const conflictDetails = availability.conflicts.map(c => 
+        `Reserva ${c.confirmation_code} (${c.check_in} a ${c.check_out})`
+      ).join(', ');
+      
+      throw new Error(
+        `La habitación ${reservationData.room.number} no está disponible para las fechas seleccionadas. ` +
+        `Conflictos: ${conflictDetails}`
+      );
+    }
+
+    let guestId = reservationData.guest.id;
+    
+    // Si no existe el huésped, crearlo primero
+    if (!guestId) {
+      console.log('👤 Creating new guest...');
+      
+      const guestData = {
+        full_name: reservationData.guest.name?.trim() || 'Huésped sin nombre',
+        email: reservationData.guest.email?.trim() || '',
+        phone: reservationData.guest.phone?.trim() || '',
+        document_type: 'DNI',
+        document_number: reservationData.guest.document?.trim() || '',
+        status: 'active'
+      };
+      
+      // Validar datos mínimos del huésped
+      if (!guestData.full_name || guestData.full_name === 'Huésped sin nombre') {
+        throw new Error('El nombre del huésped es obligatorio');
+      }
+      
+      if (!guestData.document_number) {
+        throw new Error('El documento del huésped es obligatorio');
+      }
+
+      const { data: newGuest, error: guestError } = await db.createGuest(guestData);
+
+      if (guestError) {
+        console.error('Guest creation error:', guestError);
+        throw new Error('Error al crear el huésped: ' + guestError.message);
+      }
+
+      if (!newGuest || !newGuest.id) {
+        throw new Error('No se pudo crear el huésped correctamente');
+      }
+
+      guestId = newGuest.id;
+      console.log('✅ Guest created with ID:', guestId);
+    }
+
+    // Preparar datos de la reserva
+    const rate = reservationData.room.base_rate || reservationData.room.rate;
+    if (!rate || rate <= 0) {
+      throw new Error('La tarifa de la habitación no es válida');
+    }
+    
+    const totalAmount = nights * rate;
+
+    const reservationPayload = {
+      guest_id: guestId,
+      room_id: reservationData.room.id,
+      branch_id: reservationData.branchId || 1,
+      check_in: reservationData.checkIn,
+      check_out: reservationData.checkOut,
+      adults: reservationData.adults || reservationData.guests || 1,
+      children: reservationData.children || 0,
+      rate: rate,
+      total_amount: totalAmount,
+      paid_amount: reservationData.paidAmount || 0,
+      payment_status: reservationData.paymentStatus || 'pending',
+      payment_method: reservationData.paymentMethod || 'cash',
+      status: reservationData.status || 'pending',
+      source: reservationData.source || 'direct',
+      special_requests: reservationData.specialRequests || ''
+    };
+
+    console.log('📋 Creating reservation with payload:', reservationPayload);
+
+    // Crear la reserva
+    const { data: reservation, error: reservationError } = await db.createReservation(reservationPayload);
+
+    if (reservationError) {
+      console.error('Reservation creation error:', reservationError);
+      throw new Error('Error al crear la reserva: ' + reservationError.message);
+    }
+
+    if (!reservation || !reservation.id) {
+      throw new Error('No se pudo crear la reserva correctamente');
+    }
+
+    console.log('✅ Reservation created successfully:', reservation);
+    toast.success(`Reserva creada exitosamente (${reservation.confirmation_code || reservation.id})`);
+    
+    // Recargar reservas para actualizar la lista
+    await loadReservations();
+    
+    return reservation;
+
+  } catch (error) {
+    console.error('Error in createReservation:', error);
+    
+    // Mensajes de error más específicos
+    let errorMessage = 'Error al crear la reserva';
+    
+    if (error.message.includes('duplicate') || error.message.includes('unique')) {
+      errorMessage = 'Ya existe una reserva con estos datos';
+    } else if (error.message.includes('foreign key') || error.message.includes('not found')) {
+      errorMessage = 'Error de datos relacionados (huésped o habitación no válidos)';
+    } else if (error.message.includes('disponible')) {
+      errorMessage = error.message; // Usar mensaje específico de disponibilidad
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    toast.error(errorMessage);
+    throw new Error(errorMessage);
+    
+  } finally {
+    setLoading(false);
+  }
+}, [loadReservations]);
+
+// 4. FUNCIÓN PARA VALIDAR FORMULARIO ANTES DE ENVÍO
+const validateReservationForm = (formData) => {
+  const errors = [];
+  
+  // Validar huésped
+  if (!formData.guestName?.trim()) {
+    errors.push('El nombre del huésped es obligatorio');
+  }
+  
+  if (!formData.guestDocument?.trim()) {
+    errors.push('El documento del huésped es obligatorio');
+  }
+  
+  if (formData.guestEmail && !/\S+@\S+\.\S+/.test(formData.guestEmail)) {
+    errors.push('El email del huésped no es válido');
+  }
+  
+  // Validar fechas
+  if (!formData.checkIn) {
+    errors.push('La fecha de entrada es obligatoria');
+  }
+  
+  if (!formData.checkOut) {
+    errors.push('La fecha de salida es obligatoria');
+  }
+  
+  if (formData.checkIn && formData.checkOut) {
+    const checkIn = new Date(formData.checkIn);
+    const checkOut = new Date(formData.checkOut);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (checkIn < today) {
+      errors.push('La fecha de entrada no puede ser anterior a hoy');
+    }
+    
+    if (checkOut <= checkIn) {
+      errors.push('La fecha de salida debe ser posterior a la entrada');
+    }
+    
+    const maxAdvanceDays = 365; // Máximo 1 año de anticipación
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + maxAdvanceDays);
+    
+    if (checkIn > maxDate) {
+      errors.push('La fecha de entrada no puede ser más de un año en el futuro');
+    }
+  }
+  
+  // Validar habitación
+  if (!formData.roomId) {
+    errors.push('Debe seleccionar una habitación');
+  }
+  
+  // Validar huéspedes
+  if (!formData.adults || formData.adults < 1) {
+    errors.push('Debe haber al menos 1 adulto');
+  }
+  
+  if (formData.adults > 10) {
+    errors.push('Número de adultos excesivo');
+  }
+  
+  if (formData.children && formData.children < 0) {
+    errors.push('El número de niños no puede ser negativo');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};
+
+// 5. FUNCIÓN AUXILIAR PARA LOGGING DETALLADO
+const logReservationOperation = (operation, data, result) => {
+  if (process.env.NODE_ENV === 'development') {
+    console.group(`📊 Reservation ${operation}`);
+    console.log('Input data:', data);
+    console.log('Result:', result);
+    console.log('Timestamp:', new Date().toISOString());
+    console.groupEnd();
+  }
+};
 
   // Actualizar reserva
   const updateReservation = useCallback(async (id, updates) => {
@@ -483,32 +714,42 @@ export const useReservations = (initialFilters = {}) => {
     }
   }, [getReservationById, changeReservationStatus]);
 
-  // Obtener habitaciones disponibles para fechas específicas
-  const getAvailableRoomsForDates = useCallback(async (checkIn, checkOut) => {
-    try {
-      console.log(`🔍 Searching available rooms for ${checkIn} to ${checkOut}`);
-      
-      const { data, error } = await db.getAvailableRooms(checkIn, checkOut);
-      
-      if (error) {
-        console.error('Error getting available rooms:', error);
-        return [];
-      }
-
-      // Transformar datos con estructura corregida
-      return (data || []).map(room => ({
-        id: room.id,
-        number: room.number,
-        floor: room.floor,
-        //type: room.room_type || 'Habitación Estándar', // Campo directo
-        capacity: room.capacity || 2,
-        rate: parseFloat(room.base_rate || 100) // Campo directo
-      }));
-    } catch (error) {
-      console.error('Error in getAvailableRoomsForDates:', error);
+  // 2. FUNCIÓN MEJORADA PARA OBTENER HABITACIONES DISPONIBLES
+const getAvailableRoomsForDates = useCallback(async (checkIn, checkOut) => {
+  try {
+    console.log(`🔍 Getting available rooms for dates: ${checkIn} to ${checkOut}`);
+    
+    if (!checkIn || !checkOut) {
+      console.warn('Missing dates for room search');
       return [];
     }
-  }, []);
+    
+    // Validar fechas
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+    
+    if (checkOutDate <= checkInDate) {
+      console.warn('Invalid date range');
+      return [];
+    }
+    
+    // Usar la función corregida de Supabase
+    const { data, error } = await db.getAvailableRooms(checkIn, checkOut);
+    
+    if (error) {
+      console.error('Error getting available rooms:', error);
+      return [];
+    }
+    
+    console.log(`✅ Found ${data?.length || 0} available rooms`);
+    return data || [];
+    
+  } catch (error) {
+    console.error('Error in getAvailableRoomsForDates:', error);
+    return [];
+  }
+}, []);
+
 
   // Buscar huéspedes
   const searchGuests = useCallback(async (searchTerm) => {
@@ -627,6 +868,11 @@ export const useReservations = (initialFilters = {}) => {
     searchGuests,
     createQuickGuest,
     checkRoomAvailability,
+
+    // Nuevas funciones
+    getAvailableRoomsForDates,
+    validateReservationForm,
+    debugReservationCreation,
     
     // Función para recargar datos
     refresh: loadReservations

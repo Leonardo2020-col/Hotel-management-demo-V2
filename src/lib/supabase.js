@@ -2947,54 +2947,256 @@ async cleanRoomWithClick(roomId) {
   // ROOM AVAILABILITY
   // =============================================
 
-  async getAvailableRooms(checkIn, checkOut) {
-    try {
-      const { data, error } = await supabase
-        .from('room_availability')
-        .select('*')
-        .eq('is_available', true)
-        .gte('date', checkIn)
-        .lt('date', checkOut)
+  // FUNCIÓN CORREGIDA PARA getAvailableRooms en supabase.js
+// Reemplazar la función existente con esta versión mejorada
 
-      if (error) throw error
+async getAvailableRooms(checkIn, checkOut) {
+  try {
+    console.log('🔍 Getting available rooms for:', { checkIn, checkOut });
+    
+    if (!checkIn || !checkOut) {
+      console.warn('Missing check-in or check-out dates');
+      return { data: [], error: null };
+    }
 
-      // Agrupar por habitación y verificar que todos los días estén disponibles
-      const roomAvailability = {}
-      data.forEach(availability => {
-        if (!roomAvailability[availability.room_id]) {
-          roomAvailability[availability.room_id] = []
-        }
-        roomAvailability[availability.room_id].push(availability.date)
-      })
+    // Validar fechas
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+    
+    if (checkOutDate <= checkInDate) {
+      console.warn('Invalid date range: check-out must be after check-in');
+      return { data: [], error: { message: 'La fecha de salida debe ser posterior a la entrada' } };
+    }
 
-      // Calcular días necesarios
-      const startDate = new Date(checkIn)
-      const endDate = new Date(checkOut)
-      const daysNeeded = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
+    // Paso 1: Obtener todas las habitaciones activas
+    const { data: allRooms, error: roomsError } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('status', 'available') // Solo habitaciones disponibles
+      .order('number');
 
-      // Filtrar habitaciones con disponibilidad completa
-      const availableRoomIds = Object.keys(roomAvailability).filter(roomId => 
-        roomAvailability[roomId].length >= daysNeeded
-      )
+    if (roomsError) {
+      console.error('Error fetching rooms:', roomsError);
+      throw roomsError;
+    }
 
-      if (availableRoomIds.length === 0) {
-        return { data: [], error: null }
+    if (!allRooms || allRooms.length === 0) {
+      console.log('No rooms found in database');
+      return { data: [], error: null };
+    }
+
+    console.log(`Found ${allRooms.length} total available rooms`);
+
+    // Paso 2: Obtener reservas que podrían conflictar con las fechas
+    const { data: conflictingReservations, error: reservationsError } = await supabase
+      .from('reservations')
+      .select('id, room_id, check_in, check_out, status')
+      .in('status', ['confirmed', 'checked_in', 'pending']) // Solo reservas activas
+      .or(`and(check_in.lte.${checkOut},check_out.gte.${checkIn})`); // Solapamiento de fechas
+
+    if (reservationsError) {
+      console.error('Error fetching conflicting reservations:', reservationsError);
+      // Continuar sin verificar conflictos en lugar de fallar
+      console.warn('Continuing without conflict checking...');
+    }
+
+    console.log(`Found ${conflictingReservations?.length || 0} potentially conflicting reservations`);
+
+    // Paso 3: Filtrar habitaciones sin conflictos
+    const availableRooms = allRooms.filter(room => {
+      // Si no pudimos obtener las reservas, asumir que la habitación está disponible
+      if (!conflictingReservations) {
+        return true;
       }
 
-      // Obtener detalles de las habitaciones disponibles
-      const { data: rooms, error: roomsError } = await supabase
-        .from('rooms')
-        .select('*')
-        .in('id', availableRoomIds)
-        .eq('status', 'available')
+      // Verificar si hay conflictos para esta habitación
+      const hasConflict = conflictingReservations.some(reservation => {
+        if (reservation.room_id !== room.id) {
+          return false;
+        }
 
-      return { data: rooms || [], error: roomsError }
-    } catch (error) {
-      console.error('Error getting available rooms:', error)
-      return { data: [], error }
+        const reservationCheckIn = new Date(reservation.check_in);
+        const reservationCheckOut = new Date(reservation.check_out);
+
+        // Verificar solapamiento de fechas
+        // Hay conflicto si:
+        // - La nueva reserva empieza antes de que termine la existente Y
+        // - La nueva reserva termina después de que empiece la existente
+        const hasOverlap = (
+          checkInDate < reservationCheckOut && 
+          checkOutDate > reservationCheckIn
+        );
+
+        if (hasOverlap) {
+          console.log(`Room ${room.number} has conflict with reservation ${reservation.id}`);
+        }
+
+        return hasOverlap;
+      });
+
+      return !hasConflict;
+    });
+
+    console.log(`✅ ${availableRooms.length} rooms available after filtering conflicts`);
+
+    // Transformar datos para compatibilidad con frontend
+    const transformedRooms = availableRooms.map(room => ({
+      id: room.id,
+      number: room.number,
+      floor: room.floor,
+      room_type: room.room_type || 'Habitación Estándar',
+      base_rate: parseFloat(room.base_rate || 100),
+      rate: parseFloat(room.base_rate || 100), // Alias para compatibilidad
+      capacity: room.capacity || 2,
+      status: room.status,
+      features: room.features || [],
+      // Campos adicionales que podrían ser útiles
+      size: room.size,
+      beds: room.beds
+    }));
+
+    return { data: transformedRooms, error: null };
+
+  } catch (error) {
+    console.error('Error in getAvailableRooms:', error);
+    return { 
+      data: [], 
+      error: { 
+        message: 'Error al buscar habitaciones disponibles: ' + error.message 
+      } 
+    };
+  }
+},
+
+// FUNCIÓN ADICIONAL: Verificar disponibilidad específica de una habitación
+async checkSpecificRoomAvailability(roomId, checkIn, checkOut) {
+  try {
+    console.log(`🔍 Checking availability for room ${roomId} from ${checkIn} to ${checkOut}`);
+    
+    const { data: conflictingReservations, error } = await supabase
+      .from('reservations')
+      .select('id, check_in, check_out, status, confirmation_code')
+      .eq('room_id', roomId)
+      .in('status', ['confirmed', 'checked_in', 'pending'])
+      .or(`and(check_in.lte.${checkOut},check_out.gte.${checkIn})`);
+
+    if (error) {
+      console.error('Error checking room availability:', error);
+      return { available: false, conflicts: [], error };
     }
-  },
 
+    const isAvailable = !conflictingReservations || conflictingReservations.length === 0;
+    
+    console.log(`Room ${roomId} is ${isAvailable ? 'available' : 'not available'}`);
+    
+    return {
+      available: isAvailable,
+      conflicts: conflictingReservations || [],
+      error: null
+    };
+
+  } catch (error) {
+    console.error('Error in checkSpecificRoomAvailability:', error);
+    return { available: false, conflicts: [], error };
+  }
+},
+
+// FUNCIÓN MEJORADA: getRooms con mejor filtrado
+async getRooms(filters = {}) {
+  try {
+    console.log('Loading rooms with improved structure...', filters);
+    
+    let roomQuery = supabase
+      .from('rooms')
+      .select('*')
+      .order('floor')
+      .order('number');
+
+    // Aplicar filtros
+    if (filters.branchId) {
+      roomQuery = roomQuery.eq('branch_id', filters.branchId);
+    }
+    if (filters.status && filters.status !== 'all') {
+      roomQuery = roomQuery.eq('status', filters.status);
+    }
+    if (filters.floor && filters.floor !== 'all') {
+      roomQuery = roomQuery.eq('floor', filters.floor);
+    }
+    if (filters.search) {
+      roomQuery = roomQuery.ilike('number', `%${filters.search}%`);
+    }
+
+    const { data: rooms, error: roomsError } = await roomQuery;
+
+    if (roomsError) {
+      console.error('Error loading rooms:', roomsError);
+      throw roomsError;
+    }
+
+    // Obtener reservas activas para enriquecer información
+    const { data: reservations } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        guest:guests(
+          id,
+          full_name,
+          email,
+          phone,
+          document_number
+        )
+      `)
+      .in('status', ['checked_in', 'confirmed']);
+
+    // Enriquecer habitaciones con información de reservas
+    const enrichedRooms = (rooms || []).map(room => {
+      const activeReservation = reservations?.find(
+        res => res.room_id === room.id && res.status === 'checked_in'
+      );
+      
+      const nextReservation = reservations?.find(
+        res => res.room_id === room.id && res.status === 'confirmed'
+      );
+
+      return {
+        ...room,
+        // Asegurar campos requeridos
+        room_type: room.room_type || 'Habitación Estándar',
+        base_rate: parseFloat(room.base_rate || 100),
+        rate: parseFloat(room.base_rate || 100),
+        capacity: room.capacity || 2,
+        
+        // Información del huésped actual
+        currentGuest: activeReservation ? {
+          id: activeReservation.guest?.id,
+          name: activeReservation.guest?.full_name,
+          email: activeReservation.guest?.email,
+          phone: activeReservation.guest?.phone,
+          checkIn: activeReservation.check_in,
+          checkOut: activeReservation.check_out,
+          confirmationCode: activeReservation.confirmation_code
+        } : null,
+
+        // Próxima reserva
+        nextReservation: nextReservation ? {
+          id: nextReservation.id,
+          guest: nextReservation.guest?.full_name,
+          checkIn: nextReservation.check_in,
+          confirmationCode: nextReservation.confirmation_code
+        } : null,
+
+        activeReservation: activeReservation || null
+      };
+    });
+
+    console.log(`✅ Loaded ${enrichedRooms.length} rooms`);
+    return { data: enrichedRooms, error: null };
+
+  } catch (error) {
+    console.error('Error in getRooms:', error);
+    return { data: [], error };
+  }
+},
   // =============================================
   // SNACKS MANAGEMENT
   // =============================================
