@@ -1,29 +1,20 @@
-// src/components/checkin/RoomGrid.jsx - SIN ROOM_TYPES Y SIMPLIFICADO
+// src/components/checkin/RoomGrid.jsx - VERSIÓN SIMPLIFICADA CON CLICK INTELIGENTE
 import React from 'react';
-import { Bed, ChevronRight, Users, MapPin, Sparkles } from 'lucide-react';
-import Button from '../common/Button';
+import { Bed, Users, Sparkles, Loader, LogIn, LogOut, Clock } from 'lucide-react';
 
 const RoomGrid = ({ 
   floorRooms, 
   selectedFloor, 
   selectedRoom, 
-  checkoutMode, 
   savedOrders, 
+  processingRoom,
   onFloorChange, 
-  onRoomClick, 
-  onNext,
-  onCleanRoom // Función para limpiar habitación
+  onRoomClick,
+  onCleanRoom
 }) => {
   
-  // ESTADOS SIMPLIFICADOS - Solo 3 estados
-  const SIMPLE_ROOM_STATUS = {
-    AVAILABLE: 'available',     // Verde - Limpia y disponible
-    OCCUPIED: 'occupied',       // Rojo - Ocupada
-    NEEDS_CLEANING: 'dirty'     // Amarillo - Necesita limpieza
-  };
-
+  // Función para determinar el color basado en el estado de la habitación
   const getRoomStatusColor = (room) => {
-    // Lógica simplificada para determinar el color
     if (room.status === 'occupied') {
       return 'bg-red-500 hover:bg-red-600 text-white'; // Rojo - Ocupada
     }
@@ -48,15 +39,29 @@ const RoomGrid = ({
     return 'Disponible';
   };
 
-  // Handler para limpiar habitación con un click
-  const handleQuickClean = (room, event) => {
-    event.stopPropagation(); // Evitar que se active el click del cuarto
+  // Función para obtener el ícono de acción
+  const getRoomActionIcon = (room) => {
+    if (room.status === 'occupied') {
+      return <LogOut className="w-4 h-4" />; // Check-out
+    }
     
     if (room.cleaning_status === 'dirty' || room.status === 'cleaning') {
-      if (onCleanRoom) {
-        onCleanRoom(room.id);
-      }
+      return <Sparkles className="w-4 h-4" />; // Limpiar
     }
+    
+    return <LogIn className="w-4 h-4" />; // Check-in
+  };
+
+  const getRoomActionText = (room) => {
+    if (room.status === 'occupied') {
+      return 'Click: Check-out';
+    }
+    
+    if (room.cleaning_status === 'dirty' || room.status === 'cleaning') {
+      return 'Click: Limpiar';
+    }
+    
+    return 'Click: Check-in';
   };
 
   // Validación de datos
@@ -92,11 +97,11 @@ const RoomGrid = ({
     );
   }
 
-  if (!floorRooms[selectedFloor]) {
+  if (!floorRooms[selectedFloor] || floorRooms[selectedFloor].length === 0) {
     const firstFloor = availableFloors[0];
     return (
       <div className="text-center py-8">
-        <p className="text-gray-500 mb-4">Piso {selectedFloor} no disponible</p>
+        <p className="text-gray-500 mb-4">No hay habitaciones en el piso {selectedFloor}</p>
         <button 
           onClick={() => onFloorChange(parseInt(firstFloor))}
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -108,28 +113,12 @@ const RoomGrid = ({
   }
 
   const currentFloorRooms = floorRooms[selectedFloor];
-  
-  if (!Array.isArray(currentFloorRooms)) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-red-500">Error: Las habitaciones del piso {selectedFloor} no están en formato correcto</p>
-      </div>
-    );
-  }
-
-  if (currentFloorRooms.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-gray-500">No hay habitaciones en el piso {selectedFloor}</p>
-      </div>
-    );
-  }
 
   return (
     <>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-800">
-          {checkoutMode ? 'Selecciona habitación para Check Out' : 'Habitaciones Disponibles'}
+          Panel de Habitaciones - Click Inteligente
         </h2>
         
         {/* Selector de Pisos */}
@@ -150,22 +139,41 @@ const RoomGrid = ({
         </div>
       </div>
 
-      {/* Leyenda simplificada */}
-      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <h3 className="text-sm font-semibold text-blue-900 mb-2">Estados de Habitaciones (Sistema Simplificado)</h3>
-        <div className="flex flex-wrap gap-4 text-sm">
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-green-500 rounded mr-2"></div>
-            <span>Disponible (Limpia)</span>
+      {/* Leyenda de acciones */}
+      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <h3 className="text-sm font-semibold text-blue-900 mb-3">Guía de Acciones Automáticas</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+          <div className="flex items-center space-x-3 p-3 bg-green-100 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 bg-green-500 rounded"></div>
+              <LogIn className="w-4 h-4 text-green-700" />
+            </div>
+            <div>
+              <div className="font-medium text-green-800">Habitación Disponible</div>
+              <div className="text-green-600 text-xs">Click → Iniciar Check-in</div>
+            </div>
           </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-red-500 rounded mr-2"></div>
-            <span>Ocupada</span>
+          
+          <div className="flex items-center space-x-3 p-3 bg-red-100 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 bg-red-500 rounded"></div>
+              <LogOut className="w-4 h-4 text-red-700" />
+            </div>
+            <div>
+              <div className="font-medium text-red-800">Habitación Ocupada</div>
+              <div className="text-red-600 text-xs">Click → Procesar Check-out</div>
+            </div>
           </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-yellow-500 rounded mr-2"></div>
-            <span>Necesita Limpieza</span>
-            <Sparkles className="w-4 h-4 ml-1 text-yellow-600" />
+          
+          <div className="flex items-center space-x-3 p-3 bg-yellow-100 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 bg-yellow-500 rounded"></div>
+              <Sparkles className="w-4 h-4 text-yellow-700" />
+            </div>
+            <div>
+              <div className="font-medium text-yellow-800">Necesita Limpieza</div>
+              <div className="text-yellow-600 text-xs">Click → Marcar como Limpia</div>
+            </div>
           </div>
         </div>
       </div>
@@ -180,51 +188,59 @@ const RoomGrid = ({
           const roomCapacity = room.capacity || 2;
           const roomRate = room.rate || room.base_rate || 100;
           const roomType = room.room_type || 'Habitación Estándar';
+          const isProcessing = processingRoom === roomNumber;
 
-          const isClickable = checkoutMode ? roomStatus === 'occupied' : roomStatus === 'available';
           const hasOrder = savedOrders && savedOrders[roomNumber];
           const guestInfo = room.currentGuest || room.guestName || hasOrder?.guestName;
-          
-          // Determinar si la habitación necesita limpieza
-          const needsCleaning = room.cleaning_status === 'dirty' || room.status === 'cleaning';
           
           return (
             <div key={room.id || roomNumber || index} className="relative">
               {/* Botón principal de la habitación */}
               <button
-                onClick={() => isClickable && onRoomClick(room)}
-                disabled={!isClickable}
+                onClick={() => !isProcessing && onRoomClick(room)}
+                disabled={isProcessing}
                 className={`
                   relative p-4 rounded-lg font-bold text-lg transition-all duration-200 transform hover:scale-105
                   ${getRoomStatusColor(room)}
                   ${selectedRoom?.number === roomNumber ? 'ring-4 ring-blue-400 ring-opacity-50' : ''}
-                  ${!isClickable ? 'opacity-50 cursor-not-allowed' : ''}
-                  w-full
+                  ${isProcessing ? 'opacity-50 cursor-wait' : 'cursor-pointer'}
+                  w-full min-h-[120px] flex flex-col justify-between
                 `}
               >
-                <Bed className="w-6 h-6 mx-auto mb-2" />
-                <div className="mb-1">{roomNumber}</div>
+                {/* Indicador de procesamiento */}
+                {isProcessing && (
+                  <div className="absolute top-2 right-2">
+                    <Loader className="w-4 h-4 animate-spin" />
+                  </div>
+                )}
+
+                {/* Número de habitación */}
+                <div className="flex items-center justify-center mb-2">
+                  <Bed className="w-6 h-6 mr-2" />
+                  <span className="text-xl font-bold">{roomNumber}</span>
+                </div>
                 
-                {/* Room info */}
-                <div className="text-xs opacity-90">
-                  <div className="flex items-center justify-center space-x-1 mb-1">
-                    <Users size={10} />
-                    <span>{roomCapacity}</span>
+                {/* Información de la habitación */}
+                <div className="text-xs opacity-90 space-y-1">
+                  <div className="flex items-center justify-center space-x-1">
+                    <Users size={12} />
+                    <span>{roomCapacity} personas</span>
                   </div>
-                  <div className="text-xs">
-                    S/ {parseFloat(roomRate).toFixed(0)}
-                  </div>
-                  <div className="text-xs mt-1">
+                  <div>S/ {parseFloat(roomRate).toFixed(0)}</div>
+                  <div className="text-xs font-medium">
                     {getRoomStatusText(room)}
                   </div>
-                  <div className="text-xs mt-1 opacity-75">
-                    {roomType}
-                  </div>
+                </div>
+
+                {/* Ícono de acción en la esquina inferior */}
+                <div className="absolute bottom-2 left-2">
+                  {getRoomActionIcon(room)}
                 </div>
                 
                 {/* Información del huésped para habitaciones ocupadas */}
                 {roomStatus === 'occupied' && guestInfo && (
-                  <div className="absolute top-1 left-1 bg-white bg-opacity-90 rounded px-1 py-0.5 text-xs text-gray-800 max-w-[80%] truncate">
+                  <div className="absolute top-1 left-1 bg-white bg-opacity-90 rounded px-2 py-1 text-xs text-gray-800 max-w-[80%] truncate">
+                    <User className="w-3 h-3 inline mr-1" />
                     {typeof guestInfo === 'string' ? guestInfo : guestInfo.name || 'Huésped'}
                   </div>
                 )}
@@ -235,65 +251,77 @@ const RoomGrid = ({
                     ✓
                   </div>
                 )}
+
+                {/* Indicador de tiempo para habitaciones ocupadas */}
+                {roomStatus === 'occupied' && room.checkInDate && (
+                  <div className="absolute top-1 right-1 bg-black bg-opacity-50 rounded px-1 py-0.5 text-xs flex items-center">
+                    <Clock className="w-3 h-3 mr-1" />
+                    <span>
+                      {Math.floor((new Date() - new Date(room.checkInDate)) / (1000 * 60 * 60 * 24))}d
+                    </span>
+                  </div>
+                )}
               </button>
 
-              {/* Botón de limpieza rápida */}
-              {needsCleaning && (
-                <button
-                  onClick={(e) => handleQuickClean(room, e)}
-                  className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-green-500 hover:bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110"
-                  title="Click para marcar como limpia"
-                >
-                  <Sparkles size={16} />
-                </button>
-              )}
+              {/* Tooltip de acción */}
+              <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                {isProcessing ? 'Procesando...' : getRoomActionText(room)}
+              </div>
             </div>
           );
         })}
       </div>
 
-      {/* Leyenda de acciones */}
-      <div className="flex justify-between items-center">
-        <div className="flex flex-wrap gap-4 text-sm">
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-green-500 rounded mr-2"></div>
-            <span>Disponible</span>
+      {/* Estadísticas del piso actual */}
+      <div className="bg-gray-50 rounded-lg p-4">
+        <div className="flex justify-between items-center text-sm">
+          <div className="flex space-x-6">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <span>Disponibles: {currentFloorRooms.filter(r => r.status === 'available' && r.cleaning_status === 'clean').length}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+              <span>Ocupadas: {currentFloorRooms.filter(r => r.status === 'occupied').length}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+              <span>Por limpiar: {currentFloorRooms.filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length}</span>
+            </div>
           </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-red-500 rounded mr-2"></div>
-            <span>Ocupada</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-yellow-500 rounded mr-2"></div>
-            <span>Necesita Limpieza</span>
-          </div>
-          {/* Instrucción para limpieza rápida */}
-          <div className="flex items-center text-green-600 font-medium">
-            <Sparkles className="w-4 h-4 mr-2" />
-            <span>Click en ✨ para limpiar</span>
+          
+          <div className="text-xs text-gray-500">
+            Piso {selectedFloor} - {currentFloorRooms.length} habitaciones
           </div>
         </div>
 
-        {/* Botón Siguiente */}
-        {selectedRoom && (
-          <Button
-            variant="primary"
-            onClick={onNext}
-            icon={ChevronRight}
-            className="px-6 py-3"
-          >
-            {checkoutMode ? 'Ver Resumen de Pago' : 'Siguiente - Agregar Orden'}
-          </Button>
+        {processingRoom && (
+          <div className="mt-3 p-2 bg-blue-100 border border-blue-200 rounded text-center">
+            <div className="flex items-center justify-center space-x-2 text-blue-700">
+              <Loader className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-medium">
+                Procesando habitación {processingRoom}...
+              </span>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Información adicional */}
-      <div className="mt-4 text-xs text-gray-500 text-center">
-        Habitaciones en piso {selectedFloor}: {currentFloorRooms.length} | 
-        Disponibles: {currentFloorRooms.filter(r => r.status === 'available' && r.cleaning_status !== 'dirty').length} | 
-        Ocupadas: {currentFloorRooms.filter(r => r.status === 'occupied').length} |
-        Necesitan limpieza: {currentFloorRooms.filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length}
-      </div>
+      {/* Información adicional solo en desarrollo */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="mt-4 p-3 bg-gray-100 rounded text-xs text-gray-600">
+          <details>
+            <summary className="cursor-pointer font-medium">Debug Info (Development)</summary>
+            <div className="mt-2 space-y-1">
+              <div>Selected Floor: {selectedFloor}</div>
+              <div>Available Floors: {availableFloors.join(', ')}</div>
+              <div>Current Floor Rooms: {currentFloorRooms.length}</div>
+              <div>Processing Room: {processingRoom || 'None'}</div>
+              <div>Saved Orders: {Object.keys(savedOrders || {}).length}</div>
+            </div>
+          </details>
+        </div>
+      )}
     </>
   );
 };

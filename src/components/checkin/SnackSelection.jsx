@@ -1,6 +1,6 @@
-// src/components/checkin/SnackSelection.jsx - CON FORMULARIO DE HUÉSPED
+// src/components/checkin/SnackSelection.jsx - ACTUALIZADO PARA CHECK-IN Y CHECK-OUT
 import React from 'react';
-import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X } from 'lucide-react';
+import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X, LogOut, LogIn, User } from 'lucide-react';
 import Button from '../common/Button';
 import GuestRegistrationForm from './GuestRegistrationForm';
 
@@ -20,7 +20,8 @@ const SnackSelection = ({
   onConfirmOrder,
   onConfirmRoomOnly,
   onCancelOrder,
-  loading = false
+  loading = false,
+  isCheckout = false // Nueva prop para determinar si es check-out
 }) => {
 
   const getTotalSnacks = () => {
@@ -28,11 +29,21 @@ const SnackSelection = ({
   };
 
   const getTotalOrder = () => {
+    if (isCheckout) {
+      // Para check-out, usar el total original + snacks
+      return (currentOrder?.originalTotal || currentOrder?.roomPrice || 0) + getTotalSnacks();
+    }
+    // Para check-in, usar precio de habitación + snacks
     return (currentOrder?.roomPrice || 0) + getTotalSnacks();
   };
 
-  // Validar datos del huésped
+  // Validar datos del huésped (menos estricto para check-out)
   const isGuestDataValid = () => {
+    if (isCheckout) {
+      // Para check-out, solo necesitamos el nombre (ya debería existir)
+      return guestData?.fullName?.trim();
+    }
+    // Para check-in, necesitamos datos completos
     return guestData?.fullName?.trim() && 
            guestData?.documentNumber?.trim() && 
            guestData?.phone?.trim();
@@ -55,12 +66,26 @@ const SnackSelection = ({
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-800">
-          Habitación {currentOrder?.room?.number} - Registro de Huésped y Snacks
+        <h2 className="text-xl font-semibold text-gray-800 flex items-center">
+          {isCheckout ? (
+            <>
+              <LogOut className="w-5 h-5 mr-2 text-red-600" />
+              Habitación {currentOrder?.room?.number} - Check-out y Servicios Adicionales
+            </>
+          ) : (
+            <>
+              <LogIn className="w-5 h-5 mr-2 text-blue-600" />
+              Habitación {currentOrder?.room?.number} - Check-in y Registro de Huésped
+            </>
+          )}
         </h2>
         <div className="flex items-center space-x-3">
-          <div className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full">
-            💡 Registro sin reservación
+          <div className={`text-sm px-3 py-1 rounded-full ${
+            isCheckout 
+              ? 'bg-red-100 text-red-700' 
+              : 'bg-green-100 text-green-700'
+          }`}>
+            {isCheckout ? '🚪 Procesando Check-out' : '💡 Registro sin reservación'}
           </div>
           <Button
             variant="outline"
@@ -74,21 +99,90 @@ const SnackSelection = ({
       </div>
 
       <div className="space-y-6">
-        {/* FORMULARIO DEL HUÉSPED */}
-        <GuestRegistrationForm
-          guestData={guestData}
-          onGuestDataChange={onGuestDataChange}
-          onSave={() => {}} // Se maneja en el padre
-          onCancel={onCancelOrder}
-          loading={loading}
-        />
+        {/* FORMULARIO DEL HUÉSPED - Diferente comportamiento para check-out */}
+        {isCheckout ? (
+          // Para check-out: Solo mostrar información del huésped (no editable)
+          <div className="bg-white border-2 border-red-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2">
+                <User className="w-5 h-5 text-red-600" />
+                <h3 className="text-lg font-semibold text-gray-800">
+                  Información del Huésped (Check-out)
+                </h3>
+              </div>
+              <div className="text-sm text-red-600 bg-red-50 px-3 py-1 rounded-full">
+                Solo lectura
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-medium text-gray-700">Nombre:</span>
+                  <p className="text-gray-900">{guestData?.fullName || 'No especificado'}</p>
+                </div>
+                
+                {guestData?.documentNumber && (
+                  <div>
+                    <span className="font-medium text-gray-700">Documento:</span>
+                    <p className="text-gray-900">{guestData.documentType}: {guestData.documentNumber}</p>
+                  </div>
+                )}
+                
+                {guestData?.phone && (
+                  <div>
+                    <span className="font-medium text-gray-700">Teléfono:</span>
+                    <p className="text-gray-900">{guestData.phone}</p>
+                  </div>
+                )}
+                
+                {guestData?.email && (
+                  <div>
+                    <span className="font-medium text-gray-700">Email:</span>
+                    <p className="text-gray-900">{guestData.email}</p>
+                  </div>
+                )}
+
+                <div>
+                  <span className="font-medium text-gray-700">Huéspedes:</span>
+                  <p className="text-gray-900">
+                    {guestData?.adults || 1} adulto{(guestData?.adults || 1) > 1 ? 's' : ''}
+                    {guestData?.children > 0 && `, ${guestData.children} niño${guestData.children > 1 ? 's' : ''}`}
+                  </p>
+                </div>
+              </div>
+
+              {guestData?.specialRequests && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <span className="font-medium text-gray-700">Observaciones:</span>
+                  <p className="text-gray-900 mt-1">{guestData.specialRequests}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-sm">
+                ℹ️ <strong>Check-out en proceso:</strong> Agrega servicios adicionales si es necesario antes de finalizar.
+              </p>
+            </div>
+          </div>
+        ) : (
+          // Para check-in: Formulario completo editable
+          <GuestRegistrationForm
+            guestData={guestData}
+            onGuestDataChange={onGuestDataChange}
+            onSave={() => {}} // Se maneja en el padre
+            onCancel={onCancelOrder}
+            loading={loading}
+          />
+        )}
 
         {/* SECCIÓN DE SNACKS - Solo si los datos del huésped son válidos */}
         {isGuestDataValid() ? (
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <ShoppingCart className="w-5 h-5 mr-2 text-blue-600" />
-              Snacks Opcionales
+              {isCheckout ? 'Servicios Adicionales para Check-out' : 'Snacks Opcionales'}
             </h3>
 
             {/* Grid de 3 Columnas para Snacks */}
@@ -96,7 +190,7 @@ const SnackSelection = ({
               
               {/* Columna 1: Tipos de Snack */}
               <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="text-md font-semibold mb-4 text-center">TIPOS DE SNACK</h4>
+                <h4 className="text-md font-semibold mb-4 text-center">TIPOS DE SERVICIOS</h4>
                 <div className="space-y-3">
                   {snackTypes?.map((type) => (
                     <button
@@ -114,7 +208,7 @@ const SnackSelection = ({
                     </button>
                   )) || (
                     <div className="text-center text-gray-500 py-8">
-                      <p>No hay tipos de snack disponibles</p>
+                      <p>No hay tipos de servicios disponibles</p>
                     </div>
                   )}
                 </div>
@@ -125,7 +219,7 @@ const SnackSelection = ({
                 <h4 className="text-md font-semibold mb-4 text-center">
                   {selectedSnackType && snackTypes 
                     ? snackTypes.find(t => t.id === selectedSnackType)?.name 
-                    : 'LISTA DE SNACKS'
+                    : 'LISTA DE SERVICIOS'
                   }
                 </h4>
                 
@@ -161,7 +255,7 @@ const SnackSelection = ({
                   <div className="flex items-center justify-center h-[400px] text-gray-500">
                     <div className="text-center">
                       <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                      <p>Selecciona un tipo de snack para ver la lista</p>
+                      <p>Selecciona un tipo de servicio para ver la lista</p>
                     </div>
                   </div>
                 )}
@@ -169,35 +263,70 @@ const SnackSelection = ({
 
               {/* Columna 3: Resumen de la Orden */}
               <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="text-md font-semibold mb-4 text-center">RESUMEN DE LA ORDEN</h4>
+                <h4 className="text-md font-semibold mb-4 text-center">
+                  {isCheckout ? 'RESUMEN DE CHECK-OUT' : 'RESUMEN DE LA ORDEN'}
+                </h4>
                 
                 <div className="bg-white rounded-lg p-4 h-[400px] overflow-y-auto">
                   {/* Header de la habitación */}
-                  <div className="text-center mb-4 p-3 bg-blue-600 text-white rounded-lg">
+                  <div className={`text-center mb-4 p-3 text-white rounded-lg ${
+                    isCheckout ? 'bg-red-600' : 'bg-blue-600'
+                  }`}>
                     <h5 className="font-bold">Habitación {currentOrder?.room?.number}</h5>
-                    <p className="text-xs text-blue-100">{currentOrder?.room?.room_type || 'Estándar'}</p>
+                    <p className="text-xs opacity-90">{currentOrder?.room?.room_type || 'Estándar'}</p>
+                    {isCheckout && (
+                      <p className="text-xs opacity-90 mt-1">Check-out en proceso</p>
+                    )}
                   </div>
 
                   {/* Información del huésped */}
-                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <h6 className="font-semibold text-green-800 text-sm mb-2">Huésped:</h6>
-                    <p className="text-sm text-green-700 font-medium">{guestData?.fullName}</p>
-                    <p className="text-xs text-green-600">
-                      {guestData?.documentType}: {guestData?.documentNumber}
+                  <div className={`mb-4 p-3 border rounded-lg ${
+                    isCheckout 
+                      ? 'bg-red-50 border-red-200' 
+                      : 'bg-green-50 border-green-200'
+                  }`}>
+                    <h6 className={`font-semibold text-sm mb-2 ${
+                      isCheckout ? 'text-red-800' : 'text-green-800'
+                    }`}>
+                      Huésped:
+                    </h6>
+                    <p className={`text-sm font-medium ${
+                      isCheckout ? 'text-red-700' : 'text-green-700'
+                    }`}>
+                      {guestData?.fullName}
                     </p>
+                    {guestData?.documentNumber && (
+                      <p className={`text-xs ${
+                        isCheckout ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        {guestData?.documentType}: {guestData?.documentNumber}
+                      </p>
+                    )}
                     {guestData?.phone && (
-                      <p className="text-xs text-green-600">📞 {guestData.phone}</p>
+                      <p className={`text-xs ${
+                        isCheckout ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        📞 {guestData.phone}
+                      </p>
                     )}
                     {guestData?.email && (
-                      <p className="text-xs text-green-600">✉️ {guestData.email}</p>
+                      <p className={`text-xs ${
+                        isCheckout ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        ✉️ {guestData.email}
+                      </p>
                     )}
                   </div>
 
                   {/* Precio de la habitación */}
                   <div className="space-y-3 mb-4">
                     <div className="flex justify-between items-center py-2 border-b">
-                      <span className="font-medium text-sm">Precio habitación</span>
-                      <span className="font-bold">S/ {(currentOrder?.roomPrice || 0).toFixed(2)}</span>
+                      <span className="font-medium text-sm">
+                        {isCheckout ? 'Total estadía' : 'Precio habitación'}
+                      </span>
+                      <span className="font-bold">
+                        S/ {(isCheckout ? (currentOrder?.originalTotal || currentOrder?.roomPrice || 0) : (currentOrder?.roomPrice || 0)).toFixed(2)}
+                      </span>
                     </div>
 
                     {/* Número de huéspedes */}
@@ -211,48 +340,53 @@ const SnackSelection = ({
                       </div>
                     )}
 
-                    {/* Snacks seleccionados */}
+                    {/* Servicios seleccionados */}
                     {selectedSnacks && selectedSnacks.length > 0 ? (
-                      selectedSnacks.map((snack) => (
-                        <div key={snack.id} className="flex justify-between items-center py-2 border-b border-gray-100">
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium">{snack.name}</span>
-                              <button
-                                onClick={() => onSnackRemove(snack.id)}
-                                disabled={loading}
-                                className="text-red-500 hover:text-red-700 text-xs p-1 disabled:opacity-50"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => onQuantityUpdate(snack.id, Math.max(1, snack.quantity - 1))}
-                                disabled={loading}
-                                className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600 disabled:opacity-50"
-                              >
-                                <Minus size={12} />
-                              </button>
-                              <span className="text-sm w-8 text-center font-medium">{snack.quantity}</span>
-                              <button
-                                onClick={() => onQuantityUpdate(snack.id, snack.quantity + 1)}
-                                disabled={loading}
-                                className="w-6 h-6 bg-green-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-green-600 disabled:opacity-50"
-                              >
-                                <Plus size={12} />
-                              </button>
-                            </div>
-                          </div>
-                          <span className="text-sm font-bold ml-2">
-                            S/ {(snack.price * snack.quantity).toFixed(2)}
-                          </span>
+                      <>
+                        <div className="text-sm font-medium text-gray-800 border-b pb-1">
+                          {isCheckout ? 'Servicios adicionales:' : 'Snacks seleccionados:'}
                         </div>
-                      ))
+                        {selectedSnacks.map((snack) => (
+                          <div key={snack.id} className="flex justify-between items-center py-2 border-b border-gray-100">
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-medium">{snack.name}</span>
+                                <button
+                                  onClick={() => onSnackRemove(snack.id)}
+                                  disabled={loading}
+                                  className="text-red-500 hover:text-red-700 text-xs p-1 disabled:opacity-50"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => onQuantityUpdate(snack.id, Math.max(1, snack.quantity - 1))}
+                                  disabled={loading}
+                                  className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600 disabled:opacity-50"
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <span className="text-sm w-8 text-center font-medium">{snack.quantity}</span>
+                                <button
+                                  onClick={() => onQuantityUpdate(snack.id, snack.quantity + 1)}
+                                  disabled={loading}
+                                  className="w-6 h-6 bg-green-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-green-600 disabled:opacity-50"
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+                            </div>
+                            <span className="text-sm font-bold ml-2">
+                              S/ {(snack.price * snack.quantity).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </>
                     ) : (
                       <div className="text-center text-gray-500 py-4">
-                        <p className="text-sm mb-2">🍎 No hay snacks seleccionados</p>
-                        <p className="text-xs text-gray-400">Los snacks son opcionales</p>
+                        <p className="text-sm mb-2">🍎 {isCheckout ? 'No hay servicios adicionales' : 'No hay snacks seleccionados'}</p>
+                        <p className="text-xs text-gray-400">{isCheckout ? 'Los servicios son opcionales' : 'Los snacks son opcionales'}</p>
                       </div>
                     )}
                   </div>
@@ -261,37 +395,64 @@ const SnackSelection = ({
                   <div className="border-t-2 border-gray-300 pt-4 mb-4">
                     <div className="flex justify-between items-center text-lg font-bold">
                       <span>Total:</span>
-                      <span className="text-green-600">
+                      <span className={isCheckout ? 'text-red-600' : 'text-green-600'}>
                         S/ {getTotalOrder().toFixed(2)}
                       </span>
                     </div>
+                    {selectedSnacks.length > 0 && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        Servicios adicionales: S/ {getTotalSnacks().toFixed(2)}
+                      </div>
+                    )}
                   </div>
 
                   {/* Botones de acción */}
                   <div className="space-y-2">
-                    {/* Botón para solo habitación - siempre disponible */}
-                    <Button
-                      variant="success"
-                      onClick={onConfirmRoomOnly}
-                      disabled={loading || !isGuestDataValid()}
-                      className="w-full text-sm py-3"
-                    >
-                      ✅ Confirmar Solo Habitación
-                      <div className="text-xs opacity-90">S/ {(currentOrder?.roomPrice || 0).toFixed(2)}</div>
-                    </Button>
-                    
-                    {/* Botón para habitación + snacks - solo si hay snacks */}
-                    {selectedSnacks && selectedSnacks.length > 0 && (
-                      <Button
-                        variant="primary"
-                        onClick={onConfirmOrder}
-                        icon={Check}
-                        disabled={loading || !isGuestDataValid()}
-                        className="w-full text-sm py-3"
-                      >
-                        🛒 Confirmar con Snacks
-                        <div className="text-xs opacity-90">S/ {getTotalOrder().toFixed(2)} total</div>
-                      </Button>
+                    {/* Botón principal - diferente para check-in vs check-out */}
+                    {isCheckout ? (
+                      <>
+                        {/* Un solo botón para check-out (con o sin servicios) */}
+                        <Button
+                          variant="danger"
+                          onClick={onConfirmOrder}
+                          disabled={loading || !isGuestDataValid()}
+                          className="w-full text-sm py-3"
+                          icon={LogOut}
+                        >
+                          ✅ Procesar Check-out
+                          <div className="text-xs opacity-90">
+                            S/ {getTotalOrder().toFixed(2)}
+                            {selectedSnacks.length > 0 && " (incluye servicios)"}
+                          </div>
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        {/* Botones para check-in */}
+                        <Button
+                          variant="success"
+                          onClick={onConfirmRoomOnly}
+                          disabled={loading || !isGuestDataValid()}
+                          className="w-full text-sm py-3"
+                        >
+                          ✅ Confirmar Solo Habitación
+                          <div className="text-xs opacity-90">S/ {(currentOrder?.roomPrice || 0).toFixed(2)}</div>
+                        </Button>
+                        
+                        {/* Botón para habitación + snacks - solo si hay snacks */}
+                        {selectedSnacks && selectedSnacks.length > 0 && (
+                          <Button
+                            variant="primary"
+                            onClick={onConfirmOrder}
+                            icon={Check}
+                            disabled={loading || !isGuestDataValid()}
+                            className="w-full text-sm py-3"
+                          >
+                            🛒 Confirmar con Snacks
+                            <div className="text-xs opacity-90">S/ {getTotalOrder().toFixed(2)} total</div>
+                          </Button>
+                        )}
+                      </>
                     )}
                     
                     <Button
@@ -309,12 +470,21 @@ const SnackSelection = ({
           </div>
         ) : (
           /* Mensaje si faltan datos del huésped */
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-            <h3 className="text-lg font-semibold text-yellow-800 mb-2">
-              Complete la información del huésped
+          <div className={`border rounded-lg p-6 text-center ${
+            isCheckout 
+              ? 'bg-red-50 border-red-200' 
+              : 'bg-yellow-50 border-yellow-200'
+          }`}>
+            <h3 className={`text-lg font-semibold mb-2 ${
+              isCheckout ? 'text-red-800' : 'text-yellow-800'
+            }`}>
+              {isCheckout ? 'Información del huésped incompleta' : 'Complete la información del huésped'}
             </h3>
-            <p className="text-yellow-700">
-              Por favor complete los campos obligatorios del formulario de registro para continuar con la selección de snacks.
+            <p className={isCheckout ? 'text-red-700' : 'text-yellow-700'}>
+              {isCheckout 
+                ? 'No se puede procesar el check-out sin la información básica del huésped.'
+                : 'Por favor complete los campos obligatorios del formulario de registro para continuar con la selección de snacks.'
+              }
             </p>
           </div>
         )}
