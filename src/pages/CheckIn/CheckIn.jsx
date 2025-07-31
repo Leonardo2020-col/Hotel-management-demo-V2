@@ -226,7 +226,14 @@ const CheckIn = () => {
       setCurrentOrder({
         ...orderFound,
         isCheckout: true, // Flag para indicar que es check-out
-        originalTotal: orderFound.total || orderFound.roomPrice // Guardar total original
+        originalTotal: orderFound.total || orderFound.roomPrice, // Guardar total original
+        room: {
+          ...orderFound.room,
+          number: room.number, // Asegurar que tenemos el número
+          id: orderFound.room?.id || room.id,
+          status: room.status,
+          floor: room.floor || Math.floor(parseInt(room.number) / 100)
+        }
       })
       setOrderStep(1) // Ir a selección de snacks
       
@@ -242,6 +249,20 @@ const CheckIn = () => {
 
   // Confirmación rápida de check-out con modal
   const showCheckOutConfirmation = (order) => {
+    console.log('📝 Showing checkout confirmation for order:', {
+      orderId: order.id,
+      roomNumber: order.room?.number,
+      guestName: order.guestName,
+      total: order.total,
+      hasRoom: !!order.room
+    })
+    
+    if (!order.room || !order.room.number) {
+      console.error('❌ Cannot show checkout confirmation - missing room data')
+      toast.error('Error: Información de habitación faltante para el check-out')
+      return
+    }
+    
     setQuickCheckoutData(order)
     setShowQuickCheckout(true)
   }
@@ -540,7 +561,13 @@ const CheckIn = () => {
       return
     }
 
-    console.log('🔄 Processing confirm order:', { currentOrder, isCheckout: currentOrder.isCheckout })
+    console.log('🔄 Processing confirm order:', { 
+      currentOrder, 
+      isCheckout: currentOrder.isCheckout,
+      roomData: currentOrder.room,
+      roomNumber: currentOrder.room?.number,
+      selectedSnacks
+    })
 
     // Verificar si es check-out o check-in
     if (currentOrder.isCheckout) {
@@ -550,15 +577,32 @@ const CheckIn = () => {
         return
       }
 
+      // Verificar que tenemos información de habitación válida
+      if (!currentOrder.room || !currentOrder.room.number) {
+        console.error('❌ Missing room data:', currentOrder)
+        toast.error('Error: Información de habitación faltante')
+        return
+      }
+
       // Actualizar la orden con los nuevos snacks
       const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
       const updatedOrder = {
         ...currentOrder,
         snacks: selectedSnacks,
-        total: (currentOrder.originalTotal || currentOrder.roomPrice) + snacksTotal
+        total: (currentOrder.originalTotal || currentOrder.roomPrice || 0) + snacksTotal,
+        room: {
+          ...currentOrder.room,
+          number: currentOrder.room.number,
+          id: currentOrder.room.id || currentOrder.room.room_id
+        }
       }
 
-      console.log('🛒 Updated order for checkout:', updatedOrder)
+      console.log('🛒 Updated order for checkout:', {
+        ...updatedOrder,
+        roomNumber: updatedOrder.room.number,
+        total: updatedOrder.total,
+        snacksCount: selectedSnacks.length
+      })
 
       // Ir directamente al modal de confirmación de check-out
       showCheckOutConfirmation(updatedOrder)
