@@ -202,13 +202,15 @@ const CheckIn = () => {
     
     // Ir a selección de snacks para agregar servicios adicionales
     if (orderFound) {
+      console.log('📋 Order found for checkout, setting up guest data:', orderFound)
+      
       // Configurar datos del huésped desde la orden existente
       setGuestData({
-        fullName: orderFound.guestName || 'Huésped',
-        documentType: orderFound.guestDocumentType || 'DNI',
-        documentNumber: orderFound.guestDocument || '',
-        phone: orderFound.guestPhone || '',
-        email: orderFound.guestEmail || '',
+        fullName: orderFound.guestName || orderFound.guest?.full_name || 'Huésped',
+        documentType: orderFound.guestDocumentType || orderFound.guest?.document_type || 'DNI',
+        documentNumber: orderFound.guestDocument || orderFound.guest?.document_number || '',
+        phone: orderFound.guestPhone || orderFound.guest?.phone || '',
+        email: orderFound.guestEmail || orderFound.guest?.email || '',
         nationality: orderFound.nationality || 'Peruana',
         gender: '',
         adults: orderFound.adults || 1,
@@ -224,7 +226,7 @@ const CheckIn = () => {
       setCurrentOrder({
         ...orderFound,
         isCheckout: true, // Flag para indicar que es check-out
-        originalTotal: orderFound.total // Guardar total original
+        originalTotal: orderFound.total || orderFound.roomPrice // Guardar total original
       })
       setOrderStep(1) // Ir a selección de snacks
       
@@ -232,6 +234,9 @@ const CheckIn = () => {
         icon: '🛒',
         duration: 2000
       })
+    } else {
+      console.error('❌ No order found for checkout')
+      toast.error('No se encontró información de reserva para esta habitación')
     }
   }
 
@@ -243,15 +248,22 @@ const CheckIn = () => {
 
   // Manejar confirmación desde el modal
   const handleQuickCheckoutConfirm = async (paymentMethod) => {
-    if (!quickCheckoutData) return
+    if (!quickCheckoutData) {
+      toast.error('No hay datos de check-out')
+      return
+    }
     
     try {
+      setProcessingRoom(quickCheckoutData.room.number)
       await processCheckOutDirectly(quickCheckoutData, paymentMethod)
       setShowQuickCheckout(false)
       setQuickCheckoutData(null)
+      resetOrder()
     } catch (error) {
       console.error('Error in quick checkout:', error)
       toast.error('Error al procesar check-out')
+    } finally {
+      setProcessingRoom(null)
     }
   }
 
@@ -274,24 +286,40 @@ const CheckIn = () => {
   // Procesar check-out directamente
   const processCheckOutDirectly = async (order, paymentMethod) => {
     try {
+      console.log('🚪 Processing check-out:', { order, paymentMethod })
+      
+      if (!order || !order.room || !order.room.number) {
+        throw new Error('Información de habitación incompleta')
+      }
+
       const { data, error } = await processCheckOut(order.room.number, paymentMethod)
       
       if (error) {
+        console.error('ProcessCheckOut error:', error)
         toast.error(error.message || 'Error al procesar check-out')
         return
       }
 
+      // Actualizar estado local - remover de savedOrders
+      setSavedOrders(prev => {
+        const newOrders = { ...prev }
+        delete newOrders[order.room.number]
+        return newOrders
+      })
+
       toast.success(
-        `Check-out completado!\n🏨 Habitación: ${order.room.number}\n👤 ${order.guestName}\n💰 S/ ${order.total.toFixed(2)}\n💳 ${getPaymentMethodName(paymentMethod)}`,
+        `Check-out completado!\n🏨 Habitación: ${order.room.number}\n👤 ${order.guestName || 'Huésped'}\n💰 S/ ${order.total.toFixed(2)}\n💳 ${getPaymentMethodName(paymentMethod)}`,
         { 
           duration: 4000,
           icon: '✅'
         }
       )
       
+      console.log('✅ Check-out completed successfully')
+      
     } catch (error) {
       console.error('❌ Error in processCheckOut:', error)
-      toast.error('Error inesperado al procesar check-out')
+      toast.error('Error inesperado: ' + (error.message || 'Error desconocido'))
     }
   }
 
@@ -512,6 +540,8 @@ const CheckIn = () => {
       return
     }
 
+    console.log('🔄 Processing confirm order:', { currentOrder, isCheckout: currentOrder.isCheckout })
+
     // Verificar si es check-out o check-in
     if (currentOrder.isCheckout) {
       // Es un check-out con servicios adicionales
@@ -527,6 +557,8 @@ const CheckIn = () => {
         snacks: selectedSnacks,
         total: (currentOrder.originalTotal || currentOrder.roomPrice) + snacksTotal
       }
+
+      console.log('🛒 Updated order for checkout:', updatedOrder)
 
       // Ir directamente al modal de confirmación de check-out
       showCheckOutConfirmation(updatedOrder)
@@ -845,4 +877,4 @@ const CheckIn = () => {
   )
 }
 
-export default CheckIn;
+export default CheckIn
