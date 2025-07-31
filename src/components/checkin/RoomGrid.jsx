@@ -1,6 +1,6 @@
 // src/components/checkin/RoomGrid.jsx - VERSIÓN SIMPLIFICADA CON CLICK INTELIGENTE
 import React from 'react';
-import { Bed, Users, Sparkles, Loader, LogIn, LogOut, Clock } from 'lucide-react';
+import { Bed, Users, Sparkles, Loader, LogIn, LogOut, Clock, User } from 'lucide-react';
 
 const RoomGrid = ({ 
   floorRooms, 
