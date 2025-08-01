@@ -173,6 +173,20 @@ const GuestRegistrationForm = ({
               </div>
             </div>
 
+            {/* Nacionalidad */}
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Nacionalidad
+              </label>
+              <input
+                type="text"
+                value={guestData.nationality || 'Peruana'}
+                onChange={(e) => handleInputChange('nationality', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={loading}
+              />
+            </div>
+
             {/* Número de huéspedes */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">

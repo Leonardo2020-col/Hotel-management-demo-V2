@@ -2690,12 +2690,13 @@ async cleanRoomWithClick(roomId) {
 
   async createGuest(guestData) {
   try {
-    console.log('👤 Creating guest with simplified validation:', {
+    console.log('👤 Creating guest without gender field:', {
       hasFullName: !!guestData.full_name,
       hasFirstName: !!guestData.first_name,
       hasDocumentNumber: !!guestData.document_number,
       hasPhone: !!guestData.phone,
-      hasEmail: !!guestData.email
+      hasEmail: !!guestData.email,
+      nationality: guestData.nationality
     })
     
     // VALIDACIÓN SIMPLIFICADA - Solo validar que tenga nombre
@@ -2706,7 +2707,7 @@ async cleanRoomWithClick(roomId) {
       }
     }
 
-    // Preparar datos con valores por defecto para campos opcionales
+    // Preparar datos sin el campo 'gender' que está causando problemas
     const insertData = {
       // Nombre - obligatorio
       full_name: guestData.full_name || `${guestData.first_name || ''} ${guestData.last_name || ''}`.trim(),
@@ -2721,7 +2722,9 @@ async cleanRoomWithClick(roomId) {
       
       // Campos con valores por defecto
       nationality: guestData.nationality || 'Peruana',
-      gender: guestData.gender || null,
+      
+      // CAMPO GENDER REMOVIDO - estaba causando el error
+      // gender: guestData.gender || null,  // ❌ COMENTADO
       
       // Campos del sistema
       status: 'active',
@@ -2731,11 +2734,13 @@ async cleanRoomWithClick(roomId) {
       updated_at: new Date().toISOString()
     }
 
-    console.log('📝 Insert data prepared:', {
+    console.log('📝 Insert data prepared (without gender):', {
       full_name: insertData.full_name,
       document_type: insertData.document_type,
       document_number: insertData.document_number,
-      has_contact: !!(insertData.email || insertData.phone)
+      nationality: insertData.nationality,
+      has_contact: !!(insertData.email || insertData.phone),
+      fields_count: Object.keys(insertData).length
     })
 
     const { data, error } = await supabase
@@ -2749,10 +2754,18 @@ async cleanRoomWithClick(roomId) {
       
       // Manejar errores específicos
       if (error.code === '23505') {
-        // Violación de restricción única (documento duplicado, etc.)
+        // Violación de restricción única
         return { 
           data: null, 
           error: { message: 'Ya existe un huésped con este documento de identidad' }
+        }
+      }
+      
+      if (error.code === '42703') {
+        // Columna no existe - problema de schema
+        return { 
+          data: null, 
+          error: { message: 'Error de configuración de base de datos. Contacte al administrador.' }
         }
       }
       
@@ -2762,10 +2775,11 @@ async cleanRoomWithClick(roomId) {
       }
     }
 
-    console.log('✅ Guest created successfully:', {
+    console.log('✅ Guest created successfully (without gender):', {
       id: data.id,
       full_name: data.full_name,
       document_number: data.document_number,
+      nationality: data.nationality,
       has_contact: !!(data.email || data.phone)
     })
     
