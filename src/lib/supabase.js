@@ -2689,38 +2689,96 @@ async cleanRoomWithClick(roomId) {
   },
 
   async createGuest(guestData) {
-    try {
-      // Validar datos mínimos
-      if (!guestData.full_name && !guestData.first_name) {
+  try {
+    console.log('👤 Creating guest with simplified validation:', {
+      hasFullName: !!guestData.full_name,
+      hasFirstName: !!guestData.first_name,
+      hasDocumentNumber: !!guestData.document_number,
+      hasPhone: !!guestData.phone,
+      hasEmail: !!guestData.email
+    })
+    
+    // VALIDACIÓN SIMPLIFICADA - Solo validar que tenga nombre
+    if (!guestData.full_name && !guestData.first_name) {
+      return { 
+        data: null, 
+        error: { message: 'El nombre del huésped es obligatorio' }
+      }
+    }
+
+    // Preparar datos con valores por defecto para campos opcionales
+    const insertData = {
+      // Nombre - obligatorio
+      full_name: guestData.full_name || `${guestData.first_name || ''} ${guestData.last_name || ''}`.trim(),
+      
+      // Campos opcionales - permitir null/vacío
+      email: guestData.email?.trim() || null,
+      phone: guestData.phone?.trim() || null,
+      
+      // Documento - requerido para identificación pero más flexible
+      document_type: guestData.document_type || 'DNI',
+      document_number: guestData.document_number?.trim() || '',
+      
+      // Campos con valores por defecto
+      nationality: guestData.nationality || 'Peruana',
+      gender: guestData.gender || null,
+      
+      // Campos del sistema
+      status: 'active',
+      total_visits: 0,
+      total_spent: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+
+    console.log('📝 Insert data prepared:', {
+      full_name: insertData.full_name,
+      document_type: insertData.document_type,
+      document_number: insertData.document_number,
+      has_contact: !!(insertData.email || insertData.phone)
+    })
+
+    const { data, error } = await supabase
+      .from('guests')
+      .insert([insertData])
+      .select()
+      .single()
+
+    if (error) {
+      console.error('❌ Supabase error creating guest:', error)
+      
+      // Manejar errores específicos
+      if (error.code === '23505') {
+        // Violación de restricción única (documento duplicado, etc.)
         return { 
           data: null, 
-          error: { message: 'El nombre del huésped es obligatorio' }
+          error: { message: 'Ya existe un huésped con este documento de identidad' }
         }
       }
-
-      const insertData = {
-        full_name: guestData.full_name || `${guestData.first_name || ''} ${guestData.last_name || ''}`.trim(),
-        email: guestData.email || '',
-        phone: guestData.phone || '',
-        document_type: guestData.document_type || 'DNI',
-        document_number: guestData.document_number || '',
-        status: 'active',
-        total_visits: 0,
-        total_spent: 0
+      
+      return { 
+        data: null, 
+        error: { message: 'Error al crear el huésped: ' + error.message }
       }
-
-      const { data, error } = await supabase
-        .from('guests')
-        .insert([insertData])
-        .select()
-        .single()
-
-      return { data, error }
-    } catch (error) {
-      console.error('Error creating guest:', error)
-      return { data: null, error }
     }
-  },
+
+    console.log('✅ Guest created successfully:', {
+      id: data.id,
+      full_name: data.full_name,
+      document_number: data.document_number,
+      has_contact: !!(data.email || data.phone)
+    })
+    
+    return { data, error: null }
+
+  } catch (error) {
+    console.error('❌ Unexpected error in createGuest:', error)
+    return { 
+      data: null, 
+      error: { message: 'Error inesperado al crear el huésped: ' + error.message }
+    }
+  }
+},
 
   async updateGuest(guestId, updates) {
     try {

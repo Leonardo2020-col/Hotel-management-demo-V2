@@ -1,4 +1,4 @@
-// src/components/checkin/SnackSelection.jsx - ACTUALIZADO PARA CHECK-IN Y CHECK-OUT
+// src/components/checkin/SnackSelection.jsx - CÓDIGO COMPLETO CORREGIDO
 import React from 'react';
 import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X, LogOut, LogIn, User } from 'lucide-react';
 import Button from '../common/Button';
@@ -21,7 +21,7 @@ const SnackSelection = ({
   onConfirmRoomOnly,
   onCancelOrder,
   loading = false,
-  isCheckout = false // Nueva prop para determinar si es check-out
+  isCheckout = false
 }) => {
 
   const getTotalSnacks = () => {
@@ -30,23 +30,19 @@ const SnackSelection = ({
 
   const getTotalOrder = () => {
     if (isCheckout) {
-      // Para check-out, usar el total original + snacks
       return (currentOrder?.originalTotal || currentOrder?.roomPrice || 0) + getTotalSnacks();
     }
-    // Para check-in, usar precio de habitación + snacks
     return (currentOrder?.roomPrice || 0) + getTotalSnacks();
   };
 
-  // Validar datos del huésped (menos estricto para check-out)
+  // VALIDACIÓN SIMPLIFICADA - Solo nombre y documento
   const isGuestDataValid = () => {
     if (isCheckout) {
       // Para check-out, solo necesitamos el nombre (ya debería existir)
       return guestData?.fullName?.trim();
     }
-    // Para check-in, necesitamos datos completos
-    return guestData?.fullName?.trim() && 
-           guestData?.documentNumber?.trim() && 
-           guestData?.phone?.trim();
+    // Para check-in, solo validar los 2 campos obligatorios
+    return guestData?.fullName?.trim() && guestData?.documentNumber?.trim();
   };
 
   // Validate data
@@ -75,7 +71,7 @@ const SnackSelection = ({
           ) : (
             <>
               <LogIn className="w-5 h-5 mr-2 text-blue-600" />
-              Habitación {currentOrder?.room?.number} - Check-in y Registro de Huésped
+              Habitación {currentOrder?.room?.number} - Check-in Rápido
             </>
           )}
         </h2>
@@ -85,7 +81,7 @@ const SnackSelection = ({
               ? 'bg-red-100 text-red-700' 
               : 'bg-green-100 text-green-700'
           }`}>
-            {isCheckout ? '🚪 Procesando Check-out' : '💡 Registro sin reservación'}
+            {isCheckout ? '🚪 Procesando Check-out' : '⚡ Solo 2 campos obligatorios'}
           </div>
           <Button
             variant="outline"
@@ -167,7 +163,7 @@ const SnackSelection = ({
             </div>
           </div>
         ) : (
-          // Para check-in: Formulario completo editable
+          // Para check-in: Formulario completo editable (simplificado)
           <GuestRegistrationForm
             guestData={guestData}
             onGuestDataChange={onGuestDataChange}
@@ -483,9 +479,28 @@ const SnackSelection = ({
             <p className={isCheckout ? 'text-red-700' : 'text-yellow-700'}>
               {isCheckout 
                 ? 'No se puede procesar el check-out sin la información básica del huésped.'
-                : 'Por favor complete los campos obligatorios del formulario de registro para continuar con la selección de snacks.'
+                : 'Por favor complete solo los 2 campos obligatorios: Nombre Completo y Documento de Identidad.'
               }
             </p>
+            
+            {/* Mostrar qué campos faltan */}
+            {!isCheckout && (
+              <div className="mt-3 text-sm">
+                <p className="font-medium text-yellow-800 mb-2">Campos faltantes:</p>
+                <div className="flex justify-center space-x-4">
+                  {!guestData?.fullName?.trim() && (
+                    <span className="bg-yellow-200 text-yellow-800 px-2 py-1 rounded text-xs">
+                      📝 Nombre Completo
+                    </span>
+                  )}
+                  {!guestData?.documentNumber?.trim() && (
+                    <span className="bg-yellow-200 text-yellow-800 px-2 py-1 rounded text-xs">
+                      🆔 Documento
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
