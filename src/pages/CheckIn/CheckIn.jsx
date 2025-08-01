@@ -594,135 +594,164 @@ const CheckIn = () => {
     }
   }
 
-  // FUNCIÓN CORREGIDA: handleConfirmOrder
-  const handleConfirmOrder = async () => {
-    if (!currentOrder) {
-      toast.error('No hay orden actual')
-      return
-    }
-
-    console.log('🔄 Processing confirm order:', { 
-      currentOrder, 
-      isCheckout: currentOrder.isCheckout,
-      roomData: currentOrder.room,
-      roomNumber: currentOrder.room?.number,
-      selectedSnacks,
-      reservationId: currentOrder.reservationId
-    })
-
-    // Verificar si es check-out o check-in
-    if (currentOrder.isCheckout) {
-      // Es un check-out con servicios adicionales
-      if (!guestData.fullName?.trim()) {
-        toast.error('Información del huésped incompleta')
-        return
-      }
-
-      // Verificar que tenemos información de habitación válida
-      if (!currentOrder.room || !currentOrder.room.number) {
-        console.error('❌ Missing room data:', currentOrder)
-        toast.error('Error: Información de habitación faltante')
-        return
-      }
-
-      // Verificar que tenemos reservationId
-      if (!currentOrder.reservationId) {
-        console.error('❌ Missing reservation ID:', currentOrder)
-        toast.error('Error: ID de reserva faltante')
-        return
-      }
-
-      // Actualizar la orden con los nuevos snacks
-      const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-      const updatedOrder = {
-        ...currentOrder,
-        snacks: selectedSnacks,
-        total: (currentOrder.originalTotal || currentOrder.roomPrice || 0) + snacksTotal,
-        room: {
-          ...currentOrder.room,
-          number: currentOrder.room.number,
-          id: currentOrder.room.id || currentOrder.room.room_id
-        }
-      }
-
-      console.log('🛒 Updated order for checkout:', {
-        ...updatedOrder,
-        roomNumber: updatedOrder.room.number,
-        total: updatedOrder.total,
-        snacksCount: selectedSnacks.length,
-        reservationId: updatedOrder.reservationId
-      })
-
-      // Ir directamente al modal de confirmación de check-out
-      showCheckOutConfirmation(updatedOrder)
-      return
-    }
-
-    // Es un check-in normal
-    if (!guestData.fullName?.trim() || !guestData.documentNumber?.trim() || !guestData.phone?.trim()) {
-      toast.error('Complete los datos obligatorios del huésped')
-      return
-    }
-
-    try {
-      const { data, error } = await processCheckIn(currentOrder, selectedSnacks, guestData)
-      
-      if (error) {
-        toast.error(error.message || 'Error al procesar check-in')
-        return
-      }
-
-      const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-      
-      toast.success(
-        `Check-in completado!\n👤 ${guestData.fullName}\n🏨 Habitación ${currentOrder.room.number}\n💰 S/ ${(currentOrder.roomPrice + snacksTotal).toFixed(2)}`,
-        { duration: 5000, icon: '✅' }
-      )
-      
-      resetOrder()
-    } catch (error) {
-      console.error('Error in handleConfirmOrder:', error)
-      toast.error('Error inesperado al procesar check-in')
-    }
+  // FUNCIÓN CORREGIDA: handleConfirmOrder - VALIDACIÓN SIMPLIFICADA
+const handleConfirmOrder = async () => {
+  if (!currentOrder) {
+    toast.error('No hay orden actual')
+    return
   }
 
-  const handleConfirmRoomOnly = async () => {
-    if (!currentOrder) {
-      toast.error('No hay orden actual')
+  console.log('🔄 Processing confirm order:', { 
+    currentOrder, 
+    isCheckout: currentOrder.isCheckout,
+    guestDataValid: {
+      hasFullName: !!guestData.fullName?.trim(),
+      hasDocumentNumber: !!guestData.documentNumber?.trim(),
+      hasPhone: !!guestData.phone?.trim(), // Solo para debug
+    },
+    selectedSnacks: selectedSnacks.length
+  })
+
+  // Verificar si es check-out o check-in
+  if (currentOrder.isCheckout) {
+    // Es un check-out con servicios adicionales
+    if (!guestData.fullName?.trim()) {
+      toast.error('Información del huésped incompleta')
       return
     }
 
-    // Solo para check-in (no debería llamarse en check-out)
-    if (currentOrder.isCheckout) {
-      console.warn('handleConfirmRoomOnly called in checkout mode - redirecting to handleConfirmOrder')
-      return handleConfirmOrder()
-    }
-
-    // Es un check-in normal sin snacks
-    if (!guestData.fullName?.trim() || !guestData.documentNumber?.trim() || !guestData.phone?.trim()) {
-      toast.error('Complete los datos obligatorios del huésped')
+    // Verificar que tenemos información de habitación válida
+    if (!currentOrder.room || !currentOrder.room.number) {
+      console.error('❌ Missing room data:', currentOrder)
+      toast.error('Error: Información de habitación faltante')
       return
     }
 
-    try {
-      const { data, error } = await processCheckIn(currentOrder, [], guestData)
-      
-      if (error) {
-        toast.error(error.message || 'Error al procesar check-in')
-        return
+    // Verificar que tenemos reservationId
+    if (!currentOrder.reservationId) {
+      console.error('❌ Missing reservation ID:', currentOrder)
+      toast.error('Error: ID de reserva faltante')
+      return
+    }
+
+    // Actualizar la orden con los nuevos snacks
+    const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
+    const updatedOrder = {
+      ...currentOrder,
+      snacks: selectedSnacks,
+      total: (currentOrder.originalTotal || currentOrder.roomPrice || 0) + snacksTotal,
+      room: {
+        ...currentOrder.room,
+        number: currentOrder.room.number,
+        id: currentOrder.room.id || currentOrder.room.room_id
       }
-
-      toast.success(
-        `Check-in completado!\n👤 ${guestData.fullName}\n🏨 Habitación ${currentOrder.room.number}\n💰 S/ ${currentOrder.roomPrice.toFixed(2)}`,
-        { duration: 5000, icon: '✅' }
-      )
-      
-      resetOrder()
-    } catch (error) {
-      console.error('Error in handleConfirmRoomOnly:', error)
-      toast.error('Error inesperado al procesar check-in')
     }
+
+    console.log('🛒 Updated order for checkout:', updatedOrder)
+
+    // Ir directamente al modal de confirmación de check-out
+    showCheckOutConfirmation(updatedOrder)
+    return
   }
+
+  // Es un check-in normal - VALIDACIÓN SIMPLIFICADA: Solo 2 campos obligatorios
+  if (!guestData.fullName?.trim()) {
+    toast.error('El nombre completo es obligatorio')
+    return
+  }
+
+  if (!guestData.documentNumber?.trim()) {
+    toast.error('El documento de identidad es obligatorio')
+    return
+  }
+
+  // Validar longitud mínima del documento
+  if (guestData.documentNumber.length < 6) {
+    toast.error('El documento debe tener al menos 6 caracteres')
+    return
+  }
+
+  try {
+    console.log('✅ All required data valid, processing check-in with simplified validation')
+    
+    const { data, error } = await processCheckIn(currentOrder, selectedSnacks, guestData)
+    
+    if (error) {
+      toast.error(error.message || 'Error al procesar check-in')
+      return
+    }
+
+    const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
+    
+    toast.success(
+      `Check-in completado!\n👤 ${guestData.fullName}\n🏨 Habitación ${currentOrder.room.number}\n💰 S/ ${(currentOrder.roomPrice + snacksTotal).toFixed(2)}`,
+      { duration: 5000, icon: '✅' }
+    )
+    
+    resetOrder()
+  } catch (error) {
+    console.error('Error in handleConfirmOrder:', error)
+    toast.error('Error inesperado al procesar check-in')
+  }
+}
+
+  // FUNCIÓN CORREGIDA: handleConfirmRoomOnly - VALIDACIÓN SIMPLIFICADA
+const handleConfirmRoomOnly = async () => {
+  if (!currentOrder) {
+    toast.error('No hay orden actual')
+    return
+  }
+
+  // Solo para check-in (no debería llamarse en check-out)
+  if (currentOrder.isCheckout) {
+    console.warn('handleConfirmRoomOnly called in checkout mode - redirecting to handleConfirmOrder')
+    return handleConfirmOrder()
+  }
+
+  console.log('🏨 Processing room-only check-in with simplified validation:', {
+    hasFullName: !!guestData.fullName?.trim(),
+    hasDocumentNumber: !!guestData.documentNumber?.trim(),
+    guestData
+  })
+
+  // Es un check-in normal sin snacks - VALIDACIÓN SIMPLIFICADA: Solo 2 campos obligatorios
+  if (!guestData.fullName?.trim()) {
+    toast.error('El nombre completo es obligatorio')
+    return
+  }
+
+  if (!guestData.documentNumber?.trim()) {
+    toast.error('El documento de identidad es obligatorio')
+    return
+  }
+
+  // Validar longitud mínima del documento
+  if (guestData.documentNumber.length < 6) {
+    toast.error('El documento debe tener al menos 6 caracteres')
+    return
+  }
+
+  try {
+    console.log('✅ All required data valid, processing room-only check-in')
+    
+    const { data, error } = await processCheckIn(currentOrder, [], guestData)
+    
+    if (error) {
+      toast.error(error.message || 'Error al procesar check-in')
+      return
+    }
+
+    toast.success(
+      `Check-in completado!\n👤 ${guestData.fullName}\n🏨 Habitación ${currentOrder.room.number}\n💰 S/ ${currentOrder.roomPrice.toFixed(2)}`,
+      { duration: 5000, icon: '✅' }
+    )
+    
+    resetOrder()
+  } catch (error) {
+    console.error('Error in handleConfirmRoomOnly:', error)
+    toast.error('Error inesperado al procesar check-in')
+  }
+}
 
   const handleProcessPayment = async (paymentMethod) => {
     if (!currentOrder) {
