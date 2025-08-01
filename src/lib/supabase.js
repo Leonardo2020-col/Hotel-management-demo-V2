@@ -2745,132 +2745,261 @@ async cleanRoomWithClick(roomId) {
   // =============================================
 
   async getReservations(options = {}) {
-    try {
-      let query = supabase
-        .from('reservations')
-        .select(`
-          *,
-          guest:guests(
-            id,
-            full_name,
-            email,
-            phone,
-            document_number,
-            document_type,
-            status
-          ),
-          room:rooms(
-            id,
-            number,
-            floor,
-            capacity,
-            base_rate
-          )
-        `)
+  try {
+    let query = supabase
+      .from('reservations')
+      .select(`
+        *,
+        guest:guests(
+          id,
+          full_name,
+          email,
+          phone,
+          document_number,
+          document_type,
+          status
+        ),
+        room:rooms(
+          id,
+          number,
+          floor,
+          capacity,
+          base_rate
+        )
+      `)
 
-      // Aplicar filtros
-      if (options.status) {
-        if (Array.isArray(options.status)) {
-          query = query.in('status', options.status)
-        } else {
-          query = query.eq('status', options.status)
-        }
+    // Aplicar filtros con validación
+    if (options.status) {
+      if (Array.isArray(options.status)) {
+        query = query.in('status', options.status)
+      } else {
+        query = query.eq('status', options.status)
       }
-
-      if (options.roomId) {
-        query = query.eq('room_id', options.roomId)
-      }
-
-      if (options.guestId) {
-        query = query.eq('guest_id', options.guestId)
-      }
-
-      if (options.limit) {
-        query = query.limit(options.limit)
-      }
-
-      if (options.offset) {
-        query = query.range(options.offset, options.offset + (options.limit || 50) - 1)
-      }
-
-      query = query.order('created_at', { ascending: false })
-
-      const { data, error } = await query
-
-      if (error) throw error
-
-      return { data: data || [], error: null }
-    } catch (error) {
-      console.error('Error in getReservations:', error)
-      return { data: [], error }
     }
-  },
+
+    if (options.roomId) {
+      query = query.eq('room_id', options.roomId)
+    }
+
+    if (options.guestId) {
+      query = query.eq('guest_id', options.guestId)
+    }
+
+    if (options.limit && options.limit > 0) {
+      query = query.limit(options.limit)
+    }
+
+    if (options.offset && options.offset >= 0) {
+      query = query.range(options.offset, options.offset + (options.limit || 50) - 1)
+    }
+
+    // Ordenar por fecha de creación descendente por defecto
+    query = query.order('created_at', { ascending: false })
+
+    console.log('🔍 Fetching reservations with options:', options)
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('❌ Error fetching reservations:', error)
+      throw error
+    }
+
+    console.log(`✅ Fetched ${data?.length || 0} reservations`)
+    return { data: data || [], error: null }
+    
+  } catch (error) {
+    console.error('❌ Error in getReservations:', error)
+    return { 
+      data: [], 
+      error: {
+        message: error.message,
+        code: error.code || 'UNKNOWN_ERROR'
+      }
+    }
+  }
+},
 
   async createReservation(reservationData) {
-    try {
-      // Generar código de confirmación
-      const confirmationCode = reservationData.confirmation_code || 
-        `HTP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`
-
-      // Calcular noches
-      const checkIn = new Date(reservationData.check_in)
-      const checkOut = new Date(reservationData.check_out)
-      const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24))
-
-      const insertData = {
-        confirmation_code: confirmationCode,
-        guest_id: reservationData.guest_id,
-        room_id: reservationData.room_id,
-        branch_id: reservationData.branch_id || 1,
-        check_in: reservationData.check_in,
-        check_out: reservationData.check_out,
-        adults: reservationData.adults || 1,
-        children: reservationData.children || 0,
-        rate: reservationData.rate,
-        total_amount: reservationData.total_amount || (nights * reservationData.rate),
-        paid_amount: reservationData.paid_amount || 0,
-        payment_status: reservationData.payment_status || 'pending',
-        payment_method: reservationData.payment_method || 'cash',
-        status: reservationData.status || 'pending',
-        source: reservationData.source || 'direct',
-        special_requests: reservationData.special_requests || ''
+  try {
+    console.log('🔄 Creating reservation with data:', reservationData)
+    
+    // Validar datos requeridos
+    const requiredFields = ['guest_id', 'room_id', 'check_in', 'check_out']
+    for (const field of requiredFields) {
+      if (!reservationData[field]) {
+        throw new Error(`Campo requerido faltante: ${field}`)
       }
-
-      const { data, error } = await supabase
-        .from('reservations')
-        .insert([insertData])
-        .select(`
-          *,
-          guest:guests(*),
-          room:rooms(*)
-        `)
-        .single()
-
-      return { data, error }
-    } catch (error) {
-      console.error('Error in createReservation:', error)
-      return { data: null, error }
     }
-  },
+    
+    // Generar código de confirmación si no existe
+    const confirmationCode = reservationData.confirmation_code || 
+      `HTP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`
+
+    // Calcular noches si no se proporcionan
+    const checkIn = new Date(reservationData.check_in)
+    const checkOut = new Date(reservationData.check_out)
+    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24))
+
+    // Validar fechas
+    if (checkOut <= checkIn) {
+      throw new Error('La fecha de salida debe ser posterior a la fecha de entrada')
+    }
+
+    const insertData = {
+      confirmation_code: confirmationCode,
+      guest_id: reservationData.guest_id,
+      room_id: reservationData.room_id,
+      branch_id: reservationData.branch_id || 1,
+      check_in: reservationData.check_in,
+      check_out: reservationData.check_out,
+      adults: reservationData.adults || 1,
+      children: reservationData.children || 0,
+      rate: parseFloat(reservationData.rate) || 0,
+      total_amount: parseFloat(reservationData.total_amount) || (nights * parseFloat(reservationData.rate || 0)),
+      paid_amount: parseFloat(reservationData.paid_amount) || 0,
+      payment_status: reservationData.payment_status || 'pending',
+      payment_method: reservationData.payment_method || null,
+      status: reservationData.status || 'pending',
+      source: reservationData.source || 'direct',
+      special_requests: reservationData.special_requests || '',
+      nights: nights
+    }
+
+    console.log('📝 Insert data:', insertData)
+
+    const { data, error } = await supabase
+      .from('reservations')
+      .insert([insertData])
+      .select(`
+        *,
+        guest:guests(*),
+        room:rooms(*)
+      `)
+      .single()
+
+    if (error) {
+      console.error('❌ Error creating reservation:', error)
+      throw error
+    }
+
+    console.log('✅ Reservation created successfully:', data)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error('❌ Error in createReservation:', error)
+    return { 
+      data: null, 
+      error: {
+        message: error.message,
+        code: error.code || 'UNKNOWN_ERROR'
+      }
+    }
+  }
+},
 
   async updateReservation(reservationId, updates) {
-    try {
-      const { data, error } = await supabase
-        .from('reservations')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', reservationId)
-        .select()
-        .single()
+  try {
+    console.log('🔄 Updating reservation:', reservationId, updates)
+    
+    // Validar que el reservationId existe
+    if (!reservationId) {
+      throw new Error('ID de reserva es requerido')
+    }
+    
+    // Validar que hay actualizaciones
+    if (!updates || Object.keys(updates).length === 0) {
+      throw new Error('No hay datos para actualizar')
+    }
+    
+    // Preparar datos de actualización
+    const updateData = {
+      ...updates,
+      updated_at: new Date().toISOString()
+    }
+    
+    console.log('📝 Update data:', updateData)
+    
+    // Verificar que la reserva existe antes de actualizarla
+    const { data: existingReservation, error: existError } = await supabase
+      .from('reservations')
+      .select('id, status')
+      .eq('id', reservationId)
+      .single()
+    
+    if (existError) {
+      console.error('❌ Error checking existing reservation:', existError)
+      throw new Error(`Reserva no encontrada: ${existError.message}`)
+    }
+    
+    if (!existingReservation) {
+      throw new Error(`No se encontró la reserva con ID: ${reservationId}`)
+    }
+    
+    console.log('✅ Existing reservation found:', existingReservation)
+    
+    // Realizar la actualización
+    const { data, error } = await supabase
+      .from('reservations')
+      .update(updateData)
+      .eq('id', reservationId)
+      .select()
+      .single()
 
-      return { data, error }
-    } catch (error) {
-      console.error('Error in updateReservation:', error)
+    if (error) {
+      console.error('❌ Supabase update error:', error)
+      
+      // Manejar errores específicos
+      if (error.code === 'PGRST116') {
+        throw new Error('No se encontró la reserva para actualizar')
+      } else if (error.code === '23505') {
+        throw new Error('Conflicto de datos únicos')
+      } else if (error.code === '23503') {
+        throw new Error('Error de integridad referencial')
+      } else {
+        throw new Error(`Error en la base de datos: ${error.message}`)
+      }
+    }
+    
+    if (!data) {
+      throw new Error('No se devolvieron datos después de la actualización')
+    }
+    
+    console.log('✅ Reservation updated successfully:', data)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error('❌ Error in updateReservation:', error)
+    return { 
+      data: null, 
+      error: {
+        message: error.message,
+        code: error.code || 'UNKNOWN_ERROR'
+      }
+    }
+  }
+},
+
+// FUNCIÓN ADICIONAL: Verificar estado de reserva
+async checkReservationStatus(reservationId) {
+  try {
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id, status, checked_in_at, checked_out_at')
+      .eq('id', reservationId)
+      .single()
+    
+    if (error) {
+      console.error('Error checking reservation status:', error)
       return { data: null, error }
     }
-  },
+    
+    return { data, error: null }
+  } catch (error) {
+    console.error('Error in checkReservationStatus:', error)
+    return { data: null, error }
+  }
+},
 
   async processCheckIn(reservationId) {
     try {

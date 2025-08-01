@@ -1,4 +1,4 @@
-// src/pages/CheckIn/CheckIn.jsx - VERSIÓN SIMPLIFICADA CON CLICK DIRECTO
+// src/pages/CheckIn/CheckIn.jsx - VERSIÓN COMPLETA Y CORREGIDA
 import React, { useState, useEffect } from 'react'
 import { RefreshCw, Sparkles, User, CreditCard } from 'lucide-react'
 import Button from '../../components/common/Button'
@@ -86,7 +86,7 @@ const CheckIn = () => {
     setSelectedRoom(null)
   }
 
-  // FUNCIÓN PRINCIPAL: Manejo inteligente de clicks en habitaciones
+  // FUNCIÓN PRINCIPAL CORREGIDA: Manejo inteligente de clicks en habitaciones
   const handleRoomClick = async (room) => {
     if (loading || processingRoom === room.number) {
       return
@@ -94,6 +94,14 @@ const CheckIn = () => {
 
     setProcessingRoom(room.number)
     console.log('🔘 Room clicked:', room)
+    
+    // DEBUG: Información del room y savedOrders
+    console.log('🔍 DEBUG - Room data:', {
+      room,
+      savedOrder: savedOrders[room.number],
+      reservationId: room.reservationId,
+      activeReservation: room.activeReservation
+    })
 
     try {
       // LÓGICA BASADA EN EL ESTADO DE LA HABITACIÓN
@@ -159,52 +167,82 @@ const CheckIn = () => {
     })
   }
 
-  // CHECK-OUT DIRECTO - Ir primero a selección de snacks
+  // FUNCIÓN CORREGIDA: CHECK-OUT DIRECTO - Ir primero a selección de snacks
   const handleDirectCheckOut = async (room) => {
     console.log('🚪 Starting direct check-out for room:', room.number)
     
-    // Buscar información de la reserva
-    let orderFound = null
-    
-    // 1. Buscar en savedOrders
-    if (savedOrders && savedOrders[room.number]) {
-      orderFound = savedOrders[room.number]
-    }
-    
-    // 2. Buscar por reservationId
-    if (!orderFound && room.reservationId) {
-      const orderByReservationId = Object.values(savedOrders || {}).find(
-        order => order.reservationId === room.reservationId
-      )
-      if (orderByReservationId) {
-        orderFound = orderByReservationId
+    try {
+      // Buscar información de la reserva con mejor validación
+      let orderFound = null
+      
+      // 1. Buscar en savedOrders por número de habitación
+      if (savedOrders && savedOrders[room.number]) {
+        orderFound = savedOrders[room.number]
+        console.log('📋 Order found in savedOrders:', orderFound)
       }
-    }
-    
-    // 3. Buscar en base de datos
-    if (!orderFound) {
-      const reservation = await searchReservationForRoom(room)
-      if (reservation) {
-        orderFound = createTemporaryOrderFromReservation(room, reservation)
+      
+      // 2. Buscar por reservationId si existe
+      if (!orderFound && room.reservationId) {
+        const orderByReservationId = Object.values(savedOrders || {}).find(
+          order => order.reservationId === room.reservationId
+        )
+        if (orderByReservationId) {
+          orderFound = orderByReservationId
+          console.log('📋 Order found by reservationId:', orderFound)
+        }
       }
-    }
-    
-    // 4. Crear orden temporal si no se encuentra
-    if (!orderFound) {
-      if (room.currentGuest || room.guestName || room.activeReservation) {
+      
+      // 3. Buscar en base de datos si no está en memoria
+      if (!orderFound) {
+        console.log('🔍 Searching reservation in database...')
+        const reservation = await searchReservationForRoom(room)
+        if (reservation) {
+          orderFound = createTemporaryOrderFromReservation(room, reservation)
+          console.log('📋 Order created from DB reservation:', orderFound)
+        }
+      }
+      
+      // 4. Crear orden temporal si tenemos datos básicos
+      if (!orderFound && (room.currentGuest || room.guestName || room.activeReservation)) {
         orderFound = createTemporaryOrderFromRoomData(room)
-      } else {
-        // Mostrar opción de check-out manual
+        console.log('📋 Temporary order created from room data:', orderFound)
+      }
+      
+      // 5. Si aún no hay orden, mostrar check-out manual
+      if (!orderFound) {
+        console.log('⚠️ No order found, showing manual checkout option')
         await handleManualCheckOut(room)
         return
       }
-    }
-    
-    // Ir a selección de snacks para agregar servicios adicionales
-    if (orderFound) {
-      console.log('📋 Order found for checkout, setting up guest data:', orderFound)
       
-      // Configurar datos del huésped desde la orden existente
+      // Validar que la orden tiene los datos mínimos necesarios
+      if (!orderFound.room || !orderFound.room.id) {
+        console.error('❌ Order missing room data:', orderFound)
+        orderFound.room = {
+          ...orderFound.room,
+          id: room.id || room.room_id,
+          number: room.number,
+          status: room.status,
+          floor: room.floor || Math.floor(parseInt(room.number) / 100)
+        }
+      }
+      
+      // Asegurar que tiene reservationId
+      if (!orderFound.reservationId) {
+        if (room.activeReservation?.id) {
+          orderFound.reservationId = room.activeReservation.id
+        } else if (room.reservationId) {
+          orderFound.reservationId = room.reservationId
+        } else {
+          console.error('❌ No reservation ID found for checkout')
+          toast.error('No se encontró ID de reserva para procesar el check-out')
+          return
+        }
+      }
+      
+      console.log('📋 Final order for checkout:', orderFound)
+      
+      // Configurar datos del huésped desde la orden
       setGuestData({
         fullName: orderFound.guestName || orderFound.guest?.full_name || 'Huésped',
         documentType: orderFound.guestDocumentType || orderFound.guest?.document_type || 'DNI',
@@ -225,25 +263,26 @@ const CheckIn = () => {
       setSelectedRoom(room)
       setCurrentOrder({
         ...orderFound,
-        isCheckout: true, // Flag para indicar que es check-out
-        originalTotal: orderFound.total || orderFound.roomPrice, // Guardar total original
+        isCheckout: true,
+        originalTotal: orderFound.total || orderFound.roomPrice,
         room: {
           ...orderFound.room,
-          number: room.number, // Asegurar que tenemos el número
-          id: orderFound.room?.id || room.id,
+          number: room.number,
+          id: orderFound.room?.id || room.id || room.room_id,
           status: room.status,
           floor: room.floor || Math.floor(parseInt(room.number) / 100)
         }
       })
       setOrderStep(1) // Ir a selección de snacks
       
-      toast.success(`Agregando servicios adicionales para habitación ${room.number}`, {
+      toast.success(`Preparando check-out para habitación ${room.number}`, {
         icon: '🛒',
         duration: 2000
       })
-    } else {
-      console.error('❌ No order found for checkout')
-      toast.error('No se encontró información de reserva para esta habitación')
+      
+    } catch (error) {
+      console.error('❌ Error in handleDirectCheckOut:', error)
+      toast.error('Error al preparar check-out: ' + error.message)
     }
   }
 
@@ -254,7 +293,8 @@ const CheckIn = () => {
       roomNumber: order.room?.number,
       guestName: order.guestName,
       total: order.total,
-      hasRoom: !!order.room
+      hasRoom: !!order.room,
+      reservationId: order.reservationId
     })
     
     if (!order.room || !order.room.number) {
@@ -263,26 +303,65 @@ const CheckIn = () => {
       return
     }
     
+    if (!order.reservationId) {
+      console.error('❌ Cannot show checkout confirmation - missing reservation ID')
+      toast.error('Error: ID de reserva faltante para el check-out')
+      return
+    }
+    
     setQuickCheckoutData(order)
     setShowQuickCheckout(true)
   }
 
-  // Manejar confirmación desde el modal
+  // FUNCIÓN CORREGIDA: Manejar confirmación desde el modal
   const handleQuickCheckoutConfirm = async (paymentMethod) => {
     if (!quickCheckoutData) {
       toast.error('No hay datos de check-out')
       return
     }
     
+    console.log('🔄 Processing quick checkout confirm:', {
+      roomNumber: quickCheckoutData.room?.number,
+      reservationId: quickCheckoutData.reservationId,
+      paymentMethod,
+      hasRoom: !!quickCheckoutData.room
+    })
+    
     try {
+      // Validar datos antes de procesar
+      if (!quickCheckoutData.room || !quickCheckoutData.room.number) {
+        throw new Error('Información de habitación faltante')
+      }
+      
+      if (!quickCheckoutData.reservationId) {
+        throw new Error('ID de reserva faltante')
+      }
+      
       setProcessingRoom(quickCheckoutData.room.number)
-      await processCheckOutDirectly(quickCheckoutData, paymentMethod)
+      
+      // Usar la función de check-out corregida
+      const { data, error } = await processCheckOut(quickCheckoutData.room.number, paymentMethod)
+      
+      if (error) {
+        throw error
+      }
+      
+      // Cerrar modal y resetear
       setShowQuickCheckout(false)
       setQuickCheckoutData(null)
       resetOrder()
+      
+      toast.success(
+        `Check-out completado!\n🏨 Habitación: ${quickCheckoutData.room.number}\n👤 ${quickCheckoutData.guestName || 'Huésped'}\n💰 S/ ${quickCheckoutData.total.toFixed(2)}\n💳 ${getPaymentMethodName(paymentMethod)}`,
+        { 
+          duration: 4000,
+          icon: '✅'
+        }
+      )
+      
     } catch (error) {
-      console.error('Error in quick checkout:', error)
-      toast.error('Error al procesar check-out')
+      console.error('❌ Error in quick checkout:', error)
+      toast.error('Error al procesar check-out: ' + error.message)
     } finally {
       setProcessingRoom(null)
     }
@@ -302,46 +381,6 @@ const CheckIn = () => {
   const handleCloseQuickCheckout = () => {
     setShowQuickCheckout(false)
     setQuickCheckoutData(null)
-  }
-
-  // Procesar check-out directamente
-  const processCheckOutDirectly = async (order, paymentMethod) => {
-    try {
-      console.log('🚪 Processing check-out:', { order, paymentMethod })
-      
-      if (!order || !order.room || !order.room.number) {
-        throw new Error('Información de habitación incompleta')
-      }
-
-      const { data, error } = await processCheckOut(order.room.number, paymentMethod)
-      
-      if (error) {
-        console.error('ProcessCheckOut error:', error)
-        toast.error(error.message || 'Error al procesar check-out')
-        return
-      }
-
-      // Actualizar estado local - remover de savedOrders
-      setSavedOrders(prev => {
-        const newOrders = { ...prev }
-        delete newOrders[order.room.number]
-        return newOrders
-      })
-
-      toast.success(
-        `Check-out completado!\n🏨 Habitación: ${order.room.number}\n👤 ${order.guestName || 'Huésped'}\n💰 S/ ${order.total.toFixed(2)}\n💳 ${getPaymentMethodName(paymentMethod)}`,
-        { 
-          duration: 4000,
-          icon: '✅'
-        }
-      )
-      
-      console.log('✅ Check-out completed successfully')
-      
-    } catch (error) {
-      console.error('❌ Error in processCheckOut:', error)
-      toast.error('Error inesperado: ' + (error.message || 'Error desconocido'))
-    }
   }
 
   // Check-out manual para habitaciones sin información
@@ -440,7 +479,8 @@ const CheckIn = () => {
     }
   }
 
-  // Funciones auxiliares (mantener las existentes)
+  // FUNCIONES AUXILIARES CORREGIDAS
+
   const searchReservationForRoom = async (room) => {
     try {
       const { data: reservations, error } = await db.getReservations({
@@ -469,7 +509,6 @@ const CheckIn = () => {
         number: room.number,
         status: room.status,
         floor: room.floor || floor,
-        room_type: room.room_type || 'Habitación Estándar'
       },
       roomPrice: roomPrice,
       snacks: [],
@@ -555,6 +594,7 @@ const CheckIn = () => {
     }
   }
 
+  // FUNCIÓN CORREGIDA: handleConfirmOrder
   const handleConfirmOrder = async () => {
     if (!currentOrder) {
       toast.error('No hay orden actual')
@@ -566,7 +606,8 @@ const CheckIn = () => {
       isCheckout: currentOrder.isCheckout,
       roomData: currentOrder.room,
       roomNumber: currentOrder.room?.number,
-      selectedSnacks
+      selectedSnacks,
+      reservationId: currentOrder.reservationId
     })
 
     // Verificar si es check-out o check-in
@@ -581,6 +622,13 @@ const CheckIn = () => {
       if (!currentOrder.room || !currentOrder.room.number) {
         console.error('❌ Missing room data:', currentOrder)
         toast.error('Error: Información de habitación faltante')
+        return
+      }
+
+      // Verificar que tenemos reservationId
+      if (!currentOrder.reservationId) {
+        console.error('❌ Missing reservation ID:', currentOrder)
+        toast.error('Error: ID de reserva faltante')
         return
       }
 
@@ -601,7 +649,8 @@ const CheckIn = () => {
         ...updatedOrder,
         roomNumber: updatedOrder.room.number,
         total: updatedOrder.total,
-        snacksCount: selectedSnacks.length
+        snacksCount: selectedSnacks.length,
+        reservationId: updatedOrder.reservationId
       })
 
       // Ir directamente al modal de confirmación de check-out
@@ -883,6 +932,15 @@ const CheckIn = () => {
           )}
 
         </div>
+
+        {/* Modal de Check-out Rápido */}
+        <QuickCheckoutModal
+          isOpen={showQuickCheckout}
+          onClose={handleCloseQuickCheckout}
+          orderData={quickCheckoutData}
+          onConfirm={handleQuickCheckoutConfirm}
+          onViewDetails={handleViewCheckoutDetails}
+        />
 
         {/* Información de estado en la parte inferior */}
         {orderStep === 0 && (

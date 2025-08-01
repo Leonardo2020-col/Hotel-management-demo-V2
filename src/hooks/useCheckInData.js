@@ -1,4 +1,4 @@
-// src/hooks/useCheckInData.js - AÑADIDA FUNCIÓN DE LIMPIEZA RÁPIDA
+// src/hooks/useCheckInData.js - VERSIÓN CORREGIDA COMPLETA
 import { useState, useEffect } from 'react'
 import { db } from '../lib/supabase'
 import toast from 'react-hot-toast'
@@ -106,7 +106,6 @@ export const useCheckInData = () => {
           number: room.number,
           status: room.status || 'available',
           cleaning_status: room.cleaning_status || 'clean',
-          //room_type: room.room_type || 'Habitación Estándar',
           capacity: room.capacity || 2,
           rate: room.base_rate || roomPrices[floor] || 100,
           beds: room.beds || [{ type: 'Doble', count: 1 }],
@@ -210,7 +209,6 @@ export const useCheckInData = () => {
                 number: reservation.room.number,
                 status: 'occupied',
                 floor: reservation.room.floor,
-                //room_type: reservation.room.room_type || 'Habitación Estándar'
               },
               roomPrice: roomPrice,
               snacks: [],
@@ -314,7 +312,6 @@ export const useCheckInData = () => {
           number: '101',
           status: 'available',
           cleaning_status: 'clean',
-          //room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
@@ -329,7 +326,6 @@ export const useCheckInData = () => {
           number: '102',
           status: 'occupied',
           cleaning_status: 'dirty',
-          //room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Individual', count: 2 }],
@@ -358,7 +354,6 @@ export const useCheckInData = () => {
           number: '103',
           status: 'cleaning', // Necesita limpieza
           cleaning_status: 'dirty',
-          //room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
@@ -373,7 +368,6 @@ export const useCheckInData = () => {
           number: '104',
           status: 'available',
           cleaning_status: 'clean',
-          //room_type: 'Habitación Estándar',
           capacity: 2,
           rate: 80.00,
           beds: [{ type: 'Doble', count: 1 }],
@@ -390,7 +384,6 @@ export const useCheckInData = () => {
           number: '201',
           status: 'available',
           cleaning_status: 'clean',
-          //room_type: 'Habitación Deluxe',
           capacity: 3,
           rate: 95.00,
           beds: [{ type: 'Queen', count: 1 }],
@@ -405,7 +398,6 @@ export const useCheckInData = () => {
           number: '202',
           status: 'occupied',
           cleaning_status: 'dirty',
-          //room_type: 'Habitación Deluxe',
           capacity: 3,
           rate: 95.00,
           beds: [{ type: 'King', count: 1 }],
@@ -519,7 +511,6 @@ export const useCheckInData = () => {
           number: room.number, 
           status: 'occupied',
           floor: room.floor || floor,
-          //room_type: room.room_type || 'Habitación Estándar'
         },
         roomPrice,
         snacks,
@@ -710,10 +701,19 @@ export const useCheckInData = () => {
     }
   }
 
-  // Procesar check-out
+  // FUNCIÓN CORREGIDA: Procesar check-out
   const processCheckOut = async (roomNumber, paymentMethod) => {
     try {
       console.log('🚪 Processing check-out for room:', roomNumber)
+      
+      // Validar parámetros de entrada
+      if (!roomNumber) {
+        throw new Error('Número de habitación es requerido')
+      }
+      
+      if (!paymentMethod) {
+        paymentMethod = 'cash' // Valor por defecto
+      }
       
       const order = savedOrders[roomNumber]
       if (!order) {
@@ -724,6 +724,7 @@ export const useCheckInData = () => {
 
       console.log('📋 Order found for checkout:', order)
 
+      // Validar que la orden tenga reservationId
       if (!order.reservationId) {
         const errorMsg = `ID de reserva no encontrado para la habitación ${roomNumber}`
         console.error('❌', errorMsg)
@@ -731,11 +732,13 @@ export const useCheckInData = () => {
       }
 
       // 1. Actualizar reserva a checked_out
+      console.log('🔄 Updating reservation status...')
       const { error: reservationError } = await db.updateReservation(order.reservationId, {
         status: 'checked_out',
         checked_out_at: new Date().toISOString(),
         payment_status: 'paid',
-        payment_method: paymentMethod
+        payment_method: paymentMethod,
+        paid_amount: order.total || order.roomPrice || 0
       })
 
       if (reservationError) {
@@ -743,15 +746,26 @@ export const useCheckInData = () => {
         throw new Error(`Error updating reservation: ${reservationError.message}`)
       }
 
-      // 2. Actualizar habitación a necesita limpieza (NO a limpieza automática)
-      const { error: roomError } = await db.updateRoomStatus(
-        order.room.id,
-        'available', // CAMBIADO: disponible pero sucia
-        'dirty'      // NECESITA limpieza
-      )
+      console.log('✅ Reservation updated successfully')
 
-      if (roomError) {
-        console.warn('⚠️ Warning updating room status:', roomError)
+      // 2. Actualizar habitación a disponible pero sucia
+      console.log('🔄 Updating room status...')
+      const roomId = order.room?.id || order.room?.room_id
+      if (roomId) {
+        const { error: roomError } = await db.updateRoomStatus(
+          roomId,
+          'available',
+          'dirty'
+        )
+
+        if (roomError) {
+          console.warn('⚠️ Warning updating room status:', roomError)
+          // No fallar por esto, solo advertir
+        } else {
+          console.log('✅ Room status updated successfully')
+        }
+      } else {
+        console.warn('⚠️ No room ID found, skipping room status update')
       }
 
       // 3. Remover de órdenes guardadas
@@ -761,7 +775,7 @@ export const useCheckInData = () => {
         return newOrders
       })
 
-      // 4. Actualizar roomsByFloor localmente - ESTADO NECESITA LIMPIEZA
+      // 4. Actualizar roomsByFloor localmente
       setRoomsByFloor(prev => {
         const updated = { ...prev }
         Object.keys(updated).forEach(floor => {
@@ -770,8 +784,8 @@ export const useCheckInData = () => {
               r.number === roomNumber 
                 ? { 
                     ...r, 
-                    status: 'available',        // DISPONIBLE
-                    cleaning_status: 'dirty',   // PERO NECESITA LIMPIEZA
+                    status: 'available',
+                    cleaning_status: 'dirty',
                     currentGuest: null,
                     activeReservation: null,
                     guestName: null,
@@ -791,6 +805,7 @@ export const useCheckInData = () => {
         icon: '🚪',
         duration: 4000
       })
+      
       return { data: true, error: null }
 
     } catch (error) {
@@ -830,62 +845,62 @@ export const useCheckInData = () => {
     return occupied
   }
 
-  // Agregar esta función al hook useCheckInData
-const quickCleanRoom = async (roomId) => {
-  try {
-    console.log(`✨ Quick clean requested for room ID: ${roomId}`);
-    
-    // Llamar función de limpieza de Supabase
-    const { data, error } = await db.cleanRoomWithClick(roomId);
-    
-    if (error) {
-      throw new Error(`Error updating room status: ${error.message}`);
-    }
-    
-    // Actualizar estado local inmediatamente en roomsByFloor
-    setRoomsByFloor(prev => {
-      const updated = { ...prev };
-      Object.keys(updated).forEach(floor => {
-        if (Array.isArray(updated[floor])) {
-          updated[floor] = updated[floor].map(room => 
-            room.id === roomId || room.room_id === roomId
-              ? { 
-                  ...room, 
-                  status: 'available', 
-                  cleaning_status: 'clean',
-                  displayStatus: 'available',
-                  last_cleaned: new Date().toISOString(),
-                  cleaned_by: 'Reception Staff'
-                }
-              : room
-          );
-        }
-      });
-      return updated;
-    });
-    
-    // Encontrar el número de habitación para el toast
-    let roomNumber = 'desconocida';
-    Object.values(roomsByFloor).flat().forEach(room => {
-      if ((room.id === roomId || room.room_id === roomId)) {
-        roomNumber = room.number;
+  // FUNCIÓN CORREGIDA: Limpiar habitación rápido
+  const quickCleanRoom = async (roomId) => {
+    try {
+      console.log(`✨ Quick clean requested for room ID: ${roomId}`)
+      
+      // Llamar función de limpieza de Supabase
+      const { data, error } = await db.cleanRoomWithClick(roomId)
+      
+      if (error) {
+        throw new Error(`Error updating room status: ${error.message}`)
       }
-    });
-    
-    console.log('✅ Room cleaned successfully');
-    toast.success(`Habitación ${roomNumber} marcada como limpia y disponible`, {
-      icon: '✨',
-      duration: 3000
-    });
-    
-    return { data, error: null };
-    
-  } catch (error) {
-    console.error('❌ Error in quickCleanRoom:', error);
-    toast.error(`Error al limpiar habitación: ${error.message}`);
-    return { data: null, error };
+      
+      // Actualizar estado local inmediatamente en roomsByFloor
+      setRoomsByFloor(prev => {
+        const updated = { ...prev }
+        Object.keys(updated).forEach(floor => {
+          if (Array.isArray(updated[floor])) {
+            updated[floor] = updated[floor].map(room => 
+              room.id === roomId || room.room_id === roomId
+                ? { 
+                    ...room, 
+                    status: 'available', 
+                    cleaning_status: 'clean',
+                    displayStatus: 'available',
+                    last_cleaned: new Date().toISOString(),
+                    cleaned_by: 'Reception Staff'
+                  }
+                : room
+            )
+          }
+        })
+        return updated
+      })
+      
+      // Encontrar el número de habitación para el toast
+      let roomNumber = 'desconocida'
+      Object.values(roomsByFloor).flat().forEach(room => {
+        if ((room.id === roomId || room.room_id === roomId)) {
+          roomNumber = room.number
+        }
+      })
+      
+      console.log('✅ Room cleaned successfully')
+      toast.success(`Habitación ${roomNumber} marcada como limpia y disponible`, {
+        icon: '✨',
+        duration: 3000
+      })
+      
+      return { data, error: null }
+      
+    } catch (error) {
+      console.error('❌ Error in quickCleanRoom:', error)
+      toast.error(`Error al limpiar habitación: ${error.message}`)
+      return { data: null, error }
+    }
   }
-};
 
   // Actualizar datos en tiempo real
   const refreshData = () => {
