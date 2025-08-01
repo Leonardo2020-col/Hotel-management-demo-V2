@@ -431,7 +431,7 @@ export const useCheckInData = () => {
   // NUEVA FUNCIÓN: Crear huésped y reserva sin reservación previa
 const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
   try {
-    console.log('👤 Creating guest with ONLY basic fields...', {
+    console.log('👤 Creating guest with full_name field (not first_name)...', {
       fullName: guestData.fullName,
       documentNumber: guestData.documentNumber,
       documentType: guestData.documentType
@@ -452,63 +452,61 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
     const snacksTotal = snacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
     const totalAmount = roomPrice + snacksTotal
 
-    // 1. Crear el huésped con SOLO los campos básicos que sabemos que existen
-    console.log('👤 Creating guest with minimal data to avoid DB errors')
+    // 1. Crear el huésped usando FULL_NAME en lugar de first_name/last_name
+    console.log('👤 Creating guest with full_name field')
     
     const newGuestData = {
-      // SOLO campos básicos que están garantizados en la tabla
-      first_name: guestData.fullName.split(' ')[0] || 'Huésped',
-      last_name: guestData.fullName.split(' ').slice(1).join(' ') || 'Registro',
+      // USAR full_name en lugar de first_name/last_name
+      full_name: guestData.fullName.trim(),
       document_type: guestData.documentType || 'DNI',
       document_number: guestData.documentNumber.trim(),
       status: 'active'
       
-      // TODOS LOS CAMPOS OPCIONALES REMOVIDOS para evitar errores de schema:
-      // ❌ email (puede no existir)
-      // ❌ phone (puede no existir)  
+      // CAMPOS REMOVIDOS para evitar errores:
+      // ❌ first_name (no existe en tu schema)
+      // ❌ last_name (no existe en tu schema)
+      // ❌ email (causaba error)
+      // ❌ phone (causaba error)  
       // ❌ nationality (causaba error)
       // ❌ gender (causaba error)
-      // ❌ total_visits (opcional)
-      // ❌ total_spent (opcional)
     }
 
-    console.log('📝 Minimal guest data to insert:', newGuestData)
+    console.log('📝 Guest data using full_name:', newGuestData)
 
     const { data: guest, error: guestError } = await db.createGuest(newGuestData)
     
     if (guestError) {
-      console.error('❌ Error creating guest:', guestError)
+      console.error('❌ Error creating guest with full_name:', guestError)
       throw new Error(`Error creating guest: ${guestError.message}`)
     }
 
-    console.log('✅ Guest created successfully with minimal data:', {
+    console.log('✅ Guest created successfully with full_name:', {
       id: guest.id,
-      fullName: guestData.fullName,
-      documentNumber: guestData.documentNumber
+      full_name: guest.full_name,
+      document_number: guest.document_number
     })
 
-    // 2. Crear la reserva con datos mínimos
+    // 2. Crear la reserva
     const reservationData = {
       guest_id: guest.id,
       room_id: room.id || room.room_id,
       branch_id: 1,
       check_in: new Date().toISOString().split('T')[0],
       check_out: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      adults: 1, // Valor fijo
-      children: 0, // Valor fijo
+      adults: 1,
+      children: 0,
       status: 'checked_in',
       total_amount: totalAmount,
       rate: roomPrice,
       paid_amount: 0,
       special_requests: snacks.length > 0 ? `Snacks: ${snacks.map(s => `${s.name} x${s.quantity}`).join(', ')}` : '',
       payment_status: 'pending',
-      source: 'walk_in_simplified'
+      source: 'walk_in_fullname'
     }
 
     const { data: reservation, error: reservationError } = await db.createReservation(reservationData)
     
     if (reservationError) {
-      // Limpiar huésped si falla la reserva
       console.log('🗑️ Cleaning up guest due to reservation error...')
       await db.deleteGuest(guest.id)
       throw new Error(`Error creating reservation: ${reservationError.message}`)
@@ -516,7 +514,7 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
 
     console.log('✅ Reservation created:', reservation)
 
-    // 3. Actualizar estado de la habitación a ocupada
+    // 3. Actualizar estado de la habitación
     const { error: roomError } = await db.updateRoomStatus(
       room.id || room.room_id, 
       'occupied', 
@@ -527,7 +525,7 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       console.warn('⚠️ Warning updating room status:', roomError)
     }
 
-    // 4. Crear orden local con datos mínimos
+    // 4. Crear orden local
     const newOrder = {
       id: reservation.id,
       room: { 
@@ -545,13 +543,10 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       guestId: guest.id,
       reservationId: reservation.id,
       confirmationCode: reservation.confirmation_code,
-      // Solo datos básicos para evitar problemas
       guestDocument: guestData.documentNumber,
       guestDocumentType: guestData.documentType || 'DNI',
-      adults: 1,
-      children: 0,
       isWalkIn: true,
-      isUltraSimplified: true // Nueva flag
+      isFullNameVersion: true
     }
 
     // 5. Actualizar estado local
@@ -591,15 +586,15 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       return updated
     })
 
-    toast.success(`Check-in ultra rápido completado para ${guestData.fullName} en habitación ${room.number}`, {
-      icon: '🚀',
+    toast.success(`Check-in completado para ${guestData.fullName} en habitación ${room.number}`, {
+      icon: '🎉',
       duration: 4000
     })
     
     return { data: newOrder, error: null }
 
   } catch (error) {
-    console.error('❌ Error in ultra simplified createGuestAndReservation:', error)
+    console.error('❌ Error in createGuestAndReservation with full_name:', error)
     toast.error(`Error al crear registro: ${error.message}`)
     return { data: null, error }
   }

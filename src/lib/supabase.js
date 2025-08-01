@@ -2690,43 +2690,39 @@ async cleanRoomWithClick(roomId) {
 
   async createGuest(guestData) {
   try {
-    console.log('👤 Creating guest with ULTRA minimal fields to avoid DB errors:', {
-      hasFirstName: !!guestData.first_name,
-      hasLastName: !!guestData.last_name,
+    console.log('👤 Creating guest with full_name field (avoiding first_name):', {
+      hasFullName: !!guestData.full_name,
       hasDocumentNumber: !!guestData.document_number,
       documentType: guestData.document_type
     })
     
     // VALIDACIÓN MÍNIMA
-    if (!guestData.first_name) {
+    if (!guestData.full_name) {
       return { 
         data: null, 
-        error: { message: 'El nombre del huésped es obligatorio' }
+        error: { message: 'El nombre completo es obligatorio' }
       }
     }
 
-    // DATOS ULTRA MÍNIMOS - Solo campos que sabemos que existen
+    // DATOS USANDO full_name (no first_name/last_name)
     const insertData = {
-      // Campos básicos que están garantizados
-      first_name: guestData.first_name,
-      last_name: guestData.last_name || 'Huésped',
+      full_name: guestData.full_name.trim(),
       document_type: guestData.document_type || 'DNI',
-      document_number: guestData.document_number || '',
+      document_number: guestData.document_number?.trim() || '',
       status: guestData.status || 'active'
       
-      // TODOS LOS DEMÁS CAMPOS REMOVIDOS para evitar errores:
-      // ❌ full_name (puede no existir como campo)
-      // ❌ email (causaba error en algunos schemas)
-      // ❌ phone (causaba error en algunos schemas) 
+      // CAMPOS REMOVIDOS para evitar errores de schema:
+      // ❌ first_name (no existe en tu tabla)
+      // ❌ last_name (no existe en tu tabla)
+      // ❌ email (causaba error)
+      // ❌ phone (causaba error) 
       // ❌ nationality (causaba error)
       // ❌ gender (causaba error)
-      // ❌ total_visits (opcional)
-      // ❌ total_spent (opcional)
-      // ❌ created_at (se genera automáticamente)
-      // ❌ updated_at (se genera automáticamente)
+      // ❌ created_at (auto-generado)
+      // ❌ updated_at (auto-generado)
     }
 
-    console.log('📝 Ultra minimal insert data:', insertData)
+    console.log('📝 Minimal insert data with full_name:', insertData)
 
     const { data, error } = await supabase
       .from('guests')
@@ -2735,14 +2731,21 @@ async cleanRoomWithClick(roomId) {
       .single()
 
     if (error) {
-      console.error('❌ Supabase error creating guest (ultra minimal):', error)
+      console.error('❌ Supabase error creating guest with full_name:', error)
       
-      // Manejar errores específicos de schema
+      // Logging detallado del error para debug
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+      
       if (error.code === '42703') {
-        console.error('❌ Column does not exist error:', error.message)
+        console.error('❌ Column does not exist. Available columns might be different.')
         return { 
           data: null, 
-          error: { message: 'Error de configuración de base de datos. Verifique la estructura de la tabla guests.' }
+          error: { message: 'La estructura de la tabla no coincide. Verifique las columnas disponibles en Supabase.' }
         }
       }
       
@@ -2759,17 +2762,16 @@ async cleanRoomWithClick(roomId) {
       }
     }
 
-    console.log('✅ Guest created successfully with ultra minimal data:', {
+    console.log('✅ Guest created successfully with full_name:', {
       id: data.id,
-      first_name: data.first_name,
-      last_name: data.last_name,
+      full_name: data.full_name,
       document_number: data.document_number
     })
     
     return { data, error: null }
 
   } catch (error) {
-    console.error('❌ Unexpected error in ultra minimal createGuest:', error)
+    console.error('❌ Unexpected error in createGuest with full_name:', error)
     return { 
       data: null, 
       error: { message: 'Error inesperado: ' + error.message }
