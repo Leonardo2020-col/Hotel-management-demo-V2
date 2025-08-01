@@ -1,4 +1,4 @@
-// src/components/checkin/GuestRegistrationForm.jsx - VERSIÓN SIMPLIFICADA
+// src/components/checkin/GuestRegistrationForm.jsx - ULTRA SIMPLIFICADO
 import React, { useState } from 'react';
 import { User, Save, X } from 'lucide-react';
 import Button from '../common/Button';
@@ -54,60 +54,68 @@ const GuestRegistrationForm = ({
 
   return (
     <div className="bg-white border-2 border-blue-200 rounded-lg p-6 mb-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-2">
           <User className="w-5 h-5 text-blue-600" />
           <h3 className="text-lg font-semibold text-gray-800">
-            Registro Rápido de Huésped
+            Registro Ultra Rápido de Huésped
           </h3>
         </div>
-        <div className="text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-          Solo 2 campos requeridos
+        <div className="text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full font-medium">
+          ⚡ Solo 2 campos
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         
-        {/* Campos Obligatorios - Más prominentes */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
-          <h4 className="text-sm font-semibold text-blue-800 mb-3">
-            📝 Información Obligatoria
-          </h4>
+        {/* Solo Campos Obligatorios */}
+        <div className="bg-gradient-to-r from-blue-50 to-green-50 border-2 border-blue-300 rounded-xl p-6">
+          <div className="text-center mb-4">
+            <h4 className="text-lg font-bold text-blue-800 mb-2">
+              📝 Complete estos 2 campos únicamente
+            </h4>
+            <p className="text-sm text-blue-600">
+              Es todo lo que necesitamos para el check-in inmediato
+            </p>
+          </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Nombre Completo */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <span className="text-red-500">*</span> Nombre Completo
+              <label className="block text-lg font-semibold text-gray-800 mb-3">
+                <span className="text-red-500 text-xl">*</span> Nombre Completo
               </label>
               <input
                 type="text"
                 value={guestData.fullName || ''}
                 onChange={(e) => handleInputChange('fullName', e.target.value)}
                 placeholder="Ej: Juan Carlos Pérez López"
-                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg ${
+                className={`w-full px-5 py-4 border-3 rounded-xl focus:outline-none focus:ring-3 focus:ring-blue-400 text-lg font-medium ${
                   errors.fullName 
-                    ? 'border-red-500 bg-red-50' 
-                    : 'border-blue-300 focus:border-blue-500'
+                    ? 'border-red-500 bg-red-50 focus:ring-red-400' 
+                    : 'border-blue-400 focus:border-blue-600 bg-white'
                 }`}
                 disabled={loading}
                 autoFocus
               />
               {errors.fullName && (
-                <p className="text-red-500 text-sm mt-1 font-medium">{errors.fullName}</p>
+                <p className="text-red-600 text-sm mt-2 font-semibold flex items-center">
+                  <span className="mr-1">⚠️</span>
+                  {errors.fullName}
+                </p>
               )}
             </div>
 
             {/* Documento de Identidad */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <span className="text-red-500">*</span> Documento de Identidad
+              <label className="block text-lg font-semibold text-gray-800 mb-3">
+                <span className="text-red-500 text-xl">*</span> Documento de Identidad
               </label>
-              <div className="flex space-x-2">
+              <div className="flex space-x-3">
                 <select
                   value={guestData.documentType || 'DNI'}
                   onChange={(e) => handleInputChange('documentType', e.target.value)}
-                  className="px-3 py-3 border-2 border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="px-4 py-4 border-3 border-blue-400 rounded-xl focus:outline-none focus:ring-3 focus:ring-blue-400 focus:border-blue-600 font-medium text-lg"
                   disabled={loading}
                 >
                   <option value="DNI">DNI</option>
@@ -119,132 +127,33 @@ const GuestRegistrationForm = ({
                   value={guestData.documentNumber || ''}
                   onChange={(e) => handleInputChange('documentNumber', e.target.value)}
                   placeholder="12345678"
-                  className={`flex-1 px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg ${
+                  className={`flex-1 px-5 py-4 border-3 rounded-xl focus:outline-none focus:ring-3 focus:ring-blue-400 text-lg font-medium ${
                     errors.documentNumber 
-                      ? 'border-red-500 bg-red-50' 
-                      : 'border-blue-300 focus:border-blue-500'
+                      ? 'border-red-500 bg-red-50 focus:ring-red-400' 
+                      : 'border-blue-400 focus:border-blue-600 bg-white'
                   }`}
                   disabled={loading}
                 />
               </div>
               {errors.documentNumber && (
-                <p className="text-red-500 text-sm mt-1 font-medium">{errors.documentNumber}</p>
+                <p className="text-red-600 text-sm mt-2 font-semibold flex items-center">
+                  <span className="mr-1">⚠️</span>
+                  {errors.documentNumber}
+                </p>
               )}
             </div>
           </div>
         </div>
 
-        {/* Campos Opcionales - Colapsables */}
-        <details className="bg-gray-50 border border-gray-200 rounded-lg">
-          <summary className="cursor-pointer p-4 font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
-            ➕ Información Adicional (Opcional)
-          </summary>
-          
-          <div className="p-4 pt-0 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Teléfono (Opcional) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Teléfono
-                </label>
-                <input
-                  type="tel"
-                  value={guestData.phone || ''}
-                  onChange={(e) => handleInputChange('phone', e.target.value)}
-                  placeholder="+51 987 654 321"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={loading}
-                />
-              </div>
-
-              {/* Email (Opcional) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={guestData.email || ''}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
-                  placeholder="ejemplo@correo.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={loading}
-                />
-              </div>
-            </div>
-
-            {/* Nacionalidad */}
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
-                Nacionalidad
-              </label>
-              <input
-                type="text"
-                value={guestData.nationality || 'Peruana'}
-                onChange={(e) => handleInputChange('nationality', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={loading}
-              />
-            </div>
-
-            {/* Número de huéspedes */}
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">
-                Número de Huéspedes
-              </label>
-              <div className="flex space-x-4">
-                <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Adultos</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="6"
-                    value={guestData.adults || 1}
-                    onChange={(e) => handleInputChange('adults', parseInt(e.target.value) || 1)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={loading}
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Niños</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="4"
-                    value={guestData.children || 0}
-                    onChange={(e) => handleInputChange('children', parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={loading}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Observaciones */}
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
-                Observaciones Especiales
-              </label>
-              <textarea
-                value={guestData.specialRequests || ''}
-                onChange={(e) => handleInputChange('specialRequests', e.target.value)}
-                placeholder="Alguna solicitud especial, alergias, preferencias, etc."
-                rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={loading}
-              />
-            </div>
-          </div>
-        </details>
-
         {/* Botones */}
-        <div className="flex justify-end space-x-3 pt-4 border-t">
+        <div className="flex justify-center space-x-4 pt-6">
           <Button
             type="button"
             variant="outline"
             onClick={onCancel}
             icon={X}
             disabled={loading}
+            className="px-6 py-3"
           >
             Cancelar
           </Button>
@@ -253,19 +162,54 @@ const GuestRegistrationForm = ({
             variant="success"
             icon={Save}
             disabled={loading}
-            className="px-8 py-3 text-lg"
+            className="px-12 py-4 text-xl font-bold"
           >
-            {loading ? 'Guardando...' : 'Continuar ✅'}
+            {loading ? (
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <span>Guardando...</span>
+              </div>
+            ) : (
+              '✅ Continuar al Check-in'
+            )}
           </Button>
         </div>
       </form>
 
-      {/* Información mejorada */}
-      <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-        <p className="text-green-800 text-sm">
-          <strong>⚡ Registro Ultra Rápido:</strong> Solo completa los 2 campos obligatorios para un check-in inmediato. 
-          La información adicional es completamente opcional y se puede agregar después.
-        </p>
+      {/* Información destacada */}
+      <div className="mt-6 p-4 bg-green-100 border-2 border-green-300 rounded-xl">
+        <div className="flex items-center space-x-3">
+          <div className="text-3xl">🚀</div>
+          <div>
+            <p className="text-green-900 font-bold text-lg">
+              ¡Check-in Ultra Rápido!
+            </p>
+            <p className="text-green-800 text-sm">
+              Solo necesitas completar estos 2 campos para un check-in inmediato. 
+              Sin formularios largos, sin campos innecesarios.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Indicador de progreso visual */}
+      <div className="mt-4">
+        <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
+          <div className="flex items-center space-x-1">
+            <div className={`w-4 h-4 rounded-full ${guestData.fullName?.trim() ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+            <span>Nombre</span>
+          </div>
+          <div className="w-8 h-0.5 bg-gray-300"></div>
+          <div className="flex items-center space-x-1">
+            <div className={`w-4 h-4 rounded-full ${guestData.documentNumber?.trim() && guestData.documentNumber.length >= 6 ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+            <span>Documento</span>
+          </div>
+          <div className="w-8 h-0.5 bg-gray-300"></div>
+          <div className="flex items-center space-x-1">
+            <div className={`w-4 h-4 rounded-full ${guestData.fullName?.trim() && guestData.documentNumber?.trim() && guestData.documentNumber.length >= 6 ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+            <span>¡Listo!</span>
+          </div>
+        </div>
       </div>
     </div>
   );

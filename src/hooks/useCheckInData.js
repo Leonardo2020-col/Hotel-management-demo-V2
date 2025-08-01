@@ -431,11 +431,10 @@ export const useCheckInData = () => {
   // NUEVA FUNCIÓN: Crear huésped y reserva sin reservación previa
 const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
   try {
-    console.log('👤 Creating guest and reservation without gender field...', {
+    console.log('👤 Creating guest with ONLY basic fields...', {
       fullName: guestData.fullName,
       documentNumber: guestData.documentNumber,
-      hasPhone: !!guestData.phone,
-      hasEmail: !!guestData.email
+      documentType: guestData.documentType
     })
     
     // VALIDACIÓN SIMPLIFICADA - Solo 2 campos obligatorios
@@ -453,29 +452,27 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
     const snacksTotal = snacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
     const totalAmount = roomPrice + snacksTotal
 
-    // 1. Crear el huésped con datos simplificados - SIN GENDER
-    console.log('👤 Creating guest without gender field:', {
-      fullName: guestData.fullName,
-      documentType: guestData.documentType || 'DNI',
-      documentNumber: guestData.documentNumber,
-      hasOptionalData: !!(guestData.phone || guestData.email)
-    })
+    // 1. Crear el huésped con SOLO los campos básicos que sabemos que existen
+    console.log('👤 Creating guest with minimal data to avoid DB errors')
     
     const newGuestData = {
+      // SOLO campos básicos que están garantizados en la tabla
       first_name: guestData.fullName.split(' ')[0] || 'Huésped',
       last_name: guestData.fullName.split(' ').slice(1).join(' ') || 'Registro',
-      // Campos opcionales - usar valores por defecto si no están presentes
-      email: guestData.email?.trim() || null,
-      phone: guestData.phone?.trim() || null,
       document_type: guestData.documentType || 'DNI',
       document_number: guestData.documentNumber.trim(),
-      nationality: guestData.nationality || 'Peruana',
-      // REMOVER CAMPO GENDER - está causando el error
-      // gender: guestData.gender || null,  // ❌ COMENTADO
       status: 'active'
+      
+      // TODOS LOS CAMPOS OPCIONALES REMOVIDOS para evitar errores de schema:
+      // ❌ email (puede no existir)
+      // ❌ phone (puede no existir)  
+      // ❌ nationality (causaba error)
+      // ❌ gender (causaba error)
+      // ❌ total_visits (opcional)
+      // ❌ total_spent (opcional)
     }
 
-    console.log('📝 Guest data to insert (without gender):', newGuestData)
+    console.log('📝 Minimal guest data to insert:', newGuestData)
 
     const { data: guest, error: guestError } = await db.createGuest(newGuestData)
     
@@ -484,31 +481,28 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       throw new Error(`Error creating guest: ${guestError.message}`)
     }
 
-    console.log('✅ Guest created successfully:', {
+    console.log('✅ Guest created successfully with minimal data:', {
       id: guest.id,
       fullName: guestData.fullName,
       documentNumber: guestData.documentNumber
     })
 
-    // 2. Crear la reserva automáticamente
+    // 2. Crear la reserva con datos mínimos
     const reservationData = {
       guest_id: guest.id,
       room_id: room.id || room.room_id,
       branch_id: 1,
       check_in: new Date().toISOString().split('T')[0],
       check_out: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      adults: guestData.adults || 1,
-      children: guestData.children || 0,
+      adults: 1, // Valor fijo
+      children: 0, // Valor fijo
       status: 'checked_in',
       total_amount: totalAmount,
       rate: roomPrice,
       paid_amount: 0,
-      special_requests: [
-        guestData.specialRequests || '',
-        snacks.length > 0 ? `Snacks: ${snacks.map(s => `${s.name} x${s.quantity}`).join(', ')}` : ''
-      ].filter(Boolean).join(' | '),
+      special_requests: snacks.length > 0 ? `Snacks: ${snacks.map(s => `${s.name} x${s.quantity}`).join(', ')}` : '',
       payment_status: 'pending',
-      source: 'walk_in'
+      source: 'walk_in_simplified'
     }
 
     const { data: reservation, error: reservationError } = await db.createReservation(reservationData)
@@ -533,7 +527,7 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       console.warn('⚠️ Warning updating room status:', roomError)
     }
 
-    // 4. Crear orden local con datos simplificados
+    // 4. Crear orden local con datos mínimos
     const newOrder = {
       id: reservation.id,
       room: { 
@@ -551,17 +545,13 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       guestId: guest.id,
       reservationId: reservation.id,
       confirmationCode: reservation.confirmation_code,
-      // Datos del huésped (sin gender)
-      guestEmail: guestData.email || null,
-      guestPhone: guestData.phone || null,
+      // Solo datos básicos para evitar problemas
       guestDocument: guestData.documentNumber,
       guestDocumentType: guestData.documentType || 'DNI',
-      specialRequests: guestData.specialRequests || null,
-      adults: guestData.adults || 1,
-      children: guestData.children || 0,
-      nationality: guestData.nationality || 'Peruana',
+      adults: 1,
+      children: 0,
       isWalkIn: true,
-      isSimplifiedRegistration: true
+      isUltraSimplified: true // Nueva flag
     }
 
     // 5. Actualizar estado local
@@ -583,9 +573,7 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
                   cleaning_status: 'dirty',
                   currentGuest: {
                     id: guest.id,
-                    name: guestData.fullName,
-                    email: guestData.email || null,
-                    phone: guestData.phone || null
+                    name: guestData.fullName
                   },
                   activeReservation: {
                     id: reservation.id,
@@ -603,20 +591,15 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       return updated
     })
 
-    // Mensaje de éxito personalizado
-    const successMessage = guestData.phone || guestData.email 
-      ? `Check-in completado para ${guestData.fullName} en habitación ${room.number}`
-      : `Check-in rápido completado para ${guestData.fullName} en habitación ${room.number} (solo datos básicos)`
-
-    toast.success(successMessage, {
-      icon: '🏨',
+    toast.success(`Check-in ultra rápido completado para ${guestData.fullName} en habitación ${room.number}`, {
+      icon: '🚀',
       duration: 4000
     })
     
     return { data: newOrder, error: null }
 
   } catch (error) {
-    console.error('❌ Error in createGuestAndReservation:', error)
+    console.error('❌ Error in ultra simplified createGuestAndReservation:', error)
     toast.error(`Error al crear registro: ${error.message}`)
     return { data: null, error }
   }

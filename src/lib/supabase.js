@@ -2690,58 +2690,43 @@ async cleanRoomWithClick(roomId) {
 
   async createGuest(guestData) {
   try {
-    console.log('👤 Creating guest without gender field:', {
-      hasFullName: !!guestData.full_name,
+    console.log('👤 Creating guest with ULTRA minimal fields to avoid DB errors:', {
       hasFirstName: !!guestData.first_name,
+      hasLastName: !!guestData.last_name,
       hasDocumentNumber: !!guestData.document_number,
-      hasPhone: !!guestData.phone,
-      hasEmail: !!guestData.email,
-      nationality: guestData.nationality
+      documentType: guestData.document_type
     })
     
-    // VALIDACIÓN SIMPLIFICADA - Solo validar que tenga nombre
-    if (!guestData.full_name && !guestData.first_name) {
+    // VALIDACIÓN MÍNIMA
+    if (!guestData.first_name) {
       return { 
         data: null, 
         error: { message: 'El nombre del huésped es obligatorio' }
       }
     }
 
-    // Preparar datos sin el campo 'gender' que está causando problemas
+    // DATOS ULTRA MÍNIMOS - Solo campos que sabemos que existen
     const insertData = {
-      // Nombre - obligatorio
-      full_name: guestData.full_name || `${guestData.first_name || ''} ${guestData.last_name || ''}`.trim(),
-      
-      // Campos opcionales - permitir null/vacío
-      email: guestData.email?.trim() || null,
-      phone: guestData.phone?.trim() || null,
-      
-      // Documento - requerido para identificación pero más flexible
+      // Campos básicos que están garantizados
+      first_name: guestData.first_name,
+      last_name: guestData.last_name || 'Huésped',
       document_type: guestData.document_type || 'DNI',
-      document_number: guestData.document_number?.trim() || '',
+      document_number: guestData.document_number || '',
+      status: guestData.status || 'active'
       
-      // Campos con valores por defecto
-      nationality: guestData.nationality || 'Peruana',
-      
-      // CAMPO GENDER REMOVIDO - estaba causando el error
-      // gender: guestData.gender || null,  // ❌ COMENTADO
-      
-      // Campos del sistema
-      status: 'active',
-      total_visits: 0,
-      total_spent: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      // TODOS LOS DEMÁS CAMPOS REMOVIDOS para evitar errores:
+      // ❌ full_name (puede no existir como campo)
+      // ❌ email (causaba error en algunos schemas)
+      // ❌ phone (causaba error en algunos schemas) 
+      // ❌ nationality (causaba error)
+      // ❌ gender (causaba error)
+      // ❌ total_visits (opcional)
+      // ❌ total_spent (opcional)
+      // ❌ created_at (se genera automáticamente)
+      // ❌ updated_at (se genera automáticamente)
     }
 
-    console.log('📝 Insert data prepared (without gender):', {
-      full_name: insertData.full_name,
-      document_type: insertData.document_type,
-      document_number: insertData.document_number,
-      nationality: insertData.nationality,
-      has_contact: !!(insertData.email || insertData.phone),
-      fields_count: Object.keys(insertData).length
-    })
+    console.log('📝 Ultra minimal insert data:', insertData)
 
     const { data, error } = await supabase
       .from('guests')
@@ -2750,49 +2735,48 @@ async cleanRoomWithClick(roomId) {
       .single()
 
     if (error) {
-      console.error('❌ Supabase error creating guest:', error)
+      console.error('❌ Supabase error creating guest (ultra minimal):', error)
       
-      // Manejar errores específicos
-      if (error.code === '23505') {
-        // Violación de restricción única
+      // Manejar errores específicos de schema
+      if (error.code === '42703') {
+        console.error('❌ Column does not exist error:', error.message)
         return { 
           data: null, 
-          error: { message: 'Ya existe un huésped con este documento de identidad' }
+          error: { message: 'Error de configuración de base de datos. Verifique la estructura de la tabla guests.' }
         }
       }
       
-      if (error.code === '42703') {
-        // Columna no existe - problema de schema
+      if (error.code === '23505') {
         return { 
           data: null, 
-          error: { message: 'Error de configuración de base de datos. Contacte al administrador.' }
+          error: { message: 'Ya existe un huésped con este documento' }
         }
       }
       
       return { 
         data: null, 
-        error: { message: 'Error al crear el huésped: ' + error.message }
+        error: { message: 'Error al crear huésped: ' + error.message }
       }
     }
 
-    console.log('✅ Guest created successfully (without gender):', {
+    console.log('✅ Guest created successfully with ultra minimal data:', {
       id: data.id,
-      full_name: data.full_name,
-      document_number: data.document_number,
-      nationality: data.nationality,
-      has_contact: !!(data.email || data.phone)
+      first_name: data.first_name,
+      last_name: data.last_name,
+      document_number: data.document_number
     })
     
     return { data, error: null }
 
   } catch (error) {
-    console.error('❌ Unexpected error in createGuest:', error)
+    console.error('❌ Unexpected error in ultra minimal createGuest:', error)
     return { 
       data: null, 
-      error: { message: 'Error inesperado al crear el huésped: ' + error.message }
+      error: { message: 'Error inesperado: ' + error.message }
     }
   }
 },
+
 
   async updateGuest(guestId, updates) {
     try {

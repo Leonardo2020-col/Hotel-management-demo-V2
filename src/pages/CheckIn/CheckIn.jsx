@@ -23,17 +23,18 @@ const CheckIn = () => {
   
   // Estado para datos del huésped
   const [guestData, setGuestData] = useState({
-    fullName: '',
-    documentType: 'DNI',
-    documentNumber: '',
-    phone: '',
-    email: '',
-    nationality: 'Peruana',
-    gender: '',
-    adults: 1,
-    children: 0,
-    specialRequests: ''
-  })
+  fullName: '',
+  documentType: 'DNI',
+  documentNumber: ''
+  // TODOS LOS DEMÁS CAMPOS REMOVIDOS:
+  // ❌ phone: '',
+  // ❌ email: '',
+  // ❌ nationality: 'Peruana',
+  // ❌ gender: '',
+  // ❌ adults: 1,
+  // ❌ children: 0,
+  // ❌ specialRequests: ''
+})
 
   const {
     floorRooms,
@@ -133,39 +134,32 @@ const CheckIn = () => {
 
   // CHECK-IN DIRECTO - Ir directamente al formulario de huésped
   const handleDirectCheckIn = async (room) => {
-    console.log('🏨 Starting direct check-in for room:', room.number)
-    
-    const floor = Math.floor(parseInt(room.number) / 100)
-    const roomPrice = roomPrices && roomPrices[floor] ? roomPrices[floor] : 100
-    
-    // Resetear datos del huésped
-    setGuestData({
-      fullName: '',
-      documentType: 'DNI',
-      documentNumber: '',
-      phone: '',
-      email: '',
-      nationality: 'Peruana',
-      gender: '',
-      adults: 1,
-      children: 0,
-      specialRequests: ''
-    })
-    
-    setSelectedRoom(room)
-    setCurrentOrder({
-      room: room,
-      roomPrice: roomPrice,
-      snacks: [],
-      total: roomPrice
-    })
-    setOrderStep(1) // Ir directamente al formulario de huésped
-    
-    toast.success(`Iniciando check-in para habitación ${room.number}`, {
-      icon: '🏨',
-      duration: 2000
-    })
-  }
+  console.log('🏨 Starting ultra simple check-in for room:', room.number)
+  
+  const floor = Math.floor(parseInt(room.number) / 100)
+  const roomPrice = roomPrices && roomPrices[floor] ? roomPrices[floor] : 100
+  
+  // Resetear datos del huésped a estado mínimo
+  setGuestData({
+    fullName: '',
+    documentType: 'DNI',
+    documentNumber: ''
+  })
+  
+  setSelectedRoom(room)
+  setCurrentOrder({
+    room: room,
+    roomPrice: roomPrice,
+    snacks: [],
+    total: roomPrice
+  })
+  setOrderStep(1)
+  
+  toast.success(`Iniciando check-in ultra rápido para habitación ${room.number}`, {
+    icon: '🚀',
+    duration: 2000
+  })
+}
 
   // FUNCIÓN CORREGIDA: CHECK-OUT DIRECTO - Ir primero a selección de snacks
   const handleDirectCheckOut = async (room) => {
@@ -780,24 +774,18 @@ const handleConfirmRoomOnly = async () => {
   }
 
   const resetOrder = () => {
-    setOrderStep(0)
-    setSelectedSnackType(null)
-    setSelectedSnacks([])
-    setCurrentOrder(null)
-    setSelectedRoom(null)
-    setGuestData({
-      fullName: '',
-      documentType: 'DNI',
-      documentNumber: '',
-      phone: '',
-      email: '',
-      nationality: 'Peruana',
-      gender: '',
-      adults: 1,
-      children: 0,
-      specialRequests: ''
-    })
-  }
+  setOrderStep(0)
+  setSelectedSnackType(null)
+  setSelectedSnacks([])
+  setCurrentOrder(null)
+  setSelectedRoom(null)
+  setGuestData({
+    fullName: '',
+    documentType: 'DNI',
+    documentNumber: ''
+    // Solo estos 3 campos básicos
+  })
+}
 
   // Manejo de errores
   if (error) {
