@@ -79,6 +79,172 @@ export const getRoomsByFloor = async (branchId = null) => {
 // ====================================
 export const db = {
 
+  // Función para estadísticas de quick check-ins
+async getQuickCheckinStats(filters = {}) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const thisMonth = new Date();
+    const startOfMonth = new Date(thisMonth.getFullYear(), thisMonth.getMonth(), 1)
+      .toISOString().split('T')[0];
+    
+    // Check-ins de hoy
+    const { data: todayCheckins, error: todayError } = await supabase
+      .from('quick_checkins')
+      .select('id, total_amount')
+      .eq('check_in_date', today);
+    
+    if (todayError) {
+      console.warn('Error fetching today checkins:', todayError);
+    }
+    
+    // Check-ins activos
+    const { data: activeCheckins, error: activeError } = await supabase
+      .from('quick_checkins')
+      .select('id')
+      .eq('status', 'checked_in');
+    
+    if (activeError) {
+      console.warn('Error fetching active checkins:', activeError);
+    }
+    
+    // Ingresos del mes
+    const { data: monthlyCheckins, error: monthlyError } = await supabase
+      .from('quick_checkins')
+      .select('total_amount')
+      .gte('check_in_date', startOfMonth)
+      .eq('status', 'checked_out');
+    
+    if (monthlyError) {
+      console.warn('Error fetching monthly checkins:', monthlyError);
+    }
+    
+    const stats = {
+      todayCheckins: Array.isArray(todayCheckins) ? todayCheckins.length : 0,
+      activeCheckins: Array.isArray(activeCheckins) ? activeCheckins.length : 0,
+      todayRevenue: Array.isArray(todayCheckins) 
+        ? todayCheckins.reduce((sum, c) => sum + (Number(c.total_amount) || 0), 0) 
+        : 0,
+      monthlyRevenue: Array.isArray(monthlyCheckins)
+        ? monthlyCheckins.reduce((sum, c) => sum + (Number(c.total_amount) || 0), 0)
+        : 0
+    };
+    
+    return { data: stats, error: null };
+    
+  } catch (error) {
+    console.error('Error getting quick checkin stats:', error);
+    return { 
+      data: {
+        todayCheckins: 0,
+        activeCheckins: 0,
+        todayRevenue: 0,
+        monthlyRevenue: 0
+      }, 
+      error: null 
+    };
+  }
+},
+
+// Función para comparación de ingresos
+async getRevenueComparison(startDate, endDate) {
+  try {
+    // Ingresos por quick check-ins
+    const { data: quickCheckinRevenue, error: qcError } = await supabase
+      .from('quick_checkins')
+      .select('total_amount, room_rate, snacks_total')
+      .gte('check_in_date', startDate)
+      .lte('check_in_date', endDate)
+      .eq('status', 'checked_out');
+    
+    // Ingresos por reservaciones
+    const { data: reservationRevenue, error: resError } = await supabase
+      .from('reservations')
+      .select('total_amount')
+      .gte('check_in', startDate)
+      .lte('check_in', endDate)
+      .eq('status', 'checked_out');
+    
+    const quickCheckinTotal = Array.isArray(quickCheckinRevenue)
+      ? quickCheckinRevenue.reduce((sum, c) => sum + (Number(c.total_amount) || 0), 0)
+      : 0;
+      
+    const reservationTotal = Array.isArray(reservationRevenue)
+      ? reservationRevenue.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0)
+      : 0;
+    
+    const totalRevenue = quickCheckinTotal + reservationTotal;
+    
+    const report = {
+      period: { startDate, endDate },
+      quickCheckins: {
+        total: quickCheckinTotal,
+        count: Array.isArray(quickCheckinRevenue) ? quickCheckinRevenue.length : 0,
+      },
+      reservations: {
+        total: reservationTotal,
+        count: Array.isArray(reservationRevenue) ? reservationRevenue.length : 0,
+      },
+      comparison: {
+        totalRevenue: totalRevenue,
+        quickCheckinPercentage: totalRevenue > 0 
+          ? (quickCheckinTotal / totalRevenue) * 100 
+          : 0,
+        reservationPercentage: totalRevenue > 0 
+          ? (reservationTotal / totalRevenue) * 100 
+          : 0
+      }
+    };
+    
+    return { data: report, error: null };
+    
+  } catch (error) {
+    console.error('Error getting revenue comparison:', error);
+    return { 
+      data: {
+        comparison: {
+          quickCheckinPercentage: 0,
+          reservationPercentage: 0
+        }
+      }, 
+      error: null 
+    };
+  }
+},
+
+// ✅ Validar que las tablas existan antes de usarlas
+async validateTables() {
+  try {
+    console.log('🔍 Validating database tables...');
+    
+    const tables = ['rooms', 'reservations', 'guests'];
+    const validationResults = {};
+    
+    for (const table of tables) {
+      try {
+        const { data, error } = await supabase
+          .from(table)
+          .select('count')
+          .limit(1);
+        
+        validationResults[table] = !error;
+        if (error) {
+          console.warn(`Table ${table} validation failed:`, error);
+        }
+      } catch (tableError) {
+        console.warn(`Table ${table} not accessible:`, tableError);
+        validationResults[table] = false;
+      }
+    }
+    
+    console.log('📋 Table validation results:', validationResults);
+    return validationResults;
+    
+  } catch (error) {
+    console.error('Error validating tables:', error);
+    return {};
+  }
+},
+
 // Crear check-in rápido (NO reservación)
 async createQuickCheckin(checkinData) {
   try {

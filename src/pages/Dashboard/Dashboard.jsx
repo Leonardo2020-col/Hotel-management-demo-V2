@@ -30,8 +30,29 @@ import Button from '../../components/common/Button';
 const Dashboard = () => {
   const { hasPermission, user } = useAuth();
   const [showQuickCheckIn, setShowQuickCheckIn] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // ✅ Capturar errores de renderizado
+  useEffect(() => {
+    const handleError = (error) => {
+      console.error('Dashboard Error:', error);
+      setHasError(true);
+      setErrorMessage(error.message || 'Error desconocido en el dashboard');
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', (event) => {
+      handleError(new Error(event.reason));
+    });
+
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleError);
+    };
+  }, []);
   
-  // ✅ Estado separado para ambos sistemas
+  // ✅ Estado inicial seguro
   const [dashboardData, setDashboardData] = useState({
     quickCheckins: {
       today: 0,
@@ -62,6 +83,44 @@ const Dashboard = () => {
     }
   });
 
+  // ✅ Error fallback UI
+  if (hasError) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
+          <div className="text-red-500 mb-4">
+            <AlertCircle className="w-16 h-16 mx-auto" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Error en Dashboard</h2>
+          <p className="text-gray-600 mb-6">{errorMessage}</p>
+          <div className="space-y-3">
+            <Button
+              variant="primary"
+              onClick={() => {
+                setHasError(false);
+                setErrorMessage('');
+                window.location.reload();
+              }}
+              className="w-full"
+            >
+              Recargar Página
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setHasError(false);
+                setErrorMessage('');
+              }}
+              className="w-full"
+            >
+              Continuar con Datos Limitados
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const {
     stats,
     occupancyData,
@@ -89,112 +148,182 @@ const Dashboard = () => {
   }, []);
 
   const loadSeparatedDashboardData = async () => {
-    try {
-      setSeparatedLoading(true);
-      
-      console.log('📊 Loading separated dashboard data...');
-      
-      // ✅ Cargar estadísticas de quick check-ins (separadas)
-      const [
-        quickCheckinStatsResult,
-        reservationStatsResult,
-        roomStatsResult,
-        revenueComparisonResult
-      ] = await Promise.all([
-        db.getQuickCheckinStats?.() || Promise.resolve({ data: null }),
-        db.getDashboardStats?.() || Promise.resolve({ data: null }),
-        db.getRooms?.() || Promise.resolve({ data: [] }),
-        db.getRevenueComparison?.(
-          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          new Date().toISOString().split('T')[0]
-        ) || Promise.resolve({ data: null })
-      ]);
+  try {
+    setSeparatedLoading(true);
+    
+    console.log('📊 Loading separated dashboard data...');
+    
+    // ✅ Cargar datos con validación de errores
+    const loadDataSafely = async (loadFunction, defaultValue) => {
+      try {
+        if (typeof loadFunction === 'function') {
+          const result = await loadFunction();
+          return result?.data || defaultValue;
+        }
+        return defaultValue;
+      } catch (error) {
+        console.warn('Error loading data:', error);
+        return defaultValue;
+      }
+    };
 
       // Procesar estadísticas de quick check-ins
-      const quickCheckinStats = quickCheckinStatsResult.data || {
-        todayCheckins: 0,
-        activeCheckins: 0,
-        todayRevenue: 0,
-        monthlyRevenue: 0
-      };
+      // ✅ Cargar todos los datos con valores por defecto seguros
+    const [
+      quickCheckinStats,
+      reservationStats,
+      roomData,
+      revenueComparison
+    ] = await Promise.all([
+      loadDataSafely(
+        () => db.getQuickCheckinStats?.(),
+        { todayCheckins: 0, activeCheckins: 0, todayRevenue: 0, monthlyRevenue: 0 }
+      ),
+      loadDataSafely(
+        () => db.getDashboardStats?.(),
+        { totalGuests: 0, checkInsToday: 0, revenue: { today: 0, thisMonth: 0 } }
+      ),
+      loadDataSafely(
+        () => db.getRooms?.(),
+        []
+      ),
+      loadDataSafely(
+        () => db.getRevenueComparison?.(
+          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          new Date().toISOString().split('T')[0]
+        ),
+        { comparison: { quickCheckinPercentage: 0, reservationPercentage: 0 } }
+      )
+    ]);
 
-      // Procesar estadísticas de reservaciones
-      const reservationStats = reservationStatsResult.data || {
-        totalGuests: 0,
-        checkInsToday: 0,
-        revenue: { today: 0, thisMonth: 0 }
-      };
+    // ✅ Procesar estadísticas de habitaciones con validación
+    const roomStats = {
+      total: Array.isArray(roomData) ? roomData.length : 0,
+      available: 0,
+      occupied: 0,
+      cleaning: 0
+    };
 
-      // Procesar estadísticas de habitaciones
-      const roomData = roomStatsResult.data || [];
-      const roomStats = {
-        total: roomData.length,
-        available: roomData.filter(r => r.status === 'available' && r.cleaning_status === 'clean').length,
-        occupied: roomData.filter(r => r.status === 'occupied').length,
-        cleaning: roomData.filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length
-      };
-      roomStats.occupancyRate = roomStats.total > 0 ? Math.round((roomStats.occupied / roomStats.total) * 100) : 0;
+    if (Array.isArray(roomData)) {
+      roomStats.available = roomData.filter(r => 
+        r?.status === 'available' && r?.cleaning_status === 'clean'
+      ).length;
+      
+      roomStats.occupied = roomData.filter(r => 
+        r?.status === 'occupied'
+      ).length;
+      
+      roomStats.cleaning = roomData.filter(r => 
+        r?.cleaning_status === 'dirty' || r?.status === 'cleaning'
+      ).length;
+    }
 
-      // Procesar comparación de ingresos
-      const revenueComparison = revenueComparisonResult.data || {
-        comparison: {
-          quickCheckinPercentage: 0,
-          reservationPercentage: 0
-        }
-      };
+    roomStats.occupancyRate = roomStats.total > 0 
+      ? Math.round((roomStats.occupied / roomStats.total) * 100) 
+      : 0;
 
       // Consolidar datos
-      const newDashboardData = {
-        quickCheckins: {
-          today: quickCheckinStats.todayCheckins,
-          active: quickCheckinStats.activeCheckins,
-          revenue: quickCheckinStats.todayRevenue,
-          monthlyRevenue: quickCheckinStats.monthlyRevenue
-        },
-        reservations: {
-          today: reservationStats.checkInsToday,
-          active: reservationStats.totalGuests,
-          revenue: reservationStats.revenue.today,
-          monthlyRevenue: reservationStats.revenue.thisMonth
-        },
-        rooms: roomStats,
-        combined: {
-          totalRevenue: quickCheckinStats.todayRevenue + reservationStats.revenue.today,
-          totalGuests: quickCheckinStats.activeCheckins + reservationStats.totalGuests,
-          revenueComparison: revenueComparison.comparison
+      // ✅ Consolidar datos con validaciones
+    const newDashboardData = {
+      quickCheckins: {
+        today: Number(quickCheckinStats?.todayCheckins) || 0,
+        active: Number(quickCheckinStats?.activeCheckins) || 0,
+        revenue: Number(quickCheckinStats?.todayRevenue) || 0,
+        monthlyRevenue: Number(quickCheckinStats?.monthlyRevenue) || 0
+      },
+      reservations: {
+        today: Number(reservationStats?.checkInsToday) || 0,
+        active: Number(reservationStats?.totalGuests) || 0,
+        revenue: Number(reservationStats?.revenue?.today) || 0,
+        monthlyRevenue: Number(reservationStats?.revenue?.thisMonth) || 0
+      },
+      rooms: roomStats,
+      combined: {
+        totalRevenue: (Number(quickCheckinStats?.todayRevenue) || 0) + 
+                     (Number(reservationStats?.revenue?.today) || 0),
+        totalGuests: (Number(quickCheckinStats?.activeCheckins) || 0) + 
+                    (Number(reservationStats?.totalGuests) || 0),
+        revenueComparison: {
+          quickCheckinPercentage: Number(revenueComparison?.comparison?.quickCheckinPercentage) || 0,
+          reservationPercentage: Number(revenueComparison?.comparison?.reservationPercentage) || 0
         }
-      };
+      }
+    };
 
       setDashboardData(newDashboardData);
-      setLastSeparatedUpdate(new Date());
+    setLastSeparatedUpdate(new Date());
       
-      console.log('✅ Separated dashboard data loaded successfully');
-      
-    } catch (error) {
-      console.error('❌ Error loading separated dashboard data:', error);
-      // Mantener datos anteriores en caso de error
-    } finally {
-      setSeparatedLoading(false);
-    }
-  };
-
-  const occupancyTrend = getOccupancyTrend();
-  const revenueTrend = getRevenueTrend();
+      console.log('✅ Separated dashboard data loaded successfully:', newDashboardData);
+    
+  } catch (error) {
+    console.error('❌ Error loading separated dashboard data:', error);
+    
+    // ✅ Establecer datos por defecto en caso de error completo
+    setDashboardData({
+      quickCheckins: { today: 0, active: 0, revenue: 0, monthlyRevenue: 0 },
+      reservations: { today: 0, active: 0, revenue: 0, monthlyRevenue: 0 },
+      rooms: { total: 0, available: 0, occupied: 0, cleaning: 0, occupancyRate: 0 },
+      combined: {
+        totalRevenue: 0,
+        totalGuests: 0,
+        revenueComparison: { quickCheckinPercentage: 0, reservationPercentage: 0 }
+      }
+    });
+  } finally {
+    setSeparatedLoading(false);
+  }
+};
 
   // =============================================
   // FORMATTERS
   // =============================================
+  // ✅ FUNCIÓN formatCurrency MEJORADA
   const formatCurrency = (amount) => {
-    if (!amount) return 'S/ 0.00';
-    return `S/ ${parseFloat(amount).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`;
+    // Validar entrada
+    if (amount === null || amount === undefined || isNaN(amount)) {
+      return 'S/ 0.00';
+    }
+    
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount)) {
+      return 'S/ 0.00';
+    }
+    
+    return `S/ ${numAmount.toLocaleString('es-PE', { 
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
   };
 
-  const formatTime = (date) => {
-    if (!date) return '';
-    return new Date(date).toLocaleTimeString('es-PE', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+  // ✅ MANEJO SEGURO DE DATOS
+  const safeDashboardData = {
+    quickCheckins: {
+      today: dashboardData?.quickCheckins?.today || 0,
+      active: dashboardData?.quickCheckins?.active || 0,
+      revenue: dashboardData?.quickCheckins?.revenue || 0,
+      monthlyRevenue: dashboardData?.quickCheckins?.monthlyRevenue || 0
+    },
+    reservations: {
+      today: dashboardData?.reservations?.today || 0,
+      active: dashboardData?.reservations?.active || 0,
+      revenue: dashboardData?.reservations?.revenue || 0,
+      monthlyRevenue: dashboardData?.reservations?.monthlyRevenue || 0
+    },
+    rooms: {
+      total: dashboardData?.rooms?.total || 0,
+      available: dashboardData?.rooms?.available || 0,
+      occupied: dashboardData?.rooms?.occupied || 0,
+      cleaning: dashboardData?.rooms?.cleaning || 0,
+      occupancyRate: dashboardData?.rooms?.occupancyRate || 0
+    },
+    combined: {
+      totalRevenue: dashboardData?.combined?.totalRevenue || 0,
+      totalGuests: dashboardData?.combined?.totalGuests || 0,
+      revenueComparison: {
+        quickCheckinPercentage: dashboardData?.combined?.revenueComparison?.quickCheckinPercentage || 0,
+        reservationPercentage: dashboardData?.combined?.revenueComparison?.reservationPercentage || 0
+      }
+    }
   };
 
   // =============================================
@@ -248,15 +377,19 @@ const Dashboard = () => {
   // ALERTAS Y NOTIFICACIONES
   // =============================================
   const hasAlerts = () => {
-    return (
-      stats.checkOutsToday > 0 || 
-      roomsToClean.length > 0 || 
-      upcomingCheckIns.length > 0
-    );
+    const checkOuts = stats?.checkOutsToday || 0;
+    const roomsClean = Array.isArray(roomsToClean) ? roomsToClean.length : 0;
+    const upcomingChecks = Array.isArray(upcomingCheckIns) ? upcomingCheckIns.length : 0;
+    
+    return checkOuts > 0 || roomsClean > 0 || upcomingChecks > 0;
   };
 
   const getAlertCount = () => {
-    return stats.checkOutsToday + roomsToClean.length + upcomingCheckIns.length;
+    const checkOuts = stats?.checkOutsToday || 0;
+    const roomsClean = Array.isArray(roomsToClean) ? roomsToClean.length : 0;
+    const upcomingChecks = Array.isArray(upcomingCheckIns) ? upcomingCheckIns.length : 0;
+    
+    return checkOuts + roomsClean + upcomingChecks;
   };
 
   const isLoading = loading || separatedLoading;
@@ -359,7 +492,7 @@ const Dashboard = () => {
         </Button>
       </div>
 
-      {/* ✅ Estadísticas de Quick Check-ins */}
+      {/* ✅ Estadísticas de Quick Check-ins CORREGIDAS */}
       <div>
         <div className="flex items-center space-x-2 mb-4">
           <UserCheck className="w-5 h-5 text-blue-600" />
@@ -372,7 +505,7 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
             title="Check-ins Hoy"
-            value={dashboardData.quickCheckins.today}
+            value={safeDashboardData.quickCheckins.today}
             subtitle="Huéspedes walk-in"
             icon={UserCheck}
             trend={occupancyTrend}
@@ -382,7 +515,7 @@ const Dashboard = () => {
           
           <StatCard
             title="Check-ins Activos"
-            value={dashboardData.quickCheckins.active}
+            value={safeDashboardData.quickCheckins.active}
             subtitle="Actualmente en hotel"
             icon={Bed}
             color="green"
@@ -391,7 +524,7 @@ const Dashboard = () => {
           
           <StatCard
             title="Ingresos Hoy"
-            value={formatCurrency(dashboardData.quickCheckins.revenue)}
+            value={formatCurrency(safeDashboardData.quickCheckins.revenue)}
             subtitle="Walk-in solamente"
             icon={DollarSign}
             color="purple"
@@ -400,7 +533,7 @@ const Dashboard = () => {
           
           <StatCard
             title="Ingresos del Mes"
-            value={formatCurrency(dashboardData.quickCheckins.monthlyRevenue)}
+            value={formatCurrency(safeDashboardData.quickCheckins.monthlyRevenue)}
             subtitle="Quick check-ins"
             icon={TrendingUp}
             color="yellow"
@@ -409,7 +542,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* ✅ Estadísticas de Reservaciones */}
+      {/* ✅ Estadísticas de Reservaciones CORREGIDAS */}
       <div>
         <div className="flex items-center space-x-2 mb-4">
           <Calendar className="w-5 h-5 text-green-600" />
@@ -422,7 +555,7 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
             title="Check-ins Hoy"
-            value={dashboardData.reservations.today}
+            value={safeDashboardData.reservations.today}
             subtitle="Reservas confirmadas"
             icon={Calendar}
             color="green"
@@ -431,7 +564,7 @@ const Dashboard = () => {
           
           <StatCard
             title="Huéspedes Activos"
-            value={dashboardData.reservations.active}
+            value={safeDashboardData.reservations.active}
             subtitle="Con reservación"
             icon={Users}
             color="purple"
@@ -440,7 +573,7 @@ const Dashboard = () => {
           
           <StatCard
             title="Ingresos Hoy"
-            value={formatCurrency(dashboardData.reservations.revenue)}
+            value={formatCurrency(safeDashboardData.reservations.revenue)}
             subtitle="Reservaciones solamente"
             icon={DollarSign}
             color="indigo"
@@ -449,7 +582,7 @@ const Dashboard = () => {
           
           <StatCard
             title="Ingresos del Mes"
-            value={formatCurrency(dashboardData.reservations.monthlyRevenue)}
+            value={formatCurrency(safeDashboardData.reservations.monthlyRevenue)}
             subtitle="Reservaciones"
             icon={TrendingUp}
             color="violet"

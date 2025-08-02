@@ -1,3 +1,4 @@
+// src/components/dashboard/StatCard.jsx - VERSIÓN CORREGIDA
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import classNames from 'classnames';
@@ -36,10 +37,26 @@ const StatCard = ({
       bg: 'bg-red-50',
       icon: 'text-red-600',
       text: 'text-red-600'
+    },
+    gray: {
+      bg: 'bg-gray-50',
+      icon: 'text-gray-600',
+      text: 'text-gray-600'
+    },
+    indigo: {
+      bg: 'bg-indigo-50',
+      icon: 'text-indigo-600',
+      text: 'text-indigo-600'
+    },
+    violet: {
+      bg: 'bg-violet-50',
+      icon: 'text-violet-600',
+      text: 'text-violet-600'
     }
   };
 
-  const currentColor = colorClasses[color];
+  // ✅ VALIDACIÓN: Usar color por defecto si no existe
+  const currentColor = colorClasses[color] || colorClasses.blue;
 
   if (loading) {
     return (
@@ -87,9 +104,11 @@ const StatCard = ({
           )}
         </div>
         
-        <div className={classNames('p-3 rounded-lg', currentColor.bg)}>
-          <Icon className={classNames('w-8 h-8', currentColor.icon)} />
-        </div>
+        {Icon && (
+          <div className={classNames('p-3 rounded-lg', currentColor.bg)}>
+            <Icon className={classNames('w-8 h-8', currentColor.icon)} />
+          </div>
+        )}
       </div>
     </div>
   );
