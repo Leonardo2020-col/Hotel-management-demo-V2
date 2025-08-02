@@ -79,6 +79,450 @@ export const getRoomsByFloor = async (branchId = null) => {
 // ====================================
 export const db = {
 
+// Crear check-in rápido (NO reservación)
+async createQuickCheckin(checkinData) {
+  try {
+    console.log('🏨 Creating quick check-in (walk-in guest):', checkinData)
+    
+    const { data, error } = await supabase
+      .from('quick_checkins')
+      .insert([checkinData])
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Error creating quick check-in:', error)
+      throw error
+    }
+    
+    console.log('✅ Quick check-in created:', data.id)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error('Error in createQuickCheckin:', error)
+    return { data: null, error }
+  }
+},
+
+// =============================================
+// FUNCIÓN PARA LIMPIAR DIFERENCIAS ENTRE SISTEMAS
+// =============================================
+
+// Sincronizar estados de habitaciones entre quick check-ins y reservaciones
+async syncRoomStatesWithQuickCheckins() {
+  try {
+    console.log('🔄 Syncing room states with quick check-ins...')
+    
+    // Obtener todas las habitaciones
+    const { data: rooms } = await supabase.from('rooms').select('*')
+    
+    // Obtener quick check-ins activos
+    const { data: activeQuickCheckins } = await this.getActiveQuickCheckins()
+    
+    // Obtener reservaciones activas
+    const { data: activeReservations } = await supabase
+      .from('reservations')
+      .select('room_id, status')
+      .in('status', ['checked_in', 'confirmed'])
+    
+    const updates = []
+    
+    for (const room of rooms || []) {
+      const hasQuickCheckin = activeQuickCheckins?.some(c => c.room_id === room.id)
+      const hasReservation = activeReservations?.some(r => r.room_id === room.id && r.status === 'checked_in')
+      
+      let expectedStatus = room.status
+      
+      if (hasQuickCheckin && !hasReservation) {
+        // Solo quick check-in, sin reservación
+        expectedStatus = 'occupied'
+      } else if (!hasQuickCheckin && hasReservation) {
+        // Solo reservación, sin quick check-in
+        expectedStatus = 'occupied'
+      } else if (!hasQuickCheckin && !hasReservation) {
+        // Ni quick check-in ni reservación
+        expectedStatus = 'available'
+      }
+      
+      if (room.status !== expectedStatus) {
+        updates.push({
+          id: room.id,
+          number: room.number,
+          currentStatus: room.status,
+          expectedStatus
+        })
+      }
+    }
+    
+    if (updates.length > 0) {
+      console.log(`🔧 Found ${updates.length} rooms needing status sync:`, updates)
+      
+      for (const update of updates) {
+        await supabase
+          .from('rooms')
+          .update({ status: update.expectedStatus })
+          .eq('id', update.id)
+      }
+      
+      console.log('✅ Room states synchronized')
+    } else {
+      console.log('✅ All room states are in sync')
+    }
+    
+    return { data: updates, error: null }
+    
+  } catch (error) {
+    console.error('Error syncing room states:', error)
+    return { data: null, error }
+  }
+},
+
+// =============================================
+// REPORTES SEPARADOS PARA QUICK CHECK-INS
+// =============================================
+
+// Reporte de ocupación por quick check-ins
+async getQuickCheckinOccupancyReport(startDate, endDate) {
+  try {
+    const { data, error } = await supabase
+      .from('quick_checkins')
+      .select(`
+        id,
+        room_number,
+        guest_name,
+        check_in_date,
+        check_out_date,
+        nights,
+        total_amount,
+        status,
+        confirmation_code
+      `)
+      .gte('check_in_date', startDate)
+      .lte('check_in_date', endDate)
+      .order('check_in_date', { ascending: false })
+    
+    if (error) throw error
+    
+    return { data: data || [], error: null }
+    
+  } catch (error) {
+    console.error('Error getting quick checkin occupancy report:', error)
+    return { data: [], error }
+  }
+},
+
+// Ingresos por quick check-ins vs reservaciones
+async getRevenueComparison(startDate, endDate) {
+  try {
+    // Ingresos por quick check-ins
+    const { data: quickCheckinRevenue } = await supabase
+      .from('quick_checkins')
+      .select('total_amount, room_rate, snacks_total')
+      .gte('check_in_date', startDate)
+      .lte('check_in_date', endDate)
+      .eq('status', 'checked_out')
+    
+    // Ingresos por reservaciones
+    const { data: reservationRevenue } = await supabase
+      .from('reservations')
+      .select('total_amount')
+      .gte('check_in', startDate)
+      .lte('check_in', endDate)
+      .eq('status', 'checked_out')
+    
+    const quickCheckinTotal = quickCheckinRevenue?.reduce((sum, c) => sum + (c.total_amount || 0), 0) || 0
+    const reservationTotal = reservationRevenue?.reduce((sum, r) => sum + (r.total_amount || 0), 0) || 0
+    
+    const report = {
+      period: { startDate, endDate },
+      quickCheckins: {
+        total: quickCheckinTotal,
+        count: quickCheckinRevenue?.length || 0,
+        average: quickCheckinRevenue?.length ? quickCheckinTotal / quickCheckinRevenue.length : 0,
+        roomRevenue: quickCheckinRevenue?.reduce((sum, c) => sum + (c.room_rate || 0), 0) || 0,
+        snacksRevenue: quickCheckinRevenue?.reduce((sum, c) => sum + (c.snacks_total || 0), 0) || 0
+      },
+      reservations: {
+        total: reservationTotal,
+        count: reservationRevenue?.length || 0,
+        average: reservationRevenue?.length ? reservationTotal / reservationRevenue.length : 0
+      },
+      comparison: {
+        totalRevenue: quickCheckinTotal + reservationTotal,
+        quickCheckinPercentage: ((quickCheckinTotal / (quickCheckinTotal + reservationTotal)) * 100) || 0,
+        reservationPercentage: ((reservationTotal / (quickCheckinTotal + reservationTotal)) * 100) || 0
+      }
+    }
+    
+    return { data: report, error: null }
+    
+  } catch (error) {
+    console.error('Error getting revenue comparison:', error)
+    return { data: null, error }
+  }
+},
+
+// Obtener check-ins rápidos activos
+async getActiveQuickCheckins(branchId = null) {
+  try {
+    let query = supabase
+      .from('quick_checkins')
+      .select('*')
+      .eq('status', 'checked_in')
+      .order('checked_in_at', { ascending: false })
+    
+    if (branchId) {
+      query = query.eq('branch_id', branchId)
+    }
+    
+    const { data, error } = await query
+    
+    if (error) {
+      console.error('Error getting active quick check-ins:', error)
+      return { data: [], error }
+    }
+    
+    console.log(`✅ Found ${data?.length || 0} active quick check-ins`)
+    return { data: data || [], error: null }
+    
+  } catch (error) {
+    console.error('Error in getActiveQuickCheckins:', error)
+    return { data: [], error }
+  }
+},
+
+// Actualizar check-in rápido
+async updateQuickCheckin(checkinId, updates) {
+  try {
+    console.log('🔄 Updating quick check-in:', checkinId, updates)
+    
+    const updateData = {
+      ...updates,
+      updated_at: new Date().toISOString()
+    }
+    
+    const { data, error } = await supabase
+      .from('quick_checkins')
+      .update(updateData)
+      .eq('id', checkinId)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Error updating quick check-in:', error)
+      throw error
+    }
+    
+    console.log('✅ Quick check-in updated successfully')
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error('Error in updateQuickCheckin:', error)
+    return { data: null, error }
+  }
+},
+
+// Obtener historial de check-ins rápidos
+async getQuickCheckinHistory(filters = {}) {
+  try {
+    let query = supabase
+      .from('quick_checkins')
+      .select('*')
+      .order('created_at', { ascending: false })
+    
+    if (filters.status) {
+      query = query.eq('status', filters.status)
+    }
+    
+    if (filters.roomNumber) {
+      query = query.eq('room_number', filters.roomNumber)
+    }
+    
+    if (filters.startDate && filters.endDate) {
+      query = query
+        .gte('check_in_date', filters.startDate)
+        .lte('check_in_date', filters.endDate)
+    }
+    
+    if (filters.limit) {
+      query = query.limit(filters.limit)
+    }
+    
+    const { data, error } = await query
+    
+    if (error) {
+      console.error('Error getting quick checkin history:', error)
+      return { data: [], error }
+    }
+    
+    return { data: data || [], error: null }
+    
+  } catch (error) {
+    console.error('Error in getQuickCheckinHistory:', error)
+    return { data: [], error }
+  }
+},
+
+// Buscar check-in por habitación
+async getQuickCheckinByRoom(roomNumber) {
+  try {
+    const { data, error } = await supabase
+      .from('quick_checkins')
+      .select('*')
+      .eq('room_number', roomNumber)
+      .eq('status', 'checked_in')
+      .single()
+    
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error getting quick checkin by room:', error)
+      return { data: null, error }
+    }
+    
+    return { data: data || null, error: null }
+    
+  } catch (error) {
+    console.error('Error in getQuickCheckinByRoom:', error)
+    return { data: null, error }
+  }
+},
+
+// Estadísticas de check-ins rápidos
+async getQuickCheckinStats(filters = {}) {
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    const thisMonth = new Date()
+    const startOfMonth = new Date(thisMonth.getFullYear(), thisMonth.getMonth(), 1)
+      .toISOString().split('T')[0]
+    
+    // Check-ins de hoy
+    const { data: todayCheckins } = await supabase
+      .from('quick_checkins')
+      .select('id, total_amount')
+      .eq('check_in_date', today)
+    
+    // Check-ins activos
+    const { data: activeCheckins } = await supabase
+      .from('quick_checkins')
+      .select('id')
+      .eq('status', 'checked_in')
+    
+    // Ingresos del mes
+    const { data: monthlyCheckins } = await supabase
+      .from('quick_checkins')
+      .select('total_amount')
+      .gte('check_in_date', startOfMonth)
+      .eq('status', 'checked_out')
+    
+    const stats = {
+      todayCheckins: todayCheckins?.length || 0,
+      activeCheckins: activeCheckins?.length || 0,
+      todayRevenue: todayCheckins?.reduce((sum, c) => sum + (c.total_amount || 0), 0) || 0,
+      monthlyRevenue: monthlyCheckins?.reduce((sum, c) => sum + (c.total_amount || 0), 0) || 0
+    }
+    
+    return { data: stats, error: null }
+    
+  } catch (error) {
+    console.error('Error getting quick checkin stats:', error)
+    return { data: null, error }
+  }
+},
+
+// Cancelar check-in rápido
+async cancelQuickCheckin(checkinId, reason = 'Cancelado por usuario') {
+  try {
+    const { data, error } = await supabase
+      .from('quick_checkins')
+      .update({
+        status: 'cancelled',
+        special_notes: reason,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', checkinId)
+      .select()
+      .single()
+    
+    if (error) throw error
+    
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error('Error cancelling quick checkin:', error)
+    return { data: null, error }
+  }
+},
+
+// =============================================
+// FUNCIÓN MODIFICADA: getRooms (sin incluir reservaciones)
+// =============================================
+
+async getRoomsForQuickCheckin(filters = {}) {
+  try {
+    console.log('Loading rooms for quick check-in (excluding reservations)...')
+    
+    let roomQuery = supabase
+      .from('rooms')
+      .select('*')
+      .order('floor')
+      .order('number')
+
+    if (filters.branchId) {
+      roomQuery = roomQuery.eq('branch_id', filters.branchId)
+    }
+    if (filters.status && filters.status !== 'all') {
+      roomQuery = roomQuery.eq('status', filters.status)
+    }
+    if (filters.floor && filters.floor !== 'all') {
+      roomQuery = roomQuery.eq('floor', filters.floor)
+    }
+
+    const { data: rooms, error: roomsError } = await roomQuery
+
+    if (roomsError) {
+      console.error('Error loading rooms:', roomsError)
+      throw roomsError
+    }
+
+    // Obtener check-ins rápidos activos (NO reservaciones)
+    const { data: activeQuickCheckins } = await this.getActiveQuickCheckins()
+
+    // Enriquecer habitaciones SOLO con información de quick check-ins
+    const enrichedRooms = (rooms || []).map(room => {
+      const activeQuickCheckin = activeQuickCheckins?.find(
+        checkin => checkin.room_id === room.id && checkin.status === 'checked_in'
+      )
+
+      return {
+        ...room,
+        rate: room.base_rate,
+        
+        // Estado basado SOLO en quick check-ins (NO reservaciones)
+        status: activeQuickCheckin ? 'occupied' : room.status,
+        
+        // Información del quick check-in actual (NO reservación)
+        quickCheckin: activeQuickCheckin || null,
+        guestName: activeQuickCheckin?.guest_name || null,
+        checkInDate: activeQuickCheckin?.check_in_date || null,
+        checkOutDate: activeQuickCheckin?.check_out_date || null,
+        confirmationCode: activeQuickCheckin?.confirmation_code || null,
+        
+        // ❌ NO incluir información de reservaciones
+        // currentGuest: null,
+        // nextReservation: null,
+        // activeReservation: null,
+        // reservationId: null
+      }
+    })
+
+    console.log(`✅ Loaded ${enrichedRooms.length} rooms for quick check-in`)
+    return { data: enrichedRooms, error: null }
+
+  } catch (error) {
+    console.error('Error in getRoomsForQuickCheckin:', error)
+    return { data: [], error }
+  }
+},
+
 // =============================================
 // AGREGAR ESTAS FUNCIONES A src/lib/supabase.js
 // =============================================

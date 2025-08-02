@@ -1,3 +1,4 @@
+// src/components/common/Button.jsx - ACTUALIZADO CON NUEVAS VARIANTES
 import React from 'react';
 import classNames from 'classnames';
 
@@ -21,11 +22,25 @@ const Button = ({
     success: 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-500',
     danger: 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500',
     warning: 'bg-yellow-600 hover:bg-yellow-700 text-white focus:ring-yellow-500',
+    // ✅ Nuevas variantes agregadas
+    purple: 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-500',
+    indigo: 'bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-500',
+    pink: 'bg-pink-600 hover:bg-pink-700 text-white focus:ring-pink-500',
+    teal: 'bg-teal-600 hover:bg-teal-700 text-white focus:ring-teal-500',
+    cyan: 'bg-cyan-600 hover:bg-cyan-700 text-white focus:ring-cyan-500',
+    // Variantes outline
     outline: 'border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus:ring-blue-500',
-    ghost: 'text-gray-600 hover:bg-gray-100 focus:ring-gray-500'
+    'outline-green': 'border-2 border-green-600 text-green-600 hover:bg-green-600 hover:text-white focus:ring-green-500',
+    'outline-red': 'border-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white focus:ring-red-500',
+    // Variantes ghost
+    ghost: 'text-gray-600 hover:bg-gray-100 focus:ring-gray-500',
+    'ghost-blue': 'text-blue-600 hover:bg-blue-100 focus:ring-blue-500',
+    'ghost-green': 'text-green-600 hover:bg-green-100 focus:ring-green-500',
+    'ghost-red': 'text-red-600 hover:bg-red-100 focus:ring-red-500'
   };
 
   const sizes = {
+    xs: 'px-2 py-1 text-xs',
     sm: 'px-3 py-1.5 text-sm',
     md: 'px-4 py-2 text-sm',
     lg: 'px-6 py-3 text-base',
@@ -34,7 +49,7 @@ const Button = ({
 
   const classes = classNames(
     baseClasses,
-    variants[variant],
+    variants[variant] || variants.primary, // Fallback a primary si la variante no existe
     sizes[size],
     {
       'opacity-50 cursor-not-allowed': disabled || loading,
@@ -57,7 +72,7 @@ const Button = ({
         </svg>
       )}
       {Icon && !loading && (
-        <Icon size={size === 'sm' ? 16 : size === 'lg' ? 24 : size === 'xl' ? 28 : 20} className={children ? 'mr-2' : ''} />
+        <Icon size={size === 'xs' ? 14 : size === 'sm' ? 16 : size === 'lg' ? 24 : size === 'xl' ? 28 : 20} className={children ? 'mr-2' : ''} />
       )}
       {children}
     </button>

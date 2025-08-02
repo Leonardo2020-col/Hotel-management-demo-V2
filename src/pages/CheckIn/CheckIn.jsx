@@ -1,13 +1,11 @@
-// src/pages/CheckIn/CheckIn.jsx - VERSIÓN COMPLETA Y CORREGIDA
+// src/pages/CheckIn/CheckIn.jsx - VERSIÓN SEPARADA PARA QUICK CHECK-INS
 import React, { useState, useEffect } from 'react'
-import { RefreshCw, Sparkles, User, CreditCard } from 'lucide-react'
+import { RefreshCw, Sparkles, User, CreditCard, AlertTriangle } from 'lucide-react'
 import Button from '../../components/common/Button'
 import RoomGrid from '../../components/checkin/RoomGrid'
 import SnackSelection from '../../components/checkin/SnackSelection'
-import CheckoutSummary from '../../components/checkin/CheckoutSummary'
 import QuickCheckoutModal from '../../components/checkin/QuickCheckoutModal'
-import { useCheckInData } from '../../hooks/useCheckInData'
-import { db } from '../../lib/supabase'
+import { useQuickCheckins } from '../../hooks/useQuickCheckins' // ✅ Nuevo hook separado
 import toast from 'react-hot-toast'
 
 const CheckIn = () => {
@@ -17,47 +15,38 @@ const CheckIn = () => {
   const [selectedSnackType, setSelectedSnackType] = useState(null)
   const [selectedSnacks, setSelectedSnacks] = useState([])
   const [currentOrder, setCurrentOrder] = useState(null)
-  const [processingRoom, setProcessingRoom] = useState(null) // Para mostrar loading
-  const [showQuickCheckout, setShowQuickCheckout] = useState(false) // Para modal de check-out
-  const [quickCheckoutData, setQuickCheckoutData] = useState(null) // Datos para el modal
+  const [processingRoom, setProcessingRoom] = useState(null)
+  const [showQuickCheckout, setShowQuickCheckout] = useState(false)
+  const [quickCheckoutData, setQuickCheckoutData] = useState(null)
   
-  // Estado para datos del huésped
+  // ✅ Estado simplificado para huésped (solo campos esenciales)
   const [guestData, setGuestData] = useState({
-  fullName: '',
-  documentType: 'DNI',
-  documentNumber: ''
-  // TODOS LOS DEMÁS CAMPOS REMOVIDOS:
-  // ❌ phone: '',
-  // ❌ email: '',
-  // ❌ nationality: 'Peruana',
-  // ❌ gender: '',
-  // ❌ adults: 1,
-  // ❌ children: 0,
-  // ❌ specialRequests: ''
-})
+    fullName: '',
+    documentType: 'DNI',
+    documentNumber: '',
+    phone: '',
+    email: ''
+  })
 
+  // ✅ Usar hook de quick check-ins (NO reservaciones)
   const {
-    floorRooms,
     roomsByFloor,
+    activeCheckins,
     snackTypes,
     snackItems,
     roomPrices,
-    savedOrders,
     loading,
     error,
-    processCheckIn,
-    processCheckOut,
+    processQuickCheckIn,    // ✅ Función separada
+    processQuickCheckOut,   // ✅ Función separada
     cleanRoom,
-    refreshData,
-    debugData,
-    setSavedOrders,
-    hasQuickCleanCapability
-  } = useCheckInData()
+    refreshData
+  } = useQuickCheckins()
 
   // Auto-refresh cada 30 segundos
   useEffect(() => {
     const interval = setInterval(() => {
-      if (orderStep === 0) { // Solo refrescar si estamos en la vista principal
+      if (orderStep === 0) {
         refreshData()
       }
     }, 30000)
@@ -67,53 +56,39 @@ const CheckIn = () => {
 
   // Seleccionar piso automáticamente
   useEffect(() => {
-    const rooms = floorRooms || roomsByFloor
-    if (rooms && typeof rooms === 'object') {
-      const availableFloors = Object.keys(rooms).map(f => parseInt(f)).filter(f => !isNaN(f))
+    if (roomsByFloor && typeof roomsByFloor === 'object') {
+      const availableFloors = Object.keys(roomsByFloor).map(f => parseInt(f)).filter(f => !isNaN(f))
       if (availableFloors.length > 0 && !availableFloors.includes(selectedFloor)) {
         const firstFloor = Math.min(...availableFloors)
         setSelectedFloor(firstFloor)
       }
     }
-  }, [floorRooms, roomsByFloor, selectedFloor])
-
-  const getRoomsData = () => {
-    const rooms = floorRooms || roomsByFloor
-    return rooms || {}
-  }
+  }, [roomsByFloor, selectedFloor])
 
   const handleFloorChange = (floor) => {
     setSelectedFloor(floor)
     setSelectedRoom(null)
   }
 
-  // FUNCIÓN PRINCIPAL CORREGIDA: Manejo inteligente de clicks en habitaciones
+  // ✅ FUNCIÓN PRINCIPAL: Manejo inteligente de clicks (SOLO quick check-ins)
   const handleRoomClick = async (room) => {
     if (loading || processingRoom === room.number) {
       return
     }
 
     setProcessingRoom(room.number)
-    console.log('🔘 Room clicked:', room)
-    
-    // DEBUG: Información del room y savedOrders
-    console.log('🔍 DEBUG - Room data:', {
-      room,
-      savedOrder: savedOrders[room.number],
-      reservationId: room.reservationId,
-      activeReservation: room.activeReservation
-    })
+    console.log('🔘 Quick Check-in Room clicked:', room)
 
     try {
-      // LÓGICA BASADA EN EL ESTADO DE LA HABITACIÓN
+      // ✅ LÓGICA BASADA EN QUICK CHECK-INS (NO reservaciones)
       
       if (room.status === 'available' && room.cleaning_status === 'clean') {
-        // ✅ HABITACIÓN DISPONIBLE - INICIAR CHECK-IN DIRECTO
-        await handleDirectCheckIn(room)
+        // ✅ HABITACIÓN DISPONIBLE - INICIAR WALK-IN CHECK-IN
+        await handleWalkInCheckIn(room)
         
-      } else if (room.status === 'occupied') {
-        // 🚪 HABITACIÓN OCUPADA - PROCESAR CHECK-OUT DIRECTO
-        await handleDirectCheckOut(room)
+      } else if (room.status === 'occupied' && room.quickCheckin) {
+        // 🚪 HABITACIÓN OCUPADA POR QUICK CHECK-IN - PROCESAR CHECK-OUT
+        await handleQuickCheckOutFlow(room)
         
       } else if (room.cleaning_status === 'dirty' || room.status === 'cleaning') {
         // 🧹 HABITACIÓN SUCIA - LIMPIAR AUTOMÁTICAMENTE
@@ -132,142 +107,77 @@ const CheckIn = () => {
     }
   }
 
-  // CHECK-IN DIRECTO - Ir directamente al formulario de huésped
-  const handleDirectCheckIn = async (room) => {
-  console.log('🏨 Starting ultra simple check-in for room:', room.number)
-  
-  const floor = Math.floor(parseInt(room.number) / 100)
-  const roomPrice = roomPrices && roomPrices[floor] ? roomPrices[floor] : 100
-  
-  // Resetear datos del huésped a estado mínimo
-  setGuestData({
-    fullName: '',
-    documentType: 'DNI',
-    documentNumber: ''
-  })
-  
-  setSelectedRoom(room)
-  setCurrentOrder({
-    room: room,
-    roomPrice: roomPrice,
-    snacks: [],
-    total: roomPrice
-  })
-  setOrderStep(1)
-  
-  toast.success(`Iniciando check-in ultra rápido para habitación ${room.number}`, {
-    icon: '🚀',
-    duration: 2000
-  })
-}
+  // ✅ WALK-IN CHECK-IN (huésped sin reserva)
+  const handleWalkInCheckIn = async (room) => {
+    console.log('🚶‍♂️ Starting walk-in check-in for room:', room.number)
+    
+    const floor = Math.floor(parseInt(room.number) / 100)
+    const roomPrice = roomPrices && roomPrices[floor] ? roomPrices[floor] : 100
+    
+    // Resetear datos del huésped
+    setGuestData({
+      fullName: '',
+      documentType: 'DNI',
+      documentNumber: '',
+      phone: '',
+      email: ''
+    })
+    
+    setSelectedRoom(room)
+    setCurrentOrder({
+      room: room,
+      roomPrice: roomPrice,
+      snacks: [],
+      total: roomPrice,
+      isWalkIn: true // ✅ Flag para distinguir de reservaciones
+    })
+    setOrderStep(1)
+    
+    toast.success(`Iniciando registro directo para habitación ${room.number}`, {
+      icon: '🚶‍♂️',
+      duration: 2000
+    })
+  }
 
-  // FUNCIÓN CORREGIDA: CHECK-OUT DIRECTO - Ir primero a selección de snacks
-  const handleDirectCheckOut = async (room) => {
-    console.log('🚪 Starting direct check-out for room:', room.number)
+  // ✅ QUICK CHECK-OUT FLOW
+  const handleQuickCheckOutFlow = async (room) => {
+    console.log('🚪 Starting quick check-out for room:', room.number)
     
     try {
-      // Buscar información de la reserva con mejor validación
-      let orderFound = null
+      const activeCheckin = room.quickCheckin || activeCheckins[room.number]
       
-      // 1. Buscar en savedOrders por número de habitación
-      if (savedOrders && savedOrders[room.number]) {
-        orderFound = savedOrders[room.number]
-        console.log('📋 Order found in savedOrders:', orderFound)
-      }
-      
-      // 2. Buscar por reservationId si existe
-      if (!orderFound && room.reservationId) {
-        const orderByReservationId = Object.values(savedOrders || {}).find(
-          order => order.reservationId === room.reservationId
-        )
-        if (orderByReservationId) {
-          orderFound = orderByReservationId
-          console.log('📋 Order found by reservationId:', orderFound)
-        }
-      }
-      
-      // 3. Buscar en base de datos si no está en memoria
-      if (!orderFound) {
-        console.log('🔍 Searching reservation in database...')
-        const reservation = await searchReservationForRoom(room)
-        if (reservation) {
-          orderFound = createTemporaryOrderFromReservation(room, reservation)
-          console.log('📋 Order created from DB reservation:', orderFound)
-        }
-      }
-      
-      // 4. Crear orden temporal si tenemos datos básicos
-      if (!orderFound && (room.currentGuest || room.guestName || room.activeReservation)) {
-        orderFound = createTemporaryOrderFromRoomData(room)
-        console.log('📋 Temporary order created from room data:', orderFound)
-      }
-      
-      // 5. Si aún no hay orden, mostrar check-out manual
-      if (!orderFound) {
-        console.log('⚠️ No order found, showing manual checkout option')
-        await handleManualCheckOut(room)
+      if (!activeCheckin) {
+        toast.error(`No se encontró check-in activo para la habitación ${room.number}`)
         return
       }
-      
-      // Validar que la orden tiene los datos mínimos necesarios
-      if (!orderFound.room || !orderFound.room.id) {
-        console.error('❌ Order missing room data:', orderFound)
-        orderFound.room = {
-          ...orderFound.room,
-          id: room.id || room.room_id,
-          number: room.number,
-          status: room.status,
-          floor: room.floor || Math.floor(parseInt(room.number) / 100)
-        }
-      }
-      
-      // Asegurar que tiene reservationId
-      if (!orderFound.reservationId) {
-        if (room.activeReservation?.id) {
-          orderFound.reservationId = room.activeReservation.id
-        } else if (room.reservationId) {
-          orderFound.reservationId = room.reservationId
-        } else {
-          console.error('❌ No reservation ID found for checkout')
-          toast.error('No se encontró ID de reserva para procesar el check-out')
-          return
-        }
-      }
-      
-      console.log('📋 Final order for checkout:', orderFound)
-      
-      // Configurar datos del huésped desde la orden
+
+      // Configurar datos para check-out con servicios adicionales
       setGuestData({
-        fullName: orderFound.guestName || orderFound.guest?.full_name || 'Huésped',
-        documentType: orderFound.guestDocumentType || orderFound.guest?.document_type || 'DNI',
-        documentNumber: orderFound.guestDocument || orderFound.guest?.document_number || '',
-        phone: orderFound.guestPhone || orderFound.guest?.phone || '',
-        email: orderFound.guestEmail || orderFound.guest?.email || '',
-        nationality: orderFound.nationality || 'Peruana',
-        gender: '',
-        adults: orderFound.adults || 1,
-        children: orderFound.children || 0,
-        specialRequests: orderFound.specialRequests || ''
+        fullName: activeCheckin.guest_name || 'Huésped',
+        documentType: activeCheckin.document_type || 'DNI',
+        documentNumber: activeCheckin.document_number || '',
+        phone: activeCheckin.phone || '',
+        email: activeCheckin.email || ''
       })
       
-      // Resetear snacks para nueva selección
-      setSelectedSnacks(orderFound.snacks || [])
+      setSelectedSnacks(activeCheckin.snacks_consumed || [])
       setSelectedSnackType(null)
       
       setSelectedRoom(room)
       setCurrentOrder({
-        ...orderFound,
+        id: activeCheckin.id,
+        room: room,
+        roomPrice: activeCheckin.room_rate || 0,
+        snacks: activeCheckin.snacks_consumed || [],
+        total: activeCheckin.total_amount || 0,
+        originalTotal: activeCheckin.total_amount || 0,
+        guestName: activeCheckin.guest_name,
+        checkInDate: activeCheckin.check_in_date,
+        confirmationCode: activeCheckin.confirmation_code,
         isCheckout: true,
-        originalTotal: orderFound.total || orderFound.roomPrice,
-        room: {
-          ...orderFound.room,
-          number: room.number,
-          id: orderFound.room?.id || room.id || room.room_id,
-          status: room.status,
-          floor: room.floor || Math.floor(parseInt(room.number) / 100)
-        }
+        isQuickCheckin: true // ✅ Flag para distinguir de reservaciones
       })
-      setOrderStep(1) // Ir a selección de snacks
+      setOrderStep(1) // Ir a selección de snacks adicionales
       
       toast.success(`Preparando check-out para habitación ${room.number}`, {
         icon: '🛒',
@@ -275,31 +185,22 @@ const CheckIn = () => {
       })
       
     } catch (error) {
-      console.error('❌ Error in handleDirectCheckOut:', error)
+      console.error('❌ Error in quick check-out flow:', error)
       toast.error('Error al preparar check-out: ' + error.message)
     }
   }
 
-  // Confirmación rápida de check-out con modal
+  // ✅ CONFIRMACIÓN DE CHECK-OUT RÁPIDO
   const showCheckOutConfirmation = (order) => {
-    console.log('📝 Showing checkout confirmation for order:', {
-      orderId: order.id,
-      roomNumber: order.room?.number,
-      guestName: order.guestName,
-      total: order.total,
-      hasRoom: !!order.room,
-      reservationId: order.reservationId
-    })
+    console.log('📝 Showing quick checkout confirmation:', order)
     
     if (!order.room || !order.room.number) {
-      console.error('❌ Cannot show checkout confirmation - missing room data')
-      toast.error('Error: Información de habitación faltante para el check-out')
+      toast.error('Error: Información de habitación faltante')
       return
     }
     
-    if (!order.reservationId) {
-      console.error('❌ Cannot show checkout confirmation - missing reservation ID')
-      toast.error('Error: ID de reserva faltante para el check-out')
+    if (!order.id) {
+      toast.error('Error: ID de check-in faltante')
       return
     }
     
@@ -307,50 +208,30 @@ const CheckIn = () => {
     setShowQuickCheckout(true)
   }
 
-  // FUNCIÓN CORREGIDA: Manejar confirmación desde el modal
+  // ✅ PROCESAR CONFIRMACIÓN DE CHECK-OUT
   const handleQuickCheckoutConfirm = async (paymentMethod) => {
     if (!quickCheckoutData) {
       toast.error('No hay datos de check-out')
       return
     }
     
-    console.log('🔄 Processing quick checkout confirm:', {
-      roomNumber: quickCheckoutData.room?.number,
-      reservationId: quickCheckoutData.reservationId,
-      paymentMethod,
-      hasRoom: !!quickCheckoutData.room
-    })
-    
     try {
-      // Validar datos antes de procesar
-      if (!quickCheckoutData.room || !quickCheckoutData.room.number) {
-        throw new Error('Información de habitación faltante')
-      }
-      
-      if (!quickCheckoutData.reservationId) {
-        throw new Error('ID de reserva faltante')
-      }
-      
       setProcessingRoom(quickCheckoutData.room.number)
       
-      // Usar la función de check-out corregida
-      const { data, error } = await processCheckOut(quickCheckoutData.room.number, paymentMethod)
+      // ✅ Usar función de quick check-out (NO reservaciones)
+      const { data, error } = await processQuickCheckOut(quickCheckoutData.room.number, paymentMethod)
       
       if (error) {
         throw error
       }
       
-      // Cerrar modal y resetear
       setShowQuickCheckout(false)
       setQuickCheckoutData(null)
       resetOrder()
       
       toast.success(
-        `Check-out completado!\n🏨 Habitación: ${quickCheckoutData.room.number}\n👤 ${quickCheckoutData.guestName || 'Huésped'}\n💰 S/ ${quickCheckoutData.total.toFixed(2)}\n💳 ${getPaymentMethodName(paymentMethod)}`,
-        { 
-          duration: 4000,
-          icon: '✅'
-        }
+        `¡Check-out completado!\n🏨 Habitación: ${quickCheckoutData.room.number}\n👤 ${quickCheckoutData.guestName}\n💰 S/ ${quickCheckoutData.total.toFixed(2)}\n💳 ${getPaymentMethodName(paymentMethod)}`,
+        { duration: 4000, icon: '✅' }
       )
       
     } catch (error) {
@@ -361,96 +242,15 @@ const CheckIn = () => {
     }
   }
 
-  // Manejar "ver detalle" desde el modal
-  const handleViewCheckoutDetails = () => {
-    if (!quickCheckoutData) return
-    
-    setCurrentOrder(quickCheckoutData)
-    setOrderStep(2) // Ir a CheckoutSummary
-    setShowQuickCheckout(false)
-    setQuickCheckoutData(null)
-  }
-
-  // Cerrar modal de check-out
-  const handleCloseQuickCheckout = () => {
-    setShowQuickCheckout(false)
-    setQuickCheckoutData(null)
-  }
-
-  // Check-out manual para habitaciones sin información
-  const handleManualCheckOut = async (room) => {
-    const confirmed = window.confirm(
-      `La habitación ${room.number} está ocupada pero no tiene información de reserva.\n¿Deseas crear un check-out manual?`
-    )
-    
-    if (!confirmed) return
-    
-    try {
-      // Crear huésped temporal
-      const { data: guest, error: guestError } = await db.createGuest({
-        first_name: 'Huésped',
-        last_name: 'Manual',
-        email: `manual-${room.number}@hotel.com`,
-        phone: '+51999999999',
-        document_type: 'DNI',
-        document_number: `MANUAL-${room.number}`
-      })
-      
-      if (guestError) throw new Error('Error creando huésped temporal')
-      
-      // Crear reserva temporal
-      const floor = Math.floor(parseInt(room.number) / 100)
-      const roomPrice = roomPrices[floor] || 100
-      
-      const { data: reservation, error: reservationError } = await db.createReservation({
-        guest_id: guest.id,
-        room_id: room.id,
-        branch_id: 1,
-        check_in: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        check_out: new Date().toISOString().split('T')[0],
-        adults: 1,
-        children: 0,
-        status: 'checked_in',
-        total_amount: roomPrice,
-        rate: roomPrice,
-        source: 'manual_checkout',
-        payment_status: 'pending'
-      })
-      
-      if (reservationError) throw new Error('Error creando reserva temporal')
-      
-      // Procesar check-out
-      const tempOrder = {
-        id: reservation.id,
-        room: room,
-        roomPrice: roomPrice,
-        total: roomPrice,
-        guestName: `${guest.first_name} ${guest.last_name}`,
-        reservationId: reservation.id
-      }
-      
-      showCheckOutConfirmation({
-        ...tempOrder,
-        isCheckout: true,
-        originalTotal: roomPrice
-      })
-      
-    } catch (error) {
-      console.error('Error in manual checkout:', error)
-      toast.error('Error al crear check-out manual: ' + error.message)
-    }
-  }
-
-  // Limpieza rápida mejorada
+  // ✅ LIMPIEZA RÁPIDA
   const handleQuickClean = async (roomId) => {
     try {
-      const roomData = Object.values(getRoomsData())
+      const roomData = Object.values(roomsByFloor)
         .flat()
         .find(room => room.id === roomId || room.room_id === roomId)
       
       const roomNumber = roomData?.number || 'desconocida'
       
-      // Limpiar sin confirmación para mayor rapidez
       const { data, error } = await cleanRoom(roomId)
       
       if (error) {
@@ -460,11 +260,7 @@ const CheckIn = () => {
       
       toast.success(`Habitación ${roomNumber} limpia y disponible`, {
         icon: '✨',
-        duration: 3000,
-        style: {
-          background: '#10B981',
-          color: 'white',
-        }
+        duration: 3000
       })
       
     } catch (error) {
@@ -473,84 +269,7 @@ const CheckIn = () => {
     }
   }
 
-  // FUNCIONES AUXILIARES CORREGIDAS
-
-  const searchReservationForRoom = async (room) => {
-    try {
-      const { data: reservations, error } = await db.getReservations({
-        roomId: room.id
-      })
-      
-      if (error) return null
-      
-      return reservations?.find(r => r.status === 'checked_in') ||
-             reservations?.find(r => r.status === 'confirmed') || null
-      
-    } catch (error) {
-      console.error('Error searching reservations:', error)
-      return null
-    }
-  }
-
-  const createTemporaryOrderFromReservation = (room, reservation) => {
-    const floor = Math.floor(parseInt(room.number) / 100)
-    const roomPrice = parseFloat(reservation.rate) || roomPrices[floor] || 100
-    
-    const order = {
-      id: reservation.id,
-      room: {
-        id: room.id,
-        number: room.number,
-        status: room.status,
-        floor: room.floor || floor,
-      },
-      roomPrice: roomPrice,
-      snacks: [],
-      total: parseFloat(reservation.total_amount) || roomPrice,
-      checkInDate: reservation.check_in,
-      checkOutDate: reservation.check_out,
-      guestName: reservation.guest?.full_name || 'Huésped',
-      guestId: reservation.guest_id,
-      reservationId: reservation.id,
-      confirmationCode: reservation.confirmation_code
-    }
-    
-    setSavedOrders(prev => ({
-      ...prev,
-      [room.number]: order
-    }))
-    
-    return order
-  }
-
-  const createTemporaryOrderFromRoomData = (room) => {
-    const floor = Math.floor(parseInt(room.number) / 100)
-    const roomPrice = roomPrices[floor] || 100
-    
-    return {
-      id: `temp-${room.number}`,
-      room: room,
-      roomPrice: roomPrice,
-      snacks: [],
-      total: roomPrice,
-      checkInDate: room.checkInDate || new Date().toISOString().split('T')[0],
-      checkOutDate: room.checkOutDate || new Date().toISOString().split('T')[0],
-      guestName: room.guestName || room.currentGuest?.name || 'Huésped',
-      reservationId: room.reservationId || null,
-      isTemporary: true
-    }
-  }
-
-  const getPaymentMethodName = (method) => {
-    const methods = {
-      'cash': 'Efectivo',
-      'card': 'Tarjeta',
-      'digital': 'Digital (Yape/Plin)'
-    }
-    return methods[method] || method
-  }
-
-  // Handlers para SnackSelection (mantener existentes)
+  // ✅ HANDLERS PARA SNACK SELECTION
   const handleGuestDataChange = (newGuestData) => {
     setGuestData(newGuestData)
   }
@@ -588,204 +307,141 @@ const CheckIn = () => {
     }
   }
 
-  // FUNCIÓN CORREGIDA: handleConfirmOrder - VALIDACIÓN SIMPLIFICADA
-const handleConfirmOrder = async () => {
-  if (!currentOrder) {
-    toast.error('No hay orden actual')
-    return
-  }
-
-  console.log('🔄 Processing confirm order:', { 
-    currentOrder, 
-    isCheckout: currentOrder.isCheckout,
-    guestDataValid: {
-      hasFullName: !!guestData.fullName?.trim(),
-      hasDocumentNumber: !!guestData.documentNumber?.trim(),
-      hasPhone: !!guestData.phone?.trim(), // Solo para debug
-    },
-    selectedSnacks: selectedSnacks.length
-  })
-
-  // Verificar si es check-out o check-in
-  if (currentOrder.isCheckout) {
-    // Es un check-out con servicios adicionales
-    if (!guestData.fullName?.trim()) {
-      toast.error('Información del huésped incompleta')
-      return
-    }
-
-    // Verificar que tenemos información de habitación válida
-    if (!currentOrder.room || !currentOrder.room.number) {
-      console.error('❌ Missing room data:', currentOrder)
-      toast.error('Error: Información de habitación faltante')
-      return
-    }
-
-    // Verificar que tenemos reservationId
-    if (!currentOrder.reservationId) {
-      console.error('❌ Missing reservation ID:', currentOrder)
-      toast.error('Error: ID de reserva faltante')
-      return
-    }
-
-    // Actualizar la orden con los nuevos snacks
-    const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-    const updatedOrder = {
-      ...currentOrder,
-      snacks: selectedSnacks,
-      total: (currentOrder.originalTotal || currentOrder.roomPrice || 0) + snacksTotal,
-      room: {
-        ...currentOrder.room,
-        number: currentOrder.room.number,
-        id: currentOrder.room.id || currentOrder.room.room_id
-      }
-    }
-
-    console.log('🛒 Updated order for checkout:', updatedOrder)
-
-    // Ir directamente al modal de confirmación de check-out
-    showCheckOutConfirmation(updatedOrder)
-    return
-  }
-
-  // Es un check-in normal - VALIDACIÓN SIMPLIFICADA: Solo 2 campos obligatorios
-  if (!guestData.fullName?.trim()) {
-    toast.error('El nombre completo es obligatorio')
-    return
-  }
-
-  if (!guestData.documentNumber?.trim()) {
-    toast.error('El documento de identidad es obligatorio')
-    return
-  }
-
-  // Validar longitud mínima del documento
-  if (guestData.documentNumber.length < 6) {
-    toast.error('El documento debe tener al menos 6 caracteres')
-    return
-  }
-
-  try {
-    console.log('✅ All required data valid, processing check-in with simplified validation')
-    
-    const { data, error } = await processCheckIn(currentOrder, selectedSnacks, guestData)
-    
-    if (error) {
-      toast.error(error.message || 'Error al procesar check-in')
-      return
-    }
-
-    const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-    
-    toast.success(
-      `Check-in completado!\n👤 ${guestData.fullName}\n🏨 Habitación ${currentOrder.room.number}\n💰 S/ ${(currentOrder.roomPrice + snacksTotal).toFixed(2)}`,
-      { duration: 5000, icon: '✅' }
-    )
-    
-    resetOrder()
-  } catch (error) {
-    console.error('Error in handleConfirmOrder:', error)
-    toast.error('Error inesperado al procesar check-in')
-  }
-}
-
-  // FUNCIÓN CORREGIDA: handleConfirmRoomOnly - VALIDACIÓN SIMPLIFICADA
-const handleConfirmRoomOnly = async () => {
-  if (!currentOrder) {
-    toast.error('No hay orden actual')
-    return
-  }
-
-  // Solo para check-in (no debería llamarse en check-out)
-  if (currentOrder.isCheckout) {
-    console.warn('handleConfirmRoomOnly called in checkout mode - redirecting to handleConfirmOrder')
-    return handleConfirmOrder()
-  }
-
-  console.log('🏨 Processing room-only check-in with simplified validation:', {
-    hasFullName: !!guestData.fullName?.trim(),
-    hasDocumentNumber: !!guestData.documentNumber?.trim(),
-    guestData
-  })
-
-  // Es un check-in normal sin snacks - VALIDACIÓN SIMPLIFICADA: Solo 2 campos obligatorios
-  if (!guestData.fullName?.trim()) {
-    toast.error('El nombre completo es obligatorio')
-    return
-  }
-
-  if (!guestData.documentNumber?.trim()) {
-    toast.error('El documento de identidad es obligatorio')
-    return
-  }
-
-  // Validar longitud mínima del documento
-  if (guestData.documentNumber.length < 6) {
-    toast.error('El documento debe tener al menos 6 caracteres')
-    return
-  }
-
-  try {
-    console.log('✅ All required data valid, processing room-only check-in')
-    
-    const { data, error } = await processCheckIn(currentOrder, [], guestData)
-    
-    if (error) {
-      toast.error(error.message || 'Error al procesar check-in')
-      return
-    }
-
-    toast.success(
-      `Check-in completado!\n👤 ${guestData.fullName}\n🏨 Habitación ${currentOrder.room.number}\n💰 S/ ${currentOrder.roomPrice.toFixed(2)}`,
-      { duration: 5000, icon: '✅' }
-    )
-    
-    resetOrder()
-  } catch (error) {
-    console.error('Error in handleConfirmRoomOnly:', error)
-    toast.error('Error inesperado al procesar check-in')
-  }
-}
-
-  const handleProcessPayment = async (paymentMethod) => {
+  // ✅ CONFIRMAR ORDEN (check-in o check-out con servicios)
+  const handleConfirmOrder = async () => {
     if (!currentOrder) {
       toast.error('No hay orden actual')
       return
     }
 
-    try {
-      const { data, error } = await processCheckOut(currentOrder.room.number, paymentMethod)
-      
-      if (error) {
-        toast.error(error.message || 'Error al procesar check-out')
+    // Verificar si es check-out o check-in
+    if (currentOrder.isCheckout) {
+      // ✅ Es un check-out con servicios adicionales
+      if (!guestData.fullName?.trim()) {
+        toast.error('Información del huésped incompleta')
         return
       }
 
+      // Actualizar la orden con los nuevos snacks
+      const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
+      const updatedOrder = {
+        ...currentOrder,
+        snacks: selectedSnacks,
+        total: (currentOrder.originalTotal || currentOrder.roomPrice || 0) + snacksTotal
+      }
+
+      // Ir al modal de confirmación de check-out
+      showCheckOutConfirmation(updatedOrder)
+      return
+    }
+
+    // ✅ Es un walk-in check-in - VALIDACIÓN SIMPLIFICADA
+    if (!guestData.fullName?.trim()) {
+      toast.error('El nombre completo es obligatorio')
+      return
+    }
+
+    if (!guestData.documentNumber?.trim()) {
+      toast.error('El documento de identidad es obligatorio')
+      return
+    }
+
+    if (guestData.documentNumber.length < 6) {
+      toast.error('El documento debe tener al menos 6 caracteres')
+      return
+    }
+
+    try {
+      console.log('✅ Processing walk-in check-in')
+      
+      // ✅ Usar función de quick check-in (NO crear reservación)
+      const { data, error } = await processQuickCheckIn(currentOrder, guestData, selectedSnacks)
+      
+      if (error) {
+        toast.error(error.message || 'Error al procesar check-in')
+        return
+      }
+
+      const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
+      
       toast.success(
-        `Check-out completado!\n🏨 Habitación ${currentOrder.room.number}\n👤 ${currentOrder.guestName}\n💰 S/ ${currentOrder.total.toFixed(2)}\n💳 ${getPaymentMethodName(paymentMethod)}`,
-        { duration: 4000, icon: '✅' }
+        `¡Check-in walk-in completado!\n👤 ${guestData.fullName}\n🏨 Habitación ${currentOrder.room.number}\n💰 S/ ${(currentOrder.roomPrice + snacksTotal).toFixed(2)}`,
+        { duration: 5000, icon: '✅' }
       )
       
       resetOrder()
     } catch (error) {
-      console.error('Error in handleProcessPayment:', error)
-      toast.error('Error inesperado al procesar check-out')
+      console.error('Error in handleConfirmOrder:', error)
+      toast.error('Error inesperado al procesar check-in')
+    }
+  }
+
+  // ✅ CONFIRMAR SOLO HABITACIÓN (sin snacks)
+  const handleConfirmRoomOnly = async () => {
+    if (!currentOrder || currentOrder.isCheckout) {
+      return handleConfirmOrder()
+    }
+
+    // Validación mínima
+    if (!guestData.fullName?.trim()) {
+      toast.error('El nombre completo es obligatorio')
+      return
+    }
+
+    if (!guestData.documentNumber?.trim()) {
+      toast.error('El documento de identidad es obligatorio')
+      return
+    }
+
+    try {
+      // ✅ Usar función de quick check-in sin snacks
+      const { data, error } = await processQuickCheckIn(currentOrder, guestData, [])
+      
+      if (error) {
+        toast.error(error.message || 'Error al procesar check-in')
+        return
+      }
+
+      toast.success(
+        `¡Check-in walk-in completado!\n👤 ${guestData.fullName}\n🏨 Habitación ${currentOrder.room.number}\n💰 S/ ${currentOrder.roomPrice.toFixed(2)}`,
+        { duration: 5000, icon: '✅' }
+      )
+      
+      resetOrder()
+    } catch (error) {
+      console.error('Error in handleConfirmRoomOnly:', error)
+      toast.error('Error inesperado al procesar check-in')
     }
   }
 
   const resetOrder = () => {
-  setOrderStep(0)
-  setSelectedSnackType(null)
-  setSelectedSnacks([])
-  setCurrentOrder(null)
-  setSelectedRoom(null)
-  setGuestData({
-    fullName: '',
-    documentType: 'DNI',
-    documentNumber: ''
-    // Solo estos 3 campos básicos
-  })
-}
+    setOrderStep(0)
+    setSelectedSnackType(null)
+    setSelectedSnacks([])
+    setCurrentOrder(null)
+    setSelectedRoom(null)
+    setGuestData({
+      fullName: '',
+      documentType: 'DNI',
+      documentNumber: '',
+      phone: '',
+      email: ''
+    })
+  }
+
+  const getPaymentMethodName = (method) => {
+    const methods = {
+      'cash': 'Efectivo',
+      'card': 'Tarjeta',
+      'digital': 'Digital (Yape/Plin)'
+    }
+    return methods[method] || method
+  }
+
+  const handleCloseQuickCheckout = () => {
+    setShowQuickCheckout(false)
+    setQuickCheckoutData(null)
+  }
 
   // Manejo de errores
   if (error) {
@@ -815,8 +471,8 @@ const handleConfirmRoomOnly = async () => {
       <div className="min-h-screen bg-gray-100 p-6">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">Reception Panel</h1>
-            <p className="text-gray-600">Sistema inteligente de gestión hotelera</p>
+            <h1 className="text-4xl font-bold text-gray-800 mb-2">Panel de Recepción</h1>
+            <p className="text-gray-600">Sistema de check-in rápido para huéspedes walk-in</p>
           </div>
           
           <div className="bg-white rounded-lg shadow-lg p-8 text-center">
@@ -828,59 +484,48 @@ const handleConfirmRoomOnly = async () => {
     )
   }
 
-  const roomsData = getRoomsData()
-  const needsCleaningCount = Object.values(roomsData).flat()
+  const needsCleaningCount = Object.values(roomsByFloor).flat()
     .filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
       <div className="max-w-6xl mx-auto">
         
-        {/* Header simplificado */}
+        {/* ✅ Header actualizado para quick check-ins */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">Reception Panel</h1>
-          <p className="text-gray-600">
-            {orderStep === 1 && currentOrder?.isCheckout 
-              ? `Agregando servicios para Check-out - Habitación ${currentOrder.room.number}`
-              : orderStep === 1 
-                ? 'Check-in sin reservación - Complete los datos del huésped'
-                : 'Click inteligente: Verde = Check-in | Rojo = Check-out | Amarillo = Limpiar'
-            }
-          </p>
-          
-          {/* Indicadores de estado */}
-          <div className="mt-4 flex justify-center space-x-6 text-sm">
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-green-500 rounded"></div>
-              <span>Disponible - Click para Check-in</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-red-500 rounded"></div>
-              <span>Ocupada - Click para Check-out</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-yellow-500 rounded"></div>
-              <span>Sucia - Click para Limpiar</span>
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">Panel de Recepción</h1>
+          <div className="flex items-center justify-center space-x-3 mb-2">
+            <p className="text-gray-600">
+              {orderStep === 1 && currentOrder?.isCheckout 
+                ? `Agregando servicios para Check-out - Habitación ${currentOrder.room.number}`
+                : orderStep === 1 
+                  ? 'Registro directo de huésped walk-in'
+                  : 'Check-in rápido para huéspedes sin reserva'
+              }
+            </p>
+            {/* ✅ Indicador de separación */}
+            <div className="flex items-center space-x-2 px-3 py-1 bg-blue-100 rounded-lg">
+              <AlertTriangle size={16} className="text-blue-600" />
+              <span className="text-sm font-medium text-blue-800">Quick Check-ins</span>
             </div>
           </div>
+          <p className="text-sm text-gray-500">
+            ⚠️ Sistema separado de reservaciones - Solo para huéspedes que llegan sin reserva
+          </p>
+        </div>
 
-          {needsCleaningCount > 0 && (
-            <div className="mt-3 inline-block bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full text-sm">
-              ✨ {needsCleaningCount} habitación{needsCleaningCount > 1 ? 'es' : ''} necesita{needsCleaningCount === 1 ? '' : 'n'} limpieza
+        {/* Información de diferenciación */}
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <AlertTriangle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-semibold text-blue-800">Panel de Check-in Rápido</h3>
+              <p className="text-sm text-blue-700 mt-1">
+                Este panel es exclusivo para <strong>huéspedes walk-in</strong> (sin reserva previa). 
+                Para gestionar reservaciones, usa el módulo de "Reservaciones" en el menú principal.
+              </p>
             </div>
-          )}
-
-          {orderStep === 1 && currentOrder?.isCheckout && (
-            <div className="mt-3 inline-block bg-red-100 text-red-800 px-4 py-2 rounded-full text-sm">
-              🛒 Agregando servicios adicionales antes del check-out
-            </div>
-          )}
-
-          {orderStep === 1 && !currentOrder?.isCheckout && (
-            <div className="mt-3 inline-block bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm">
-              📝 Completando check-in para habitación {currentOrder?.room?.number}
-            </div>
-          )}
+          </div>
         </div>
 
         {/* Botón de refresh flotante */}
@@ -902,15 +547,13 @@ const handleConfirmRoomOnly = async () => {
           {/* Paso 0: Grid de Habitaciones */}
           {orderStep === 0 && (
             <RoomGrid
-              floorRooms={roomsData}
+              floorRooms={roomsByFloor}
               selectedFloor={selectedFloor}
               selectedRoom={selectedRoom}
-              checkoutMode={false} // Ya no se usa
-              savedOrders={savedOrders || {}}
+              savedOrders={activeCheckins || {}} // ✅ Usar activeCheckins en lugar de savedOrders
               onFloorChange={handleFloorChange}
               onRoomClick={handleRoomClick}
-              processingRoom={processingRoom} // Nueva prop para mostrar loading
-              onNext={() => {}}
+              processingRoom={processingRoom}
               onCleanRoom={handleQuickClean}
             />
           )}
@@ -934,17 +577,7 @@ const handleConfirmRoomOnly = async () => {
               onConfirmRoomOnly={handleConfirmRoomOnly}
               onCancelOrder={resetOrder}
               loading={loading}
-              isCheckout={currentOrder?.isCheckout || false} // Nueva prop
-            />
-          )}
-
-          {/* Paso 2: Resumen de Check Out */}
-          {orderStep === 2 && (
-            <CheckoutSummary
-              currentOrder={currentOrder}
-              onBack={() => setOrderStep(0)}
-              onProcessPayment={handleProcessPayment}
-              onCancel={resetOrder}
+              isCheckout={currentOrder?.isCheckout || false}
             />
           )}
 
@@ -956,29 +589,36 @@ const handleConfirmRoomOnly = async () => {
           onClose={handleCloseQuickCheckout}
           orderData={quickCheckoutData}
           onConfirm={handleQuickCheckoutConfirm}
-          onViewDetails={handleViewCheckoutDetails}
+          onViewDetails={() => {
+            if (quickCheckoutData) {
+              setCurrentOrder(quickCheckoutData)
+              setOrderStep(2)
+              setShowQuickCheckout(false)
+              setQuickCheckoutData(null)
+            }
+          }}
         />
 
-        {/* Información de estado en la parte inferior */}
+        {/* ✅ Información de estado actualizada para quick check-ins */}
         {orderStep === 0 && (
           <div className="mt-6 bg-white rounded-lg shadow p-4">
             <div className="flex justify-between items-center text-sm text-gray-600">
               <div className="flex space-x-6">
-                <span>📊 Total: {Object.values(roomsData).flat().length} habitaciones</span>
-                <span>🟢 Disponibles: {Object.values(roomsData).flat().filter(r => r.status === 'available' && r.cleaning_status === 'clean').length}</span>
-                <span>🔴 Ocupadas: {Object.values(roomsData).flat().filter(r => r.status === 'occupied').length}</span>
+                <span>📊 Total: {Object.values(roomsByFloor).flat().length} habitaciones</span>
+                <span>🟢 Disponibles: {Object.values(roomsByFloor).flat().filter(r => r.status === 'available' && r.cleaning_status === 'clean').length}</span>
+                <span>🔴 Ocupadas (Walk-in): {Object.values(roomsByFloor).flat().filter(r => r.status === 'occupied' && r.quickCheckin).length}</span>
                 <span>🟡 Por limpiar: {needsCleaningCount}</span>
               </div>
               <div className="text-xs text-gray-400">
-                Actualización automática cada 30s
+                Quick Check-ins • Actualización automática cada 30s
               </div>
             </div>
             
             <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-600">
               <div className="flex justify-between items-center">
                 <div>
-                  💡 <strong>Funcionamiento automático:</strong> 
-                  Click en habitaciones para ejecutar acciones directamente
+                  💡 <strong>Sistema Walk-in:</strong> 
+                  Para huéspedes sin reserva • Separado del módulo de Reservaciones
                 </div>
                 <div className="text-right">
                   {processingRoom && (
@@ -986,6 +626,34 @@ const handleConfirmRoomOnly = async () => {
                       Procesando habitación {processingRoom}...
                     </span>
                   )}
+                </div>
+              </div>
+            </div>
+
+            {/* ✅ Estadísticas de quick check-ins */}
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                <div className="bg-blue-50 rounded p-2 text-center">
+                  <div className="font-bold text-blue-600">{Object.keys(activeCheckins || {}).length}</div>
+                  <div className="text-blue-700">Check-ins Activos</div>
+                </div>
+                <div className="bg-green-50 rounded p-2 text-center">
+                  <div className="font-bold text-green-600">
+                    {Object.values(roomsByFloor).flat().filter(r => r.status === 'available').length}
+                  </div>
+                  <div className="text-green-700">Disponibles para Walk-in</div>
+                </div>
+                <div className="bg-yellow-50 rounded p-2 text-center">
+                  <div className="font-bold text-yellow-600">{needsCleaningCount}</div>
+                  <div className="text-yellow-700">Necesitan Limpieza</div>
+                </div>
+                <div className="bg-purple-50 rounded p-2 text-center">
+                  <div className="font-bold text-purple-600">
+                    S/ {Object.values(activeCheckins || {})
+                      .reduce((sum, checkin) => sum + (checkin.total_amount || 0), 0)
+                      .toFixed(0)}
+                  </div>
+                  <div className="text-purple-700">Ingresos Pendientes</div>
                 </div>
               </div>
             </div>
