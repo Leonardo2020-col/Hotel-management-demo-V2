@@ -431,7 +431,7 @@ export const useCheckInData = () => {
   // NUEVA FUNCIÓN: Crear huésped y reserva sin reservación previa
 const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
   try {
-    console.log('👤 Creating guest with full_name field (not first_name)...', {
+    console.log('👤 Creating guest and reservation without nights field...', {
       fullName: guestData.fullName,
       documentNumber: guestData.documentNumber,
       documentType: guestData.documentType
@@ -452,41 +452,28 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
     const snacksTotal = snacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
     const totalAmount = roomPrice + snacksTotal
 
-    // 1. Crear el huésped usando FULL_NAME en lugar de first_name/last_name
-    console.log('👤 Creating guest with full_name field')
+    // 1. Crear el huésped (esto ya funciona)
+    console.log('👤 Creating guest with full_name')
     
     const newGuestData = {
-      // USAR full_name en lugar de first_name/last_name
       full_name: guestData.fullName.trim(),
       document_type: guestData.documentType || 'DNI',
       document_number: guestData.documentNumber.trim(),
       status: 'active'
-      
-      // CAMPOS REMOVIDOS para evitar errores:
-      // ❌ first_name (no existe en tu schema)
-      // ❌ last_name (no existe en tu schema)
-      // ❌ email (causaba error)
-      // ❌ phone (causaba error)  
-      // ❌ nationality (causaba error)
-      // ❌ gender (causaba error)
     }
-
-    console.log('📝 Guest data using full_name:', newGuestData)
 
     const { data: guest, error: guestError } = await db.createGuest(newGuestData)
     
     if (guestError) {
-      console.error('❌ Error creating guest with full_name:', guestError)
+      console.error('❌ Error creating guest:', guestError)
       throw new Error(`Error creating guest: ${guestError.message}`)
     }
 
-    console.log('✅ Guest created successfully with full_name:', {
-      id: guest.id,
-      full_name: guest.full_name,
-      document_number: guest.document_number
-    })
+    console.log('✅ Guest created successfully:', guest.id)
 
-    // 2. Crear la reserva
+    // 2. Crear la reserva SIN el campo 'nights' que está causando error
+    console.log('📅 Creating reservation without nights field...')
+    
     const reservationData = {
       guest_id: guest.id,
       room_id: room.id || room.room_id,
@@ -501,18 +488,25 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       paid_amount: 0,
       special_requests: snacks.length > 0 ? `Snacks: ${snacks.map(s => `${s.name} x${s.quantity}`).join(', ')}` : '',
       payment_status: 'pending',
-      source: 'walk_in_fullname'
+      source: 'walk_in'
+      
+      // ❌ CAMPO nights REMOVIDO - causaba error de non-DEFAULT value
+      // nights: 1,  // Este campo causaba el error
     }
+
+    console.log('📝 Reservation data without nights:', reservationData)
 
     const { data: reservation, error: reservationError } = await db.createReservation(reservationData)
     
     if (reservationError) {
+      console.error('❌ Error creating reservation:', reservationError)
+      // Limpiar huésped si falla la reserva
       console.log('🗑️ Cleaning up guest due to reservation error...')
       await db.deleteGuest(guest.id)
       throw new Error(`Error creating reservation: ${reservationError.message}`)
     }
 
-    console.log('✅ Reservation created:', reservation)
+    console.log('✅ Reservation created successfully:', reservation.id)
 
     // 3. Actualizar estado de la habitación
     const { error: roomError } = await db.updateRoomStatus(
@@ -545,8 +539,10 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       confirmationCode: reservation.confirmation_code,
       guestDocument: guestData.documentNumber,
       guestDocumentType: guestData.documentType || 'DNI',
+      // Calcular nights localmente para no enviarlo a la DB
+      nights: 1,
       isWalkIn: true,
-      isFullNameVersion: true
+      isWithoutNightsField: true
     }
 
     // 5. Actualizar estado local
@@ -586,7 +582,7 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
       return updated
     })
 
-    toast.success(`Check-in completado para ${guestData.fullName} en habitación ${room.number}`, {
+    toast.success(`¡Check-in completado! ${guestData.fullName} en habitación ${room.number}`, {
       icon: '🎉',
       duration: 4000
     })
@@ -594,7 +590,7 @@ const createGuestAndReservation = async (roomData, guestData, snacks = []) => {
     return { data: newOrder, error: null }
 
   } catch (error) {
-    console.error('❌ Error in createGuestAndReservation with full_name:', error)
+    console.error('❌ Error in createGuestAndReservation without nights:', error)
     toast.error(`Error al crear registro: ${error.message}`)
     return { data: null, error }
   }

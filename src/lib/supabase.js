@@ -2694,7 +2694,7 @@ async cleanRoomWithClick(roomId) {
       hasFullName: !!guestData.full_name,
       hasDocumentNumber: !!guestData.document_number,
       documentType: guestData.document_type
-    })
+    }) 
     
     // VALIDACIÓN MÍNIMA
     if (!guestData.full_name) {
@@ -2880,9 +2880,15 @@ async cleanRoomWithClick(roomId) {
 
   async createReservation(reservationData) {
   try {
-    console.log('🔄 Creating reservation with data:', reservationData)
+    console.log('📅 Creating reservation without nights field:', {
+      guest_id: reservationData.guest_id,
+      room_id: reservationData.room_id,
+      check_in: reservationData.check_in,
+      check_out: reservationData.check_out,
+      status: reservationData.status
+    })
     
-    // Validar datos requeridos
+    // Validar datos mínimos requeridos
     const requiredFields = ['guest_id', 'room_id', 'check_in', 'check_out']
     for (const field of requiredFields) {
       if (!reservationData[field]) {
@@ -2894,16 +2900,7 @@ async cleanRoomWithClick(roomId) {
     const confirmationCode = reservationData.confirmation_code || 
       `HTP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`
 
-    // Calcular noches si no se proporcionan
-    const checkIn = new Date(reservationData.check_in)
-    const checkOut = new Date(reservationData.check_out)
-    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24))
-
-    // Validar fechas
-    if (checkOut <= checkIn) {
-      throw new Error('La fecha de salida debe ser posterior a la fecha de entrada')
-    }
-
+    // Preparar datos SIN el campo 'nights'
     const insertData = {
       confirmation_code: confirmationCode,
       guest_id: reservationData.guest_id,
@@ -2914,17 +2911,19 @@ async cleanRoomWithClick(roomId) {
       adults: reservationData.adults || 1,
       children: reservationData.children || 0,
       rate: parseFloat(reservationData.rate) || 0,
-      total_amount: parseFloat(reservationData.total_amount) || (nights * parseFloat(reservationData.rate || 0)),
+      total_amount: parseFloat(reservationData.total_amount) || 0,
       paid_amount: parseFloat(reservationData.paid_amount) || 0,
       payment_status: reservationData.payment_status || 'pending',
       payment_method: reservationData.payment_method || null,
       status: reservationData.status || 'pending',
       source: reservationData.source || 'direct',
-      special_requests: reservationData.special_requests || '',
-      nights: nights
+      special_requests: reservationData.special_requests || ''
+      
+      // ❌ CAMPO nights REMOVIDO - causaba error non-DEFAULT value
+      // nights: nights  // Este campo no existe o no acepta valores manuales
     }
 
-    console.log('📝 Insert data:', insertData)
+    console.log('📝 Insert data without nights field:', insertData)
 
     const { data, error } = await supabase
       .from('reservations')
@@ -2937,15 +2936,42 @@ async cleanRoomWithClick(roomId) {
       .single()
 
     if (error) {
-      console.error('❌ Error creating reservation:', error)
+      console.error('❌ Error creating reservation without nights:', error)
+      
+      // Log detallado para debug
+      console.error('Reservation error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+      
+      if (error.code === '23505') {
+        throw new Error('Ya existe una reserva con este código de confirmación')
+      }
+      
+      if (error.code === '23503') {
+        throw new Error('ID de huésped o habitación no válido')
+      }
+      
+      if (error.code === '42703') {
+        throw new Error('Error en la estructura de la tabla reservations')
+      }
+      
       throw error
     }
 
-    console.log('✅ Reservation created successfully:', data)
+    console.log('✅ Reservation created successfully without nights:', {
+      id: data.id,
+      confirmation_code: data.confirmation_code,
+      guest_id: data.guest_id,
+      room_id: data.room_id
+    })
+    
     return { data, error: null }
     
   } catch (error) {
-    console.error('❌ Error in createReservation:', error)
+    console.error('❌ Error in createReservation without nights:', error)
     return { 
       data: null, 
       error: {
