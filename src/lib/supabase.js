@@ -79,6 +79,1110 @@ export const getRoomsByFloor = async (branchId = null) => {
 // ====================================
 export const db = {
 
+// =============================================
+// BRANCH MANAGEMENT FUNCTIONS
+// =============================================
+
+// Crear nueva sucursal
+async createBranch(branchData) {
+  try {
+    console.log('🏢 Creating new branch in Supabase...', branchData.name)
+    
+    // Validar datos requeridos
+    const requiredFields = ['name', 'location', 'address', 'code']
+    for (const field of requiredFields) {
+      if (!branchData[field]) {
+        return { data: null, error: { message: `${field} es requerido` } }
+      }
+    }
+    
+    const insertData = {
+      name: branchData.name.trim(),
+      location: branchData.location.trim(),
+      address: branchData.address.trim(),
+      code: branchData.code.trim().toUpperCase(),
+      phone: branchData.phone?.trim() || null,
+      manager: branchData.manager?.trim() || null,
+      features: branchData.features || [],
+      timezone: branchData.timezone || 'America/Lima',
+      rooms_count: branchData.rooms_count || 0,
+      is_active: true
+    }
+    
+    const { data, error } = await supabase
+      .from('branches')
+      .insert([insertData])
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Error creating branch:', error)
+      
+      if (error.code === '23505') {
+        return { data: null, error: { message: 'Ya existe una sucursal con ese código' } }
+      }
+      
+      throw error
+    }
+    
+    console.log(`✅ Branch created: ${data.name} (ID: ${data.id})`)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error('Error in createBranch:', error)
+    return { data: null, error }
+  }
+},
+
+// Actualizar sucursal
+async updateBranch(branchId, updateData) {
+  try {
+    console.log(`🏢 Updating branch ${branchId} in Supabase...`)
+    
+    const validUpdates = {}
+    
+    // Solo incluir campos válidos
+    if (updateData.name !== undefined) validUpdates.name = updateData.name.trim()
+    if (updateData.location !== undefined) validUpdates.location = updateData.location.trim()
+    if (updateData.address !== undefined) validUpdates.address = updateData.address.trim()
+    if (updateData.phone !== undefined) validUpdates.phone = updateData.phone?.trim() || null
+    if (updateData.manager !== undefined) validUpdates.manager = updateData.manager?.trim() || null
+    if (updateData.features !== undefined) validUpdates.features = updateData.features
+    if (updateData.rooms_count !== undefined) validUpdates.rooms_count = updateData.rooms_count
+    if (updateData.is_active !== undefined) validUpdates.is_active = updateData.is_active
+    
+    validUpdates.updated_at = new Date().toISOString()
+    
+    const { data, error } = await supabase
+      .from('branches')
+      .update(validUpdates)
+      .eq('id', branchId)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Error updating branch:', error)
+      throw error
+    }
+    
+    console.log(`✅ Branch updated: ${data.name}`)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error(`Error updating branch ${branchId}:`, error)
+    return { data: null, error }
+  }
+},
+
+// Eliminar sucursal (soft delete)
+async deleteBranch(branchId) {
+  try {
+    console.log(`🏢 Deleting branch ${branchId}...`)
+    
+    // Verificar si hay habitaciones asociadas
+    const { data: rooms } = await supabase
+      .from('rooms')
+      .select('id')
+      .eq('branch_id', branchId)
+      .limit(1)
+    
+    if (rooms && rooms.length > 0) {
+      return { 
+        data: null, 
+        error: { message: 'No se puede eliminar la sucursal porque tiene habitaciones asociadas' }
+      }
+    }
+    
+    // Soft delete - marcar como inactiva
+    const { data, error } = await supabase
+      .from('branches')
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', branchId)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Error deleting branch:', error)
+      throw error
+    }
+    
+    console.log(`✅ Branch marked as inactive: ${data.name}`)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error(`Error deleting branch ${branchId}:`, error)
+    return { data: null, error }
+  }
+},
+
+// Obtener estadísticas específicas de una sucursal
+async getBranchStats(branchId) {
+  try {
+    console.log(`📊 Getting real stats for branch ${branchId} from Supabase...`)
+    
+    const today = new Date().toISOString().split('T')[0]
+    const thisMonth = new Date()
+    const startOfMonth = new Date(thisMonth.getFullYear(), thisMonth.getMonth(), 1).toISOString().split('T')[0]
+    
+    // Obtener información básica de la sucursal
+    const { data: branch } = await this.getBranchById(branchId)
+    if (!branch) {
+      throw new Error('Sucursal no encontrada')
+    }
+    
+    // Obtener habitaciones de la sucursal
+    const { data: rooms, error: roomsError } = await supabase
+      .from('rooms')
+      .select('id, number, status, cleaning_status')
+      .eq('branch_id', branchId)
+    
+    if (roomsError) {
+      console.warn('Error fetching branch rooms:', roomsError)
+    }
+    
+    // Obtener reservas activas de la sucursal
+    const { data: activeReservations, error: reservationsError } = await supabase
+      .from('reservations')
+      .select(`
+        id,
+        status,
+        check_in,
+        check_out,
+        room:rooms!inner(branch_id)
+      `)
+      .eq('room.branch_id', branchId)
+      .in('status', ['checked_in', 'confirmed'])
+    
+    if (reservationsError) {
+      console.warn('Error fetching branch reservations:', reservationsError)
+    }
+    
+    // Obtener ingresos del día
+    const { data: todayCheckouts, error: revenueError } = await supabase
+      .from('reservations')
+      .select(`
+        total_amount,
+        room:rooms!inner(branch_id)
+      `)
+      .eq('room.branch_id', branchId)
+      .eq('status', 'checked_out')
+      .gte('checked_out_at', today)
+      .lt('checked_out_at', today + 'T23:59:59')
+    
+    if (revenueError) {
+      console.warn('Error fetching branch revenue:', revenueError)
+    }
+    
+    // Obtener check-ins de hoy
+    const { data: todayCheckins } = await supabase
+      .from('reservations')
+      .select(`
+        id,
+        room:rooms!inner(branch_id)
+      `)
+      .eq('room.branch_id', branchId)
+      .eq('check_in', today)
+      .in('status', ['confirmed', 'checked_in'])
+    
+    // Calcular estadísticas
+    const totalRooms = rooms?.length || 0
+    const occupiedRooms = rooms?.filter(r => r.status === 'occupied').length || 0
+    const availableRooms = rooms?.filter(r => r.status === 'available').length || 0
+    const roomsNeedingCleaning = rooms?.filter(r => r.cleaning_status === 'dirty').length || 0
+    
+    const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0
+    
+    const currentGuests = activeReservations?.filter(r => r.status === 'checked_in').length || 0
+    const checkInsToday = todayCheckins?.length || 0
+    const checkOutsToday = todayCheckouts?.length || 0
+    
+    const todayRevenue = todayCheckouts?.reduce((sum, r) => sum + (r.total_amount || 0), 0) || 0
+    
+    const stats = {
+      branchId,
+      branchName: branch.name,
+      branchCode: branch.code,
+      totalRooms,
+      occupiedRooms,
+      availableRooms,
+      roomsNeedingCleaning,
+      occupancyRate,
+      currentGuests,
+      checkInsToday,
+      checkOutsToday,
+      todayRevenue,
+      lastUpdated: new Date().toISOString()
+    }
+    
+    console.log(`✅ Branch ${branchId} stats calculated:`, stats)
+    return { data: stats, error: null }
+    
+  } catch (error) {
+    console.error(`Error getting branch ${branchId} stats:`, error)
+    return { data: null, error }
+  }
+},
+
+// Obtener todas las sucursales con sus estadísticas
+async getAllBranchesWithStats() {
+  try {
+    console.log('📊 Getting all branches with real stats from Supabase...')
+    
+    // Obtener todas las sucursales activas
+    const { data: branches, error: branchesError } = await this.getBranches()
+    
+    if (branchesError) {
+      throw branchesError
+    }
+    
+    if (!branches || branches.length === 0) {
+      console.warn('No branches found')
+      return { data: [], error: null }
+    }
+    
+    // Obtener estadísticas para cada sucursal
+    const branchesWithStats = await Promise.all(
+      branches.map(async (branch) => {
+        const { data: stats } = await this.getBranchStats(branch.id)
+        return {
+          ...branch,
+          currentGuests: stats?.currentGuests || 0,
+          occupancyRate: stats?.occupancyRate || 0,
+          rooms_count: stats?.totalRooms || branch.rooms_count || 0,
+          stats
+        }
+      })
+    )
+    
+    console.log(`✅ Loaded ${branchesWithStats.length} branches with stats`)
+    return { data: branchesWithStats, error: null }
+    
+  } catch (error) {
+    console.error('Error getting branches with stats:', error)
+    return { data: [], error }
+  }
+},
+
+// Actualizar el conteo de habitaciones de una sucursal
+async updateBranchRoomCount(branchId) {
+  try {
+    console.log(`🔄 Updating room count for branch ${branchId}...`)
+    
+    // Contar habitaciones reales
+    const { count, error } = await supabase
+      .from('rooms')
+      .select('*', { count: 'exact', head: true })
+      .eq('branch_id', branchId)
+    
+    if (error) {
+      throw error
+    }
+    
+    // Actualizar el conteo en la tabla branches
+    const { data, error: updateError } = await supabase
+      .from('branches')
+      .update({ 
+        rooms_count: count || 0,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', branchId)
+      .select()
+      .single()
+    
+    if (updateError) {
+      throw updateError
+    }
+    
+    console.log(`✅ Branch ${branchId} room count updated to ${count}`)
+    return { data: { branchId, roomCount: count }, error: null }
+    
+  } catch (error) {
+    console.error(`Error updating room count for branch ${branchId}:`, error)
+    return { data: null, error }
+  }
+},
+
+
+// Obtener habitaciones por sucursal (ya existente, pero mejorada)
+async getRoomsByBranch(branchId, filters = {}) {
+  try {
+    console.log(`🏠 Getting rooms for branch ${branchId} from Supabase...`)
+    
+    let query = supabase
+      .from('rooms')
+      .select('*')
+      .eq('branch_id', branchId)
+      .order('floor')
+      .order('number')
+    
+    // Aplicar filtros adicionales
+    if (filters.status && filters.status !== 'all') {
+      query = query.eq('status', filters.status)
+    }
+    
+    if (filters.floor && filters.floor !== 'all') {
+      query = query.eq('floor', filters.floor)
+    }
+    
+    if (filters.search) {
+      query = query.ilike('number', `%${filters.search}%`)
+    }
+    
+    const { data: rooms, error } = await query
+    
+    if (error) throw error
+    
+    // Obtener reservas activas para enriquecer información
+    const { data: reservations } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        guest:guests(full_name, email, phone, document_number),
+        room:rooms!inner(branch_id)
+      `)
+      .eq('room.branch_id', branchId)
+      .in('status', ['checked_in', 'confirmed'])
+    
+    // Enriquecer habitaciones con información de reservas
+    const enrichedRooms = rooms?.map(room => {
+      const activeReservation = reservations?.find(
+        res => res.room_id === room.id && res.status === 'checked_in'
+      )
+      
+      const nextReservation = reservations?.find(
+        res => res.room_id === room.id && res.status === 'confirmed'
+      )
+      
+      return {
+        ...room,
+        currentGuest: activeReservation ? {
+          name: activeReservation.guest?.full_name,
+          email: activeReservation.guest?.email,
+          phone: activeReservation.guest?.phone,
+          documentNumber: activeReservation.guest?.document_number,
+          checkIn: activeReservation.check_in,
+          checkOut: activeReservation.check_out,
+          confirmationCode: activeReservation.confirmation_code
+        } : null,
+        nextReservation: nextReservation ? {
+          id: nextReservation.id,
+          guest: nextReservation.guest?.full_name,
+          checkIn: nextReservation.check_in,
+          confirmationCode: nextReservation.confirmation_code
+        } : null,
+        activeReservation
+      }
+    }) || []
+    
+    console.log(`✅ Loaded ${enrichedRooms.length} rooms for branch ${branchId}`)
+    return { data: enrichedRooms, error: null }
+    
+  } catch (error) {
+    console.error(`Error getting rooms for branch ${branchId}:`, error)
+    return { data: [], error }
+  }
+},
+
+// Obtener sucursales de un usuario
+async getUserBranches(userId) {
+  try {
+    console.log(`👤 Getting branches for user ${userId}...`)
+    
+    const { data, error } = await supabase
+      .from('user_branches')
+      .select(`
+        *,
+        branch:branches(*)
+      `)
+      .eq('user_id', userId)
+      .eq('branch.is_active', true)
+    
+    if (error) {
+      console.error('Error getting user branches:', error)
+      throw error
+    }
+    
+    const userBranches = data?.map(ub => ({
+      ...ub.branch,
+      isDefault: ub.is_default,
+      userBranchId: ub.id
+    })) || []
+    
+    console.log(`✅ User ${userId} has access to ${userBranches.length} branches`)
+    return { data: userBranches, error: null }
+    
+  } catch (error) {
+    console.error(`Error getting branches for user ${userId}:`, error)
+    return { data: [], error }
+  }
+},
+
+// Asignar sucursal a usuario
+async assignUserToBranch(userId, branchId, isDefault = false) {
+  try {
+    console.log(`👤 Assigning user ${userId} to branch ${branchId}...`)
+    
+    // Si es sucursal por defecto, remover default de otras
+    if (isDefault) {
+      await supabase
+        .from('user_branches')
+        .update({ is_default: false })
+        .eq('user_id', userId)
+    }
+    
+    const { data, error } = await supabase
+      .from('user_branches')
+      .upsert([{
+        user_id: userId,
+        branch_id: branchId,
+        is_default: isDefault
+      }])
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Error assigning user to branch:', error)
+      throw error
+    }
+    
+    console.log(`✅ User ${userId} assigned to branch ${branchId}`)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error(`Error assigning user to branch:`, error)
+    return { data: null, error }
+  }
+},
+
+// Remover usuario de sucursal
+async removeUserFromBranch(userId, branchId) {
+  try {
+    console.log(`👤 Removing user ${userId} from branch ${branchId}...`)
+    
+    const { data, error } = await supabase
+      .from('user_branches')
+      .delete()
+      .eq('user_id', userId)
+      .eq('branch_id', branchId)
+      .select()
+    
+    if (error) {
+      console.error('Error removing user from branch:', error)
+      throw error
+    }
+    
+    console.log(`✅ User ${userId} removed from branch ${branchId}`)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error(`Error removing user from branch:`, error)
+    return { data: null, error }
+  }
+},
+
+
+// Obtener reservas filtradas por sucursal
+async getReservationsByBranch(branchId, filters = {}) {
+  try {
+    console.log(`📅 Getting reservations for branch ${branchId}...`)
+    
+    let query = supabase
+      .from('reservations')
+      .select(`
+        *,
+        guest:guests(full_name, email, phone, document_number),
+        room:rooms!inner(number, floor, branch_id)
+      `)
+      .eq('room.branch_id', branchId)
+      .order('created_at', { ascending: false })
+    
+    // Aplicar filtros
+    if (filters.status) {
+      if (Array.isArray(filters.status)) {
+        query = query.in('status', filters.status)
+      } else {
+        query = query.eq('status', filters.status)
+      }
+    }
+    
+    if (filters.checkInDate) {
+      query = query.eq('check_in', filters.checkInDate)
+    }
+    
+    if (filters.limit) {
+      query = query.limit(filters.limit)
+    }
+    
+    const { data, error } = await query
+    
+    if (error) throw error
+    
+    console.log(`✅ Loaded ${data?.length || 0} reservations for branch ${branchId}`)
+    return { data: data || [], error: null }
+    
+  } catch (error) {
+    console.error(`Error getting reservations for branch ${branchId}:`, error)
+    return { data: [], error }
+  }
+},
+
+// Obtener huéspedes por sucursal (basado en sus reservas)
+async getGuestsByBranch(branchId, filters = {}) {
+  try {
+    console.log(`👥 Getting guests for branch ${branchId}...`)
+    
+    let query = supabase
+      .from('guests')
+      .select(`
+        *,
+        reservations!inner(
+          id,
+          status,
+          check_in,
+          check_out,
+          room:rooms!inner(branch_id)
+        )
+      `)
+      .eq('reservations.room.branch_id', branchId)
+    
+    if (filters.status) {
+      query = query.eq('reservations.status', filters.status)
+    }
+    
+    if (filters.limit) {
+      query = query.limit(filters.limit)
+    }
+    
+    const { data, error } = await query
+    
+    if (error) throw error
+    
+    // Eliminar duplicados y enriquecer información
+    const uniqueGuests = []
+    const guestIds = new Set()
+    
+    data?.forEach(guestData => {
+      if (!guestIds.has(guestData.id)) {
+        guestIds.add(guestData.id)
+        uniqueGuests.push({
+          ...guestData,
+          lastReservation: guestData.reservations?.[0] || null,
+          totalReservations: guestData.reservations?.length || 0
+        })
+      }
+    })
+    
+    console.log(`✅ Loaded ${uniqueGuests.length} unique guests for branch ${branchId}`)
+    return { data: uniqueGuests, error: null }
+    
+  } catch (error) {
+    console.error(`Error getting guests for branch ${branchId}:`, error)
+    return { data: [], error }
+  }
+},
+
+// Obtener reporte de ingresos por sucursal
+async getBranchRevenueReport(branchId, startDate, endDate) {
+  try {
+    console.log(`💰 Getting revenue report for branch ${branchId} from ${startDate} to ${endDate}...`)
+    
+    const { data: reservations, error } = await supabase
+      .from('reservations')
+      .select(`
+        total_amount,
+        paid_amount,
+        payment_method,
+        check_in,
+        check_out,
+        checked_out_at,
+        status,
+        room:rooms!inner(branch_id, number)
+      `)
+      .eq('room.branch_id', branchId)
+      .eq('status', 'checked_out')
+      .gte('checked_out_at', startDate)
+      .lte('checked_out_at', endDate)
+      .order('checked_out_at', { ascending: false })
+    
+    if (error) throw error
+    
+    // Calcular métricas
+    const totalRevenue = reservations?.reduce((sum, r) => sum + (r.total_amount || 0), 0) || 0
+    const totalReservations = reservations?.length || 0
+    const averageRevenue = totalReservations > 0 ? totalRevenue / totalReservations : 0
+    
+    // Agrupar por método de pago
+    const paymentMethods = {}
+    reservations?.forEach(r => {
+      const method = r.payment_method || 'unknown'
+      if (!paymentMethods[method]) {
+        paymentMethods[method] = { count: 0, amount: 0 }
+      }
+      paymentMethods[method].count++
+      paymentMethods[method].amount += r.total_amount || 0
+    })
+    
+    // Agrupar por día
+    const dailyRevenue = {}
+    reservations?.forEach(r => {
+      const date = r.checked_out_at?.split('T')[0]
+      if (date) {
+        if (!dailyRevenue[date]) {
+          dailyRevenue[date] = { count: 0, amount: 0 }
+        }
+        dailyRevenue[date].count++
+        dailyRevenue[date].amount += r.total_amount || 0
+      }
+    })
+    
+    const report = {
+      branchId,
+      period: { startDate, endDate },
+      summary: {
+        totalRevenue,
+        totalReservations,
+        averageRevenue
+      },
+      paymentMethods,
+      dailyRevenue: Object.entries(dailyRevenue).map(([date, data]) => ({
+        date,
+        ...data
+      })).sort((a, b) => a.date.localeCompare(b.date)),
+      reservations: reservations || []
+    }
+    
+    console.log(`✅ Revenue report generated for branch ${branchId}`)
+    return { data: report, error: null }
+    
+  } catch (error) {
+    console.error(`Error getting revenue report for branch ${branchId}:`, error)
+    return { data: null, error }
+  }
+},
+
+// Obtener reporte de ocupación por sucursal
+async getBranchOccupancyReport(branchId, startDate, endDate) {
+  try {
+    console.log(`📊 Getting occupancy report for branch ${branchId} from ${startDate} to ${endDate}...`)
+    
+    // Obtener habitaciones de la sucursal
+    const { data: rooms } = await supabase
+      .from('rooms')
+      .select('id, number, status')
+      .eq('branch_id', branchId)
+    
+    const totalRooms = rooms?.length || 0
+    
+    // Obtener reservas del período
+    const { data: reservations } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        room:rooms!inner(branch_id, number)
+      `)
+      .eq('room.branch_id', branchId)
+      .or(`and(check_in.lte.${endDate},check_out.gte.${startDate})`)
+      .in('status', ['checked_in', 'checked_out', 'confirmed'])
+    
+    // Calcular ocupación por día
+    const dailyOccupancy = {}
+    const startDateObj = new Date(startDate)
+    const endDateObj = new Date(endDate)
+    
+    // Inicializar todos los días
+    for (let d = new Date(startDateObj); d <= endDateObj; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0]
+      dailyOccupancy[dateStr] = {
+        date: dateStr,
+        occupiedRooms: 0,
+        totalRooms,
+        occupancyRate: 0,
+        reservations: []
+      }
+    }
+    
+    // Calcular ocupación real
+    reservations?.forEach(reservation => {
+      const checkIn = new Date(reservation.check_in)
+      const checkOut = new Date(reservation.check_out)
+      
+      for (let d = new Date(Math.max(checkIn, startDateObj)); d < Math.min(checkOut, endDateObj); d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0]
+        if (dailyOccupancy[dateStr]) {
+          dailyOccupancy[dateStr].occupiedRooms++
+          dailyOccupancy[dateStr].reservations.push(reservation.id)
+        }
+      }
+    })
+    
+    // Calcular porcentajes
+    Object.values(dailyOccupancy).forEach(day => {
+      day.occupancyRate = totalRooms > 0 ? Math.round((day.occupiedRooms / totalRooms) * 100) : 0
+    })
+    
+    const averageOccupancy = Object.values(dailyOccupancy).reduce((sum, day) => 
+      sum + day.occupancyRate, 0) / Object.keys(dailyOccupancy).length
+    
+    const report = {
+      branchId,
+      period: { startDate, endDate },
+      summary: {
+        totalRooms,
+        averageOccupancy: Math.round(averageOccupancy),
+        totalReservations: reservations?.length || 0
+      },
+      dailyOccupancy: Object.values(dailyOccupancy).sort((a, b) => 
+        a.date.localeCompare(b.date)
+      )
+    }
+    
+    console.log(`✅ Occupancy report generated for branch ${branchId}`)
+    return { data: report, error: null }
+    
+  } catch (error) {
+    console.error(`Error getting occupancy report for branch ${branchId}:`, error)
+    return { data: null, error }
+  }
+},
+
+// Sincronizar datos entre sucursales (para migraciones o backups)
+async syncBranchData(sourceBranchId, targetBranchId, dataTypes = ['rooms', 'guests']) {
+  try {
+    console.log(`🔄 Syncing data from branch ${sourceBranchId} to ${targetBranchId}...`)
+    
+    const syncResults = {
+      rooms: { synced: 0, errors: [] },
+      guests: { synced: 0, errors: [] },
+      supplies: { synced: 0, errors: [] }
+    }
+    
+    // Sincronizar habitaciones
+    if (dataTypes.includes('rooms')) {
+      try {
+        const { data: sourceRooms } = await this.getRoomsByBranch(sourceBranchId)
+        
+        for (const room of sourceRooms || []) {
+          const newRoom = {
+            ...room,
+            id: undefined, // Let Supabase generate new ID
+            branch_id: targetBranchId,
+            status: 'available', // Reset status
+            cleaning_status: 'clean',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+          
+          const { error } = await supabase
+            .from('rooms')
+            .insert([newRoom])
+          
+          if (error) {
+            syncResults.rooms.errors.push({ room: room.number, error: error.message })
+          } else {
+            syncResults.rooms.synced++
+          }
+        }
+      } catch (error) {
+        syncResults.rooms.errors.push({ general: error.message })
+      }
+    }
+    
+    // Agregar más tipos de sincronización según necesidad...
+    
+    console.log('✅ Branch data sync completed:', syncResults)
+    return { data: syncResults, error: null }
+    
+  } catch (error) {
+    console.error('Error syncing branch data:', error)
+    return { data: null, error }
+  }
+},
+
+// Obtener métricas comparativas entre sucursales
+async getBranchComparison(branchIds = null, period = 'month') {
+  try {
+    console.log('📊 Getting branch comparison metrics...')
+    
+    // Si no se especifican sucursales, usar todas
+    const targetBranches = branchIds || [1, 2, 3]
+    
+    // Determinar período
+    const endDate = new Date()
+    const startDate = new Date()
+    
+    switch (period) {
+      case 'week':
+        startDate.setDate(startDate.getDate() - 7)
+        break
+      case 'month':
+        startDate.setMonth(startDate.getMonth() - 1)
+        break
+      case 'quarter':
+        startDate.setMonth(startDate.getMonth() - 3)
+        break
+      default:
+        startDate.setMonth(startDate.getMonth() - 1)
+    }
+    
+    const startDateStr = startDate.toISOString().split('T')[0]
+    const endDateStr = endDate.toISOString().split('T')[0]
+    
+    // Obtener métricas para cada sucursal
+    const branchMetrics = await Promise.all(
+      targetBranches.map(async (branchId) => {
+        const [
+          { data: stats },
+          { data: revenueReport },
+          { data: occupancyReport }
+        ] = await Promise.all([
+          this.getBranchStats(branchId),
+          this.getBranchRevenueReport(branchId, startDateStr, endDateStr),
+          this.getBranchOccupancyReport(branchId, startDateStr, endDateStr)
+        ])
+        
+        return {
+          branchId,
+          name: this.getBranchName(branchId),
+          currentStats: stats,
+          revenue: revenueReport?.summary || {},
+          occupancy: occupancyReport?.summary || {}
+        }
+      })
+    )
+    
+    // Calcular rankings y comparaciones
+    const comparison = {
+      period: { startDate: startDateStr, endDate: endDateStr },
+      branches: branchMetrics,
+      rankings: {
+        byRevenue: [...branchMetrics].sort((a, b) => 
+          (b.revenue.totalRevenue || 0) - (a.revenue.totalRevenue || 0)
+        ),
+        byOccupancy: [...branchMetrics].sort((a, b) => 
+          (b.occupancy.averageOccupancy || 0) - (a.occupancy.averageOccupancy || 0)
+        ),
+        byGuests: [...branchMetrics].sort((a, b) => 
+          (b.currentStats?.currentGuests || 0) - (a.currentStats?.currentGuests || 0)
+        )
+      },
+      totals: {
+        totalRevenue: branchMetrics.reduce((sum, b) => sum + (b.revenue.totalRevenue || 0), 0),
+        totalRooms: branchMetrics.reduce((sum, b) => sum + (b.currentStats?.totalRooms || 0), 0),
+        totalGuests: branchMetrics.reduce((sum, b) => sum + (b.currentStats?.currentGuests || 0), 0),
+        averageOccupancy: branchMetrics.reduce((sum, b) => 
+          sum + (b.occupancy.averageOccupancy || 0), 0) / branchMetrics.length
+      }
+    }
+    
+    console.log('✅ Branch comparison completed')
+    return { data: comparison, error: null }
+    
+  } catch (error) {
+    console.error('Error getting branch comparison:', error)
+    return { data: null, error }
+  }
+},
+
+// =============================================
+// BRANCH MANAGEMENT FUNCTIONS - SUPABASE ONLY
+// =============================================
+
+// Obtener todas las sucursales activas
+async getBranches(filters = {}) {
+  try {
+    console.log('🏢 Loading branches from Supabase...')
+    
+    let query = supabase
+      .from('branches')
+      .select('*')
+      .order('name')
+    
+    // Aplicar filtros
+    if (filters.active !== false) {
+      query = query.eq('is_active', true)
+    }
+    
+    if (filters.branchId) {
+      query = query.eq('id', filters.branchId)
+    }
+    
+    const { data, error } = await query
+    
+    if (error) {
+      console.error('Error loading branches:', error)
+      throw error
+    }
+    
+    console.log(`✅ Loaded ${data?.length || 0} branches`)
+    return { data: data || [], error: null }
+    
+  } catch (error) {
+    console.error('Error in getBranches:', error)
+    return { data: [], error }
+  }
+},
+
+// Obtener una sucursal específica por ID
+async getBranchById(branchId) {
+  try {
+    console.log(`🏢 Loading branch ${branchId} from Supabase...`)
+    
+    const { data, error } = await supabase
+      .from('branches')
+      .select('*')
+      .eq('id', branchId)
+      .eq('is_active', true)
+      .single()
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        console.warn(`Branch ${branchId} not found`)
+        return { data: null, error: { message: 'Sucursal no encontrada' } }
+      }
+      throw error
+    }
+    
+    console.log(`✅ Loaded branch: ${data.name}`)
+    return { data, error: null }
+    
+  } catch (error) {
+    console.error(`Error getting branch ${branchId}:`, error)
+    return { data: null, error }
+  }
+},
+
+
+// Helper function para obtener nombre de sucursal
+getBranchName(branchId) {
+  const branchNames = {
+    1: 'Hotel Paraíso - Centro',
+    2: 'Hotel Paraíso - Miraflores', 
+    3: 'Hotel Paraíso - Aeropuerto'
+  }
+  return branchNames[branchId] || `Sucursal ${branchId}`
+},
+
+// Obtener alertas específicas por sucursal
+async getBranchAlerts(branchId) {
+  try {
+    console.log(`🚨 Getting alerts for branch ${branchId}...`)
+    
+    const alerts = []
+    
+    // Verificar ocupación alta
+    const { data: stats } = await this.getBranchStats(branchId)
+    
+    if (stats?.occupancyRate >= 95) {
+      alerts.push({
+        type: 'warning',
+        category: 'occupancy',
+        message: `Ocupación muy alta (${stats.occupancyRate}%) - Considerar overbooking`,
+        priority: 'high',
+        branchId
+      })
+    }
+    
+    if (stats?.occupancyRate <= 30) {
+      alerts.push({
+        type: 'info',
+        category: 'occupancy',
+        message: `Ocupación baja (${stats.occupancyRate}%) - Oportunidad de promociones`,
+        priority: 'medium',
+        branchId
+      })
+    }
+    
+    // Verificar habitaciones que necesitan limpieza
+    const { data: dirtyRooms } = await supabase
+      .from('rooms')
+      .select('number')
+      .eq('branch_id', branchId)
+      .eq('cleaning_status', 'dirty')
+    
+    if (dirtyRooms && dirtyRooms.length > 5) {
+      alerts.push({
+        type: 'warning',
+        category: 'cleaning',
+        message: `${dirtyRooms.length} habitaciones necesitan limpieza urgente`,
+        priority: 'high',
+        branchId
+      })
+    }
+    
+    // Verificar check-outs pendientes
+    const today = new Date().toISOString().split('T')[0]
+    const { data: pendingCheckouts } = await supabase
+      .from('reservations')
+      .select(`
+        id,
+        room:rooms!inner(branch_id)
+      `)
+      .eq('room.branch_id', branchId)
+      .eq('check_out', today)
+      .eq('status', 'checked_in')
+    
+    if (pendingCheckouts && pendingCheckouts.length > 0) {
+      alerts.push({
+        type: 'info',
+        category: 'checkout',
+        message: `${pendingCheckouts.length} check-outs programados para hoy`,
+        priority: 'medium',
+        branchId
+      })
+    }
+    
+    console.log(`✅ Found ${alerts.length} alerts for branch ${branchId}`)
+    return { data: alerts, error: null }
+    
+  } catch (error) {
+    console.error(`Error getting alerts for branch ${branchId}:`, error)
+    return { data: [], error }
+  }
+},
+
+// Exportar datos de sucursal para reportes
+async exportBranchData(branchId, dataTypes = ['all'], format = 'json') {
+  try {
+    console.log(`📤 Exporting data for branch ${branchId}...`)
+    
+    const exportData = {
+      branchId,
+      exportDate: new Date().toISOString(),
+      format
+    }
+    
+    if (dataTypes.includes('all') || dataTypes.includes('rooms')) {
+      const { data: rooms } = await this.getRoomsByBranch(branchId)
+      exportData.rooms = rooms
+    }
+    
+    if (dataTypes.includes('all') || dataTypes.includes('reservations')) {
+      const { data: reservations } = await this.getReservationsByBranch(branchId, { limit: 1000 })
+      exportData.reservations = reservations
+    }
+    
+    if (dataTypes.includes('all') || dataTypes.includes('guests')) {
+      const { data: guests } = await this.getGuestsByBranch(branchId, { limit: 1000 })
+      exportData.guests = guests
+    }
+    
+    if (dataTypes.includes('all') || dataTypes.includes('stats')) {
+      const { data: stats } = await this.getBranchStats(branchId)
+      exportData.stats = stats
+    }
+    
+    console.log(`✅ Data exported for branch ${branchId}`)
+    return { data: exportData, error: null }
+    
+  } catch (error) {
+    console.error(`Error exporting data for branch ${branchId}:`, error)
+    return { data: null, error }
+  }
+},
+
   // Función para estadísticas de quick check-ins
 async getQuickCheckinStats(filters = {}) {
   try {
