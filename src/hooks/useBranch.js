@@ -1,12 +1,8 @@
-// src/hooks/useBranch.js - COMPLETAMENTE CONECTADO A SUPABASE
+// src/hooks/useBranch.js - VERSIÓN CORREGIDA PARA EVITAR REFRESH
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/supabase';
 
-/**
- * Hook personalizado para manejar información y operaciones de sucursal
- * Completamente conectado a Supabase
- */
 export const useBranch = () => {
   const { selectedBranch, user, selectBranch, loading } = useAuth();
   const [availableBranches, setAvailableBranches] = useState([]);
@@ -17,7 +13,7 @@ export const useBranch = () => {
   // Cargar sucursales disponibles desde Supabase
   useEffect(() => {
     loadAvailableBranches();
-  }, []);
+  }, [user?.id]); // Solo recargar cuando cambie el usuario
 
   // Cargar estadísticas cuando cambia la sucursal seleccionada
   useEffect(() => {
@@ -27,16 +23,16 @@ export const useBranch = () => {
   }, [selectedBranch?.id]);
 
   const loadAvailableBranches = async () => {
+    if (!user?.id) return;
+    
     try {
       setBranchesLoading(true);
       
-      if (user?.role === 'admin') {
-        // Administradores ven todas las sucursales
+      if (user.role === 'admin') {
         const { data: branches, error } = await db.getBranches();
         if (error) throw error;
         setAvailableBranches(branches || []);
-      } else if (user?.id) {
-        // Otros usuarios solo ven sus sucursales asignadas
+      } else {
         const { data: userBranches, error } = await db.getUserBranches(user.id);
         if (error) throw error;
         setAvailableBranches(userBranches || []);
@@ -65,9 +61,6 @@ export const useBranch = () => {
     }
   };
 
-  /**
-   * Obtiene información detallada de la sucursal actual desde Supabase
-   */
   const getCurrentBranchInfo = async () => {
     if (!selectedBranch?.id) return null;
     
@@ -77,13 +70,10 @@ export const useBranch = () => {
       return branch;
     } catch (error) {
       console.error('Error getting current branch info:', error);
-      return selectedBranch; // Fallback a datos en memoria
+      return selectedBranch;
     }
   };
 
-  /**
-   * Obtiene información de una sucursal específica por ID
-   */
   const getBranchById = async (id) => {
     try {
       const { data: branch, error } = await db.getBranchById(id);
@@ -95,23 +85,14 @@ export const useBranch = () => {
     }
   };
 
-  /**
-   * Verifica si el usuario puede cambiar de sucursal
-   */
   const canChangeBranch = () => {
     return user?.role === 'admin';
   };
 
-  /**
-   * Obtiene el código de la sucursal actual
-   */
   const getCurrentBranchCode = () => {
     return selectedBranch?.code || branchStats?.branchCode || 'N/A';
   };
 
-  /**
-   * Obtiene estadísticas reales de la sucursal actual
-   */
   const getCurrentBranchStats = async () => {
     if (!selectedBranch?.id) return null;
     
@@ -121,51 +102,70 @@ export const useBranch = () => {
       return stats;
     } catch (error) {
       console.error('Error getting current branch stats:', error);
-      return branchStats; // Fallback a datos en caché
+      return branchStats;
     }
   };
 
-  /**
-   * Cambia a una sucursal específica (solo para administradores)
-   */
+  // 🔧 FUNCIÓN CORREGIDA PARA EVITAR REFRESH
   const changeBranch = async (branchId) => {
+    console.log('🔄 Starting branch change to:', branchId);
+    
     if (!canChangeBranch()) {
-      throw new Error('No tienes permisos para cambiar de sucursal');
+      const error = new Error('No tienes permisos para cambiar de sucursal');
+      console.error('❌ Permission denied:', error.message);
+      throw error;
     }
 
-    const branch = await getBranchById(branchId);
-    if (!branch) {
-      throw new Error('Sucursal no encontrada');
-    }
+    try {
+      // Buscar la sucursal en las disponibles primero (más rápido)
+      let branch = availableBranches.find(b => b.id === branchId);
+      
+      // Si no está en las disponibles, buscar en base de datos
+      if (!branch) {
+        console.log('🔍 Branch not in cache, fetching from database...');
+        branch = await getBranchById(branchId);
+      }
+      
+      if (!branch) {
+        const error = new Error('Sucursal no encontrada');
+        console.error('❌ Branch not found:', branchId);
+        throw error;
+      }
 
-    return await selectBranch(branch);
+      console.log('✅ Branch found:', branch.name);
+      console.log('🔄 Calling selectBranch...');
+      
+      // Llamar a selectBranch del AuthContext
+      const result = await selectBranch(branch);
+      
+      console.log('✅ selectBranch result:', result);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Error al cambiar de sucursal');
+      }
+      
+      console.log('🎉 Branch change completed successfully');
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Error in changeBranch:', error);
+      throw error;
+    }
   };
 
-  /**
-   * Obtiene el formato de display para la sucursal actual
-   */
   const getBranchDisplayName = () => {
     return selectedBranch?.name || branchStats?.branchName || 'Sin sucursal';
   };
 
-  /**
-   * Obtiene el formato corto para la sucursal actual
-   */
   const getBranchShortName = () => {
     if (!selectedBranch) return 'N/A';
     return `${selectedBranch.code || 'N/A'} - ${selectedBranch.location || ''}`;
   };
 
-  /**
-   * Verifica si una sucursal específica está seleccionada
-   */
   const isBranchSelected = (branchId) => {
     return selectedBranch?.id === branchId;
   };
 
-  /**
-   * Obtiene las habitaciones de la sucursal actual
-   */
   const getCurrentBranchRooms = async (filters = {}) => {
     if (!selectedBranch?.id) return [];
 
@@ -179,9 +179,6 @@ export const useBranch = () => {
     }
   };
 
-  /**
-   * Obtiene las reservas de la sucursal actual
-   */
   const getCurrentBranchReservations = async (filters = {}) => {
     if (!selectedBranch?.id) return [];
 
@@ -195,9 +192,6 @@ export const useBranch = () => {
     }
   };
 
-  /**
-   * Actualiza el conteo de habitaciones de la sucursal actual
-   */
   const updateCurrentBranchRoomCount = async () => {
     if (!selectedBranch?.id) return null;
 
@@ -205,9 +199,7 @@ export const useBranch = () => {
       const { data, error } = await db.updateBranchRoomCount(selectedBranch.id);
       if (error) throw error;
       
-      // Recargar estadísticas
       await loadCurrentBranchStats();
-      
       return data;
     } catch (error) {
       console.error('Error updating branch room count:', error);
@@ -215,34 +207,20 @@ export const useBranch = () => {
     }
   };
 
-  /**
-   * Recarga las estadísticas de la sucursal actual
-   */
   const refreshBranchStats = async () => {
     await loadCurrentBranchStats();
   };
 
-  /**
-   * Recarga la lista de sucursales disponibles
-   */
   const refreshAvailableBranches = async () => {
     await loadAvailableBranches();
   };
 
-  /**
-   * Valida si el usuario puede operar en la sucursal actual
-   */
   const canOperateInCurrentBranch = () => {
     if (!selectedBranch) return false;
     if (user?.role === 'admin') return true;
-    
-    // Para otros usuarios, verificar si tienen acceso a esta sucursal
     return availableBranches.some(branch => branch.id === selectedBranch.id);
   };
 
-  /**
-   * Crea una nueva sucursal (solo administradores)
-   */
   const createBranch = async (branchData) => {
     if (!canChangeBranch()) {
       throw new Error('No tienes permisos para crear sucursales');
@@ -252,9 +230,7 @@ export const useBranch = () => {
       const { data: newBranch, error } = await db.createBranch(branchData);
       if (error) throw error;
       
-      // Recargar lista de sucursales
       await refreshAvailableBranches();
-      
       return newBranch;
     } catch (error) {
       console.error('Error creating branch:', error);
@@ -262,9 +238,6 @@ export const useBranch = () => {
     }
   };
 
-  /**
-   * Actualiza una sucursal (solo administradores)
-   */
   const updateBranch = async (branchId, updateData) => {
     if (!canChangeBranch()) {
       throw new Error('No tienes permisos para actualizar sucursales');
@@ -274,10 +247,8 @@ export const useBranch = () => {
       const { data: updatedBranch, error } = await db.updateBranch(branchId, updateData);
       if (error) throw error;
       
-      // Recargar lista de sucursales
       await refreshAvailableBranches();
       
-      // Si es la sucursal actual, recargar estadísticas
       if (selectedBranch?.id === branchId) {
         await refreshBranchStats();
       }
@@ -289,9 +260,6 @@ export const useBranch = () => {
     }
   };
 
-  /**
-   * Elimina una sucursal (solo administradores)
-   */
   const deleteBranch = async (branchId) => {
     if (!canChangeBranch()) {
       throw new Error('No tienes permisos para eliminar sucursales');
@@ -301,12 +269,9 @@ export const useBranch = () => {
       const { data, error } = await db.deleteBranch(branchId);
       if (error) throw error;
       
-      // Recargar lista de sucursales
       await refreshAvailableBranches();
       
-      // Si eliminamos la sucursal actual, limpiar selección
       if (selectedBranch?.id === branchId) {
-        // Aquí podrías implementar lógica para seleccionar otra sucursal
         console.warn('Current branch was deleted');
       }
       
