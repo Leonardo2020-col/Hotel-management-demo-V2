@@ -1,6 +1,6 @@
-// src/App.js - ACTUALIZADO CON PWA
+// src/App.js - CORREGIDO SIN window.location
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 // Import adicional
@@ -25,10 +25,6 @@ import BranchSwitcherDebug from './components/debug/BranchSwitcherDebug';
 import EnhancedBranchDebug from './components/debug/EnhancedBranchDebug';
 import BranchSwitcherFailSafe from './components/common/BranchSwitcherFailSafe';
 
-
-
-
-
 // Import pages
 import Dashboard from './pages/Dashboard/Dashboard';
 import CheckIn from './pages/CheckIn/CheckIn';
@@ -40,6 +36,28 @@ import Reports from './pages/Reports/Reports';
 import Settings from './pages/Settings/Settings';
 
 import './index.css';
+
+// 🔧 COMPONENTE CORREGIDO SIN window.location
+const BranchSelectionButton = () => {
+  const navigate = useNavigate();
+  
+  const handleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('🔄 Navigating to branch selection via React Router');
+    navigate('/select-branch');
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors w-full"
+    >
+      Seleccionar Sucursal
+    </button>
+  );
+};
 
 // Componente para rutas protegidas mejorado
 const ProtectedRoute = ({ children }) => {
@@ -80,12 +98,8 @@ const ProtectedRoute = ({ children }) => {
             <p className="text-gray-600 mb-6">
               Como administrador, necesitas seleccionar una sucursal para continuar.
             </p>
-            <button
-              onClick={() => window.location.href = '/select-branch'}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors w-full"
-            >
-              Seleccionar Sucursal
-            </button>
+            {/* 🔧 BOTÓN CORREGIDO */}
+            <BranchSelectionButton />
           </div>
         </div>
       </div>
@@ -140,6 +154,7 @@ const PermissionRoute = ({ children, permission }) => {
               Esta función está reservada para otros roles.
             </p>
             <button
+              type="button"
               onClick={() => window.history.back()}
               className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
@@ -327,8 +342,8 @@ function App() {
             <AppRoutes />
           </div>
           <EnhancedBranchDebug />
-        <BranchSwitcherDebug />
-        <BranchSwitcherFailSafe />
+          <BranchSwitcherDebug />
+          <BranchSwitcherFailSafe />
         </ReceptionProvider>
       </AuthProvider>
     </Router>

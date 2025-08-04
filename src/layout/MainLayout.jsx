@@ -1,5 +1,6 @@
-// src/layout/MainLayout.jsx - ACTUALIZADO CON SUCURSALES
+// src/layout/MainLayout.jsx - CORREGIDO SIN window.location
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Sidebar from '../components/common/Sidebar';
 import Header from '../components/common/Header';
@@ -8,6 +9,7 @@ const MainLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const { isAuthenticated, loading, isReady, selectedBranch, user } = useAuth();
+  const navigate = useNavigate();
 
   // Detectar si es móvil
   useEffect(() => {
@@ -51,6 +53,14 @@ const MainLayout = ({ children }) => {
 
   const handleSidebarToggle = () => {
     setSidebarOpen(!sidebarOpen);
+  };
+
+  // 🔧 FUNCIÓN CORREGIDA SIN window.location
+  const handleBranchSelectorClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('🔄 Navigating to branch selection via React Router');
+    navigate('/select-branch');
   };
 
   return (
@@ -97,8 +107,10 @@ const MainLayout = ({ children }) => {
                 </span>
               </div>
               
+              {/* 🔧 BOTÓN CORREGIDO SIN window.location */}
               <button
-                onClick={() => window.location.href = '/select-branch'}
+                type="button"
+                onClick={handleBranchSelectorClick}
                 className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
               >
                 Cambiar sucursal
