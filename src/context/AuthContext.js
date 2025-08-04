@@ -1,5 +1,5 @@
-// src/context/AuthContext.js - COMPLETAMENTE CONECTADO A SUPABASE
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+// src/context/AuthContext.js - VERSIÓN OPTIMIZADA ANTI-REFRESH
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { db } from '../lib/supabase';
 
 const AuthContext = createContext();
@@ -104,7 +104,7 @@ const initialState = {
   error: null
 };
 
-// Datos de usuarios mock (mantenemos para demo, pero podrías cambiar a Supabase Auth)
+// Datos de usuarios mock
 const MOCK_USERS = [
   {
     id: 1,
@@ -148,71 +148,109 @@ const MOCK_USERS = [
 
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  
+  // Referencias para evitar operaciones duplicadas
+  const branchSelectionRef = useRef(false);
+  const initializingRef = useRef(false);
 
   // Verificar si hay sesión guardada al cargar la app
   useEffect(() => {
-    const checkSavedSession = async () => {
-      try {
-        const savedUser = localStorage.getItem('hotel_user');
-        const savedPermissions = localStorage.getItem('hotel_permissions');
-        const savedBranch = localStorage.getItem('hotel_selected_branch');
+    if (initializingRef.current) return;
+    checkSavedSession();
+  }, []);
+
+  const checkSavedSession = useCallback(async () => {
+    if (initializingRef.current) return;
+    
+    try {
+      initializingRef.current = true;
+      console.log('🔍 Checking saved session...');
+      
+      const savedUser = localStorage.getItem('hotel_user');
+      const savedPermissions = localStorage.getItem('hotel_permissions');
+      const savedBranch = localStorage.getItem('hotel_selected_branch');
+      
+      if (savedUser && savedPermissions) {
+        const user = JSON.parse(savedUser);
+        const permissions = JSON.parse(savedPermissions);
+        let selectedBranch = savedBranch ? JSON.parse(savedBranch) : null;
         
-        if (savedUser && savedPermissions) {
-          const user = JSON.parse(savedUser);
-          const permissions = JSON.parse(savedPermissions);
-          let selectedBranch = savedBranch ? JSON.parse(savedBranch) : null;
-          
-          // Verificar que la sucursal guardada aún existe en Supabase
-          if (selectedBranch) {
+        console.log('👤 Found saved user:', user.name, user.role);
+        
+        // Verificar que la sucursal guardada aún existe en Supabase
+        if (selectedBranch) {
+          try {
             const { data: branchExists } = await db.getBranchById(selectedBranch.id);
             if (!branchExists) {
+              console.log('⚠️ Saved branch no longer exists, clearing...');
               selectedBranch = null;
               localStorage.removeItem('hotel_selected_branch');
+            } else {
+              console.log('✅ Saved branch verified:', selectedBranch.name);
             }
+          } catch (error) {
+            console.warn('Error verifying saved branch:', error);
+            selectedBranch = null;
+            localStorage.removeItem('hotel_selected_branch');
           }
-          
-          // Para usuarios de recepción, obtener su sucursal por defecto
-          if (user.role === 'reception' && !selectedBranch) {
+        }
+        
+        // Para usuarios de recepción, obtener su sucursal por defecto
+        if (user.role === 'reception' && !selectedBranch) {
+          try {
             const { data: userBranches } = await db.getUserBranches(user.id);
             const defaultBranch = userBranches?.find(b => b.isDefault) || userBranches?.[0];
             if (defaultBranch) {
               selectedBranch = defaultBranch;
               localStorage.setItem('hotel_selected_branch', JSON.stringify(defaultBranch));
+              console.log('🏢 Set default branch for reception user:', defaultBranch.name);
             }
+          } catch (error) {
+            console.warn('Error loading user branches:', error);
           }
-          
-          // Verificar si el administrador necesita seleccionar sucursal
-          const needsBranchSelection = user.role === 'admin' && !selectedBranch;
-          
-          dispatch({
-            type: 'LOGIN_SUCCESS',
-            payload: { 
-              user, 
-              permissions,
-              selectedBranch,
-              needsBranchSelection
-            }
-          });
-        } else {
-          dispatch({ type: 'SET_LOADING', payload: false });
         }
-      } catch (error) {
-        console.error('Error checking saved session:', error);
-        localStorage.removeItem('hotel_user');
-        localStorage.removeItem('hotel_permissions');
-        localStorage.removeItem('hotel_selected_branch');
+        
+        // Verificar si el administrador necesita seleccionar sucursal
+        const needsBranchSelection = user.role === 'admin' && !selectedBranch;
+        
+        console.log('🏗️ Restoring session:', {
+          user: user.name,
+          role: user.role,
+          selectedBranch: selectedBranch?.name || 'none',
+          needsBranchSelection
+        });
+        
+        dispatch({
+          type: 'LOGIN_SUCCESS',
+          payload: { 
+            user, 
+            permissions,
+            selectedBranch,
+            needsBranchSelection
+          }
+        });
+      } else {
+        console.log('📭 No saved session found');
         dispatch({ type: 'SET_LOADING', payload: false });
       }
-    };
-
-    const timer = setTimeout(checkSavedSession, 100);
-    return () => clearTimeout(timer);
+    } catch (error) {
+      console.error('Error checking saved session:', error);
+      localStorage.removeItem('hotel_user');
+      localStorage.removeItem('hotel_permissions');
+      localStorage.removeItem('hotel_selected_branch');
+      dispatch({ type: 'SET_LOADING', payload: false });
+    } finally {
+      initializingRef.current = false;
+    }
   }, []);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     dispatch({ type: 'LOGIN_START' });
 
     try {
+      console.log('🔐 Attempting login for:', email);
+      
+      // Simular delay de red
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       const user = MOCK_USERS.find(u => u.email === email && u.password === password);
@@ -224,13 +262,15 @@ export const AuthProvider = ({ children }) => {
       const { password: _, ...userWithoutPassword } = user;
       const { permissions } = user;
 
+      console.log('✅ User authenticated:', userWithoutPassword.name, userWithoutPassword.role);
+
       // Guardar datos básicos
       localStorage.setItem('hotel_user', JSON.stringify(userWithoutPassword));
       localStorage.setItem('hotel_permissions', JSON.stringify(permissions));
 
       // Manejar selección de sucursal basada en Supabase
       if (user.requiresBranchSelection) {
-        // Administradores necesitan seleccionar sucursal
+        console.log('🏢 Admin user - requires branch selection');
         dispatch({
           type: 'LOGIN_SUCCESS',
           payload: {
@@ -240,13 +280,14 @@ export const AuthProvider = ({ children }) => {
           }
         });
       } else {
-        // Personal de recepción - obtener sucursal asignada desde Supabase
+        console.log('👥 Reception user - loading assigned branch');
         try {
           const { data: userBranches } = await db.getUserBranches(user.id);
           const defaultBranch = userBranches?.find(b => b.isDefault) || userBranches?.[0];
           
           if (defaultBranch) {
             localStorage.setItem('hotel_selected_branch', JSON.stringify(defaultBranch));
+            console.log('🏢 Set default branch:', defaultBranch.name);
             dispatch({
               type: 'LOGIN_SUCCESS',
               payload: {
@@ -257,7 +298,7 @@ export const AuthProvider = ({ children }) => {
               }
             });
           } else {
-            // Si no tiene sucursales asignadas, requerir asignación
+            console.log('⚠️ No branches assigned to reception user');
             dispatch({
               type: 'LOGIN_SUCCESS',
               payload: {
@@ -269,7 +310,6 @@ export const AuthProvider = ({ children }) => {
           }
         } catch (error) {
           console.error('Error loading user branches:', error);
-          // Fallback: requerir selección de sucursal
           dispatch({
             type: 'LOGIN_SUCCESS',
             payload: {
@@ -283,16 +323,26 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true };
     } catch (error) {
+      console.error('❌ Login failed:', error.message);
       dispatch({
         type: 'LOGIN_FAILURE',
         payload: error.message
       });
       return { success: false, error: error.message };
     }
-  };
+  }, []);
 
-  const selectBranch = async (branch) => {
+  // 🔧 FUNCIÓN SELECTBRANCH OPTIMIZADA ANTI-REFRESH
+  const selectBranch = useCallback(async (branch) => {
+    if (branchSelectionRef.current) {
+      console.log('❌ Branch selection already in progress');
+      return { success: false, error: 'Selección de sucursal ya en progreso' };
+    }
+
+    console.log('🏢 AuthContext.selectBranch called for:', branch.name);
+    
     dispatch({ type: 'BRANCH_SWITCHING_START' });
+    branchSelectionRef.current = true;
     
     try {
       // Validar que la sucursal existe en Supabase
@@ -301,8 +351,10 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Sucursal no válida o no encontrada');
       }
 
-      // Simular delay para configuración de sucursal
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      console.log('✅ Branch validated:', validBranch.name);
+      
+      // Simular delay para configuración de sucursal (pero menor para evitar timeouts)
+      await new Promise(resolve => setTimeout(resolve, 800));
       
       // Guardar sucursal seleccionada con información completa de Supabase
       const branchToSave = {
@@ -310,25 +362,43 @@ export const AuthProvider = ({ children }) => {
         selectedAt: new Date().toISOString()
       };
       
-      localStorage.setItem('hotel_selected_branch', JSON.stringify(branchToSave));
+      // Guardar de forma síncrona
+      try {
+        localStorage.setItem('hotel_selected_branch', JSON.stringify(branchToSave));
+        console.log('💾 Branch saved to localStorage');
+      } catch (storageError) {
+        console.warn('Warning: Could not save to localStorage:', storageError);
+        // Continuar aunque falle el localStorage
+      }
       
+      // Actualizar estado
       dispatch({
         type: 'BRANCH_SWITCHING_SUCCESS',
         payload: branchToSave
       });
 
+      console.log('🎉 Branch selection completed successfully:', branchToSave.name);
       return { success: true };
+      
     } catch (error) {
+      console.error('❌ Branch selection failed:', error.message);
       dispatch({ 
         type: 'BRANCH_SWITCHING_ERROR', 
         payload: error.message 
       });
       return { success: false, error: error.message };
+    } finally {
+      // Liberar el lock después de un breve delay
+      setTimeout(() => {
+        branchSelectionRef.current = false;
+        console.log('🔓 Branch selection lock released');
+      }, 500);
     }
-  };
+  }, []);
 
-  const changeBranch = async (branchId) => {
+  const changeBranch = useCallback(async (branchId) => {
     try {
+      console.log('🔄 AuthContext.changeBranch called with ID:', branchId);
       const { data: branch, error } = await db.getBranchById(branchId);
       if (error || !branch) {
         return { success: false, error: 'Sucursal no encontrada' };
@@ -336,34 +406,46 @@ export const AuthProvider = ({ children }) => {
 
       return await selectBranch(branch);
     } catch (error) {
+      console.error('❌ changeBranch error:', error.message);
       return { success: false, error: error.message };
     }
-  };
+  }, [selectBranch]);
 
-  const logout = () => {
-    localStorage.removeItem('hotel_user');
-    localStorage.removeItem('hotel_permissions');
-    localStorage.removeItem('hotel_selected_branch');
+  const logout = useCallback(() => {
+    console.log('👋 Logging out user');
+    
+    // Limpiar localStorage
+    try {
+      localStorage.removeItem('hotel_user');
+      localStorage.removeItem('hotel_permissions');
+      localStorage.removeItem('hotel_selected_branch');
+    } catch (error) {
+      console.warn('Error clearing localStorage:', error);
+    }
+    
+    // Limpiar referencias
+    branchSelectionRef.current = false;
+    initializingRef.current = false;
     
     dispatch({ type: 'LOGOUT' });
-  };
+  }, []);
 
-  const clearError = () => {
+  const clearError = useCallback(() => {
     dispatch({ type: 'CLEAR_ERROR' });
-  };
+  }, []);
 
-  const hasPermission = (module, action = 'read') => {
+  const hasPermission = useCallback((module, action = 'read') => {
     if (!state.permissions || !state.permissions[module]) {
       return false;
     }
     return state.permissions[module][action] === true;
-  };
+  }, [state.permissions]);
 
-  const hasRole = (role) => {
+  const hasRole = useCallback((role) => {
     return state.user?.role === role;
-  };
+  }, [state.user?.role]);
 
-  const getAllowedRoutes = () => {
+  const getAllowedRoutes = useCallback(() => {
     if (!state.permissions) return [];
 
     const routes = [];
@@ -375,17 +457,17 @@ export const AuthProvider = ({ children }) => {
     });
 
     return routes;
-  };
+  }, [state.permissions]);
 
-  const isReady = () => {
+  const isReady = useCallback(() => {
     if (!state.isAuthenticated) return false;
     if (state.user?.role === 'admin') {
       return !state.needsBranchSelection && state.selectedBranch;
     }
     return true;
-  };
+  }, [state.isAuthenticated, state.user?.role, state.needsBranchSelection, state.selectedBranch]);
 
-  const getBranchInfo = async () => {
+  const getBranchInfo = useCallback(async () => {
     if (!state.selectedBranch) return null;
     
     try {
@@ -396,9 +478,9 @@ export const AuthProvider = ({ children }) => {
       console.error('Error getting branch info:', error);
       return state.selectedBranch; // Fallback
     }
-  };
+  }, [state.selectedBranch]);
 
-  const getAvailableBranches = async () => {
+  const getAvailableBranches = useCallback(async () => {
     try {
       if (state.user?.role === 'admin') {
         const { data: branches, error } = await db.getBranches();
@@ -414,11 +496,11 @@ export const AuthProvider = ({ children }) => {
       console.error('Error getting available branches:', error);
       return [];
     }
-  };
+  }, [state.user]);
 
-  const canChangeBranch = () => {
+  const canChangeBranch = useCallback(() => {
     return state.user?.role === 'admin';
-  };
+  }, [state.user?.role]);
 
   const value = {
     // Estado principal

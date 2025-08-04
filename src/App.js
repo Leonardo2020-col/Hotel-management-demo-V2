@@ -20,6 +20,10 @@ import BranchSelectionPage from './pages/Auth/BranchSelectionPage';
 // Layout
 import MainLayout from './layout/MainLayout';
 
+// debug
+import BranchSwitcherDebug from './components/debug/BranchSwitcherDebug';
+
+
 // Import pages
 import Dashboard from './pages/Dashboard/Dashboard';
 import CheckIn from './pages/CheckIn/CheckIn';
@@ -319,6 +323,7 @@ function App() {
           </div>
         </ReceptionProvider>
       </AuthProvider>
+      <BranchSwitcherDebug />
     </Router>
   );
 }

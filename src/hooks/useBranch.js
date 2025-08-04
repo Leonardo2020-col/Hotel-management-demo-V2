@@ -1,5 +1,5 @@
-// src/hooks/useBranch.js - VERSIÓN CORREGIDA PARA EVITAR REFRESH
-import { useState, useEffect } from 'react';
+// src/hooks/useBranch.js - VERSIÓN OPTIMIZADA ANTI-REFRESH
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/supabase';
 
@@ -9,59 +9,71 @@ export const useBranch = () => {
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [branchStats, setBranchStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  
+  // Referencias para evitar operaciones duplicadas
+  const loadingBranchesRef = useRef(false);
+  const changingBranchRef = useRef(false);
 
   // Cargar sucursales disponibles desde Supabase
   useEffect(() => {
+    if (!user?.id || loadingBranchesRef.current) return;
     loadAvailableBranches();
-  }, [user?.id]); // Solo recargar cuando cambie el usuario
+  }, [user?.id]);
 
   // Cargar estadísticas cuando cambia la sucursal seleccionada
   useEffect(() => {
-    if (selectedBranch?.id) {
+    if (selectedBranch?.id && !statsLoading) {
       loadCurrentBranchStats();
     }
   }, [selectedBranch?.id]);
 
-  const loadAvailableBranches = async () => {
-    if (!user?.id) return;
+  const loadAvailableBranches = useCallback(async () => {
+    if (!user?.id || loadingBranchesRef.current) return;
     
     try {
       setBranchesLoading(true);
+      loadingBranchesRef.current = true;
+      
+      console.log('🏢 Loading available branches for user:', user.id);
       
       if (user.role === 'admin') {
         const { data: branches, error } = await db.getBranches();
         if (error) throw error;
         setAvailableBranches(branches || []);
+        console.log(`✅ Loaded ${branches?.length || 0} branches for admin`);
       } else {
         const { data: userBranches, error } = await db.getUserBranches(user.id);
         if (error) throw error;
         setAvailableBranches(userBranches || []);
+        console.log(`✅ Loaded ${userBranches?.length || 0} branches for user`);
       }
     } catch (error) {
       console.error('Error loading available branches:', error);
       setAvailableBranches([]);
     } finally {
       setBranchesLoading(false);
+      loadingBranchesRef.current = false;
     }
-  };
+  }, [user?.id, user?.role]);
 
-  const loadCurrentBranchStats = async () => {
-    if (!selectedBranch?.id) return;
+  const loadCurrentBranchStats = useCallback(async () => {
+    if (!selectedBranch?.id || statsLoading) return;
     
     try {
       setStatsLoading(true);
       const { data: stats, error } = await db.getBranchStats(selectedBranch.id);
       if (error) throw error;
       setBranchStats(stats);
+      console.log('📊 Branch stats updated for:', selectedBranch.name);
     } catch (error) {
       console.error('Error loading branch stats:', error);
       setBranchStats(null);
     } finally {
       setStatsLoading(false);
     }
-  };
+  }, [selectedBranch?.id]);
 
-  const getCurrentBranchInfo = async () => {
+  const getCurrentBranchInfo = useCallback(async () => {
     if (!selectedBranch?.id) return null;
     
     try {
@@ -72,9 +84,9 @@ export const useBranch = () => {
       console.error('Error getting current branch info:', error);
       return selectedBranch;
     }
-  };
+  }, [selectedBranch?.id]);
 
-  const getBranchById = async (id) => {
+  const getBranchById = useCallback(async (id) => {
     try {
       const { data: branch, error } = await db.getBranchById(id);
       if (error) throw error;
@@ -83,40 +95,33 @@ export const useBranch = () => {
       console.error(`Error getting branch ${id}:`, error);
       return availableBranches.find(branch => branch.id === id) || null;
     }
-  };
+  }, [availableBranches]);
 
-  const canChangeBranch = () => {
+  const canChangeBranch = useCallback(() => {
     return user?.role === 'admin';
-  };
+  }, [user?.role]);
 
-  const getCurrentBranchCode = () => {
-    return selectedBranch?.code || branchStats?.branchCode || 'N/A';
-  };
-
-  const getCurrentBranchStats = async () => {
-    if (!selectedBranch?.id) return null;
+  // 🔧 FUNCIÓN PRINCIPAL DE CAMBIO DE SUCURSAL - OPTIMIZADA
+  const changeBranch = useCallback(async (branchId) => {
+    console.log('🔄 useBranch.changeBranch called with ID:', branchId);
     
-    try {
-      const { data: stats, error } = await db.getBranchStats(selectedBranch.id);
-      if (error) throw error;
-      return stats;
-    } catch (error) {
-      console.error('Error getting current branch stats:', error);
-      return branchStats;
+    // Verificar si ya hay una operación en progreso
+    if (changingBranchRef.current) {
+      console.log('❌ Branch change already in progress, skipping...');
+      return { success: false, error: 'Cambio de sucursal ya en progreso' };
     }
-  };
 
-  // 🔧 FUNCIÓN CORREGIDA PARA EVITAR REFRESH
-  const changeBranch = async (branchId) => {
-    console.log('🔄 Starting branch change to:', branchId);
-    
     if (!canChangeBranch()) {
       const error = new Error('No tienes permisos para cambiar de sucursal');
       console.error('❌ Permission denied:', error.message);
-      throw error;
+      return { success: false, error: error.message };
     }
 
     try {
+      // Marcar como en progreso
+      changingBranchRef.current = true;
+      console.log('🚀 Starting branch change process...');
+      
       // Buscar la sucursal en las disponibles primero (más rápido)
       let branch = availableBranches.find(b => b.id === branchId);
       
@@ -133,10 +138,17 @@ export const useBranch = () => {
       }
 
       console.log('✅ Branch found:', branch.name);
-      console.log('🔄 Calling selectBranch...');
+      console.log('🔄 Calling selectBranch from AuthContext...');
       
-      // Llamar a selectBranch del AuthContext
-      const result = await selectBranch(branch);
+      // Llamar a selectBranch del AuthContext con timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout: Selección de sucursal demoró más de 15 segundos')), 15000)
+      );
+      
+      const result = await Promise.race([
+        selectBranch(branch),
+        timeoutPromise
+      ]);
       
       console.log('✅ selectBranch result:', result);
       
@@ -144,29 +156,42 @@ export const useBranch = () => {
         throw new Error(result.error || 'Error al cambiar de sucursal');
       }
       
+      // Pequeña pausa para asegurar que el estado se haya actualizado
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       console.log('🎉 Branch change completed successfully');
       return result;
       
     } catch (error) {
       console.error('❌ Error in changeBranch:', error);
-      throw error;
+      return { success: false, error: error.message };
+    } finally {
+      // Liberar el lock después de un breve delay
+      setTimeout(() => {
+        changingBranchRef.current = false;
+        console.log('🔓 Branch change lock released');
+      }, 1000);
     }
-  };
+  }, [selectBranch, canChangeBranch, availableBranches, getBranchById]);
 
-  const getBranchDisplayName = () => {
+  const getBranchDisplayName = useCallback(() => {
     return selectedBranch?.name || branchStats?.branchName || 'Sin sucursal';
-  };
+  }, [selectedBranch?.name, branchStats?.branchName]);
 
-  const getBranchShortName = () => {
+  const getBranchShortName = useCallback(() => {
     if (!selectedBranch) return 'N/A';
     return `${selectedBranch.code || 'N/A'} - ${selectedBranch.location || ''}`;
-  };
+  }, [selectedBranch]);
 
-  const isBranchSelected = (branchId) => {
+  const getCurrentBranchCode = useCallback(() => {
+    return selectedBranch?.code || branchStats?.branchCode || 'N/A';
+  }, [selectedBranch?.code, branchStats?.branchCode]);
+
+  const isBranchSelected = useCallback((branchId) => {
     return selectedBranch?.id === branchId;
-  };
+  }, [selectedBranch?.id]);
 
-  const getCurrentBranchRooms = async (filters = {}) => {
+  const getCurrentBranchRooms = useCallback(async (filters = {}) => {
     if (!selectedBranch?.id) return [];
 
     try {
@@ -177,9 +202,9 @@ export const useBranch = () => {
       console.error('Error fetching branch rooms:', error);
       return [];
     }
-  };
+  }, [selectedBranch?.id]);
 
-  const getCurrentBranchReservations = async (filters = {}) => {
+  const getCurrentBranchReservations = useCallback(async (filters = {}) => {
     if (!selectedBranch?.id) return [];
 
     try {
@@ -190,38 +215,25 @@ export const useBranch = () => {
       console.error('Error fetching branch reservations:', error);
       return [];
     }
-  };
+  }, [selectedBranch?.id]);
 
-  const updateCurrentBranchRoomCount = async () => {
-    if (!selectedBranch?.id) return null;
-
-    try {
-      const { data, error } = await db.updateBranchRoomCount(selectedBranch.id);
-      if (error) throw error;
-      
-      await loadCurrentBranchStats();
-      return data;
-    } catch (error) {
-      console.error('Error updating branch room count:', error);
-      return null;
-    }
-  };
-
-  const refreshBranchStats = async () => {
+  const refreshBranchStats = useCallback(async () => {
     await loadCurrentBranchStats();
-  };
+  }, [loadCurrentBranchStats]);
 
-  const refreshAvailableBranches = async () => {
+  const refreshAvailableBranches = useCallback(async () => {
+    loadingBranchesRef.current = false; // Reset lock
     await loadAvailableBranches();
-  };
+  }, [loadAvailableBranches]);
 
-  const canOperateInCurrentBranch = () => {
+  const canOperateInCurrentBranch = useCallback(() => {
     if (!selectedBranch) return false;
     if (user?.role === 'admin') return true;
     return availableBranches.some(branch => branch.id === selectedBranch.id);
-  };
+  }, [selectedBranch, user?.role, availableBranches]);
 
-  const createBranch = async (branchData) => {
+  // Funciones administrativas (solo admin)
+  const createBranch = useCallback(async (branchData) => {
     if (!canChangeBranch()) {
       throw new Error('No tienes permisos para crear sucursales');
     }
@@ -236,9 +248,9 @@ export const useBranch = () => {
       console.error('Error creating branch:', error);
       throw error;
     }
-  };
+  }, [canChangeBranch, refreshAvailableBranches]);
 
-  const updateBranch = async (branchId, updateData) => {
+  const updateBranch = useCallback(async (branchId, updateData) => {
     if (!canChangeBranch()) {
       throw new Error('No tienes permisos para actualizar sucursales');
     }
@@ -258,9 +270,9 @@ export const useBranch = () => {
       console.error('Error updating branch:', error);
       throw error;
     }
-  };
+  }, [canChangeBranch, refreshAvailableBranches, selectedBranch?.id, refreshBranchStats]);
 
-  const deleteBranch = async (branchId) => {
+  const deleteBranch = useCallback(async (branchId) => {
     if (!canChangeBranch()) {
       throw new Error('No tienes permisos para eliminar sucursales');
     }
@@ -280,7 +292,43 @@ export const useBranch = () => {
       console.error('Error deleting branch:', error);
       throw error;
     }
-  };
+  }, [canChangeBranch, refreshAvailableBranches, selectedBranch?.id]);
+
+  const getCurrentBranchStats = useCallback(async () => {
+    if (!selectedBranch?.id) return null;
+    
+    try {
+      const { data: stats, error } = await db.getBranchStats(selectedBranch.id);
+      if (error) throw error;
+      return stats;
+    } catch (error) {
+      console.error('Error getting current branch stats:', error);
+      return branchStats;
+    }
+  }, [selectedBranch?.id, branchStats]);
+
+  const updateCurrentBranchRoomCount = useCallback(async () => {
+    if (!selectedBranch?.id) return null;
+
+    try {
+      const { data, error } = await db.updateBranchRoomCount(selectedBranch.id);
+      if (error) throw error;
+      
+      await loadCurrentBranchStats();
+      return data;
+    } catch (error) {
+      console.error('Error updating branch room count:', error);
+      return null;
+    }
+  }, [selectedBranch?.id, loadCurrentBranchStats]);
+
+  // Limpiar referencias al desmontar
+  useEffect(() => {
+    return () => {
+      loadingBranchesRef.current = false;
+      changingBranchRef.current = false;
+    };
+  }, []);
 
   return {
     // Estado

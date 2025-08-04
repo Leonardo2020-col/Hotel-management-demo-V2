@@ -1,5 +1,5 @@
-// src/components/common/BranchSwitcher.jsx - VERSIÓN CORREGIDA SIN REFRESH
-import React, { useState, useEffect, useCallback } from 'react';
+// src/components/common/BranchSwitcher.jsx - VERSIÓN OPTIMIZADA ANTI-REFRESH
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Building2, 
   ChevronDown, 
@@ -29,18 +29,91 @@ const BranchSwitcher = ({ className = '' }) => {
   const [branchStats, setBranchStats] = useState({});
   const [loadingStats, setLoadingStats] = useState(false);
   const [error, setError] = useState(null);
+  
+  // Referencias para prevenir eventos no deseados
+  const dropdownRef = useRef(null);
+  const switchingRef = useRef(false);
 
-  // 🔧 PREVENIR COMPORTAMIENTO POR DEFECTO DE FORMULARIOS
-  const handleDropdownClick = useCallback((e) => {
+  // 🔧 PREVENIR COMPORTAMIENTO POR DEFECTO Y PROPAGACIÓN
+  const preventDefaults = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (switching || loading) return;
+    e.stopImmediatePropagation();
+  }, []);
+
+  const handleDropdownClick = useCallback((e) => {
+    preventDefaults(e);
+    
+    if (switching || loading || switchingRef.current) {
+      console.log('🚫 Dropdown click blocked - operation in progress');
+      return;
+    }
+    
     setIsOpen(!isOpen);
-  }, [isOpen, switching, loading]);
+    console.log('🔄 Dropdown toggled:', !isOpen);
+  }, [isOpen, switching, loading, preventDefaults]);
+
+  // 🔧 FUNCIÓN MEJORADA PARA CAMBIO DE SUCURSAL
+  const handleBranchChange = useCallback(async (e, branch) => {
+    preventDefaults(e);
+    
+    console.log('🔄 Branch change initiated for:', branch.name);
+    
+    // Verificaciones múltiples para prevenir ejecuciones duplicadas
+    if (switching || switchingRef.current || !canChangeBranch() || loading) {
+      console.log('❌ Branch change blocked:', { 
+        switching, 
+        switchingRef: switchingRef.current,
+        canChangeBranch: canChangeBranch(), 
+        loading 
+      });
+      return;
+    }
+
+    // Marcar como en proceso
+    setSwitching(true);
+    switchingRef.current = true;
+    setError(null);
+    
+    try {
+      console.log('📞 Calling changeBranch function...');
+      
+      // Agregar timeout para evitar colgados
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout: Operación demoró más de 10 segundos')), 10000)
+      );
+      
+      const result = await Promise.race([
+        changeBranch(branch.id),
+        timeoutPromise
+      ]);
+      
+      console.log('✅ Branch change result:', result);
+      
+      if (result.success) {
+        setIsOpen(false);
+        console.log('🎉 Branch successfully changed to:', branch.name);
+        
+        // Limpiar estados después de un breve delay
+        setTimeout(() => {
+          setSwitching(false);
+          switchingRef.current = false;
+        }, 500);
+      } else {
+        throw new Error(result.error || 'Error al cambiar de sucursal');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error changing branch:', error);
+      setError(error.message);
+      setSwitching(false);
+      switchingRef.current = false;
+    }
+  }, [changeBranch, canChangeBranch, switching, loading, preventDefaults]);
 
   // Cargar estadísticas cuando se abra el dropdown
   useEffect(() => {
-    if (isOpen && availableBranches.length > 0) {
+    if (isOpen && availableBranches.length > 0 && !loadingStats) {
       loadBranchStats();
     }
   }, [isOpen, availableBranches]);
@@ -48,16 +121,29 @@ const BranchSwitcher = ({ className = '' }) => {
   // Cerrar dropdown cuando se haga clic fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (isOpen) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsOpen(false);
       }
     };
 
     if (isOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+      
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('touchstart', handleClickOutside);
+      };
     }
   }, [isOpen]);
+
+  // Limpiar estados cuando se desmonte el componente
+  useEffect(() => {
+    return () => {
+      setSwitching(false);
+      switchingRef.current = false;
+    };
+  }, []);
 
   const loadBranchStats = async () => {
     if (loadingStats) return;
@@ -95,51 +181,8 @@ const BranchSwitcher = ({ className = '' }) => {
     }
   };
 
-  // 🔧 FUNCIÓN CORREGIDA PARA CAMBIO DE SUCURSAL
-  const handleBranchChange = async (e, branch) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    console.log('🔄 Branch change initiated for:', branch.name);
-    
-    if (switching || !canChangeBranch()) {
-      console.log('❌ Branch change blocked:', { switching, canChangeBranch: canChangeBranch() });
-      return;
-    }
-
-    setSwitching(true);
-    setError(null);
-    
-    try {
-      console.log('📞 Calling changeBranch function...');
-      const result = await changeBranch(branch.id);
-      
-      console.log('✅ Branch change result:', result);
-      
-      if (result.success) {
-        setIsOpen(false);
-        console.log('🎉 Branch successfully changed to:', branch.name);
-        
-        // Opcional: Mostrar notificación de éxito
-        // showSuccessToast(`Cambiado a ${branch.name}`);
-      } else {
-        throw new Error(result.error || 'Error al cambiar de sucursal');
-      }
-      
-    } catch (error) {
-      console.error('❌ Error changing branch:', error);
-      setError(error.message);
-      
-      // Opcional: Mostrar notificación de error
-      // showErrorToast(error.message);
-    } finally {
-      setSwitching(false);
-    }
-  };
-
-  const handleRefresh = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleRefresh = useCallback(async (e) => {
+    preventDefaults(e);
     
     try {
       await refreshAvailableBranches();
@@ -150,7 +193,7 @@ const BranchSwitcher = ({ className = '' }) => {
       console.error('Error refreshing branches:', error);
       setError('Error al actualizar sucursales');
     }
-  };
+  }, [refreshAvailableBranches, isOpen, preventDefaults]);
 
   const getBranchStats = (branchId) => {
     return branchStats[branchId] || {
@@ -160,11 +203,10 @@ const BranchSwitcher = ({ className = '' }) => {
     };
   };
 
-  const closeDropdown = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const closeDropdown = useCallback((e) => {
+    preventDefaults(e);
     setIsOpen(false);
-  };
+  }, [preventDefaults]);
 
   // Componente para usuarios sin permisos de cambio
   if (!canChangeBranch() || !selectedBranch) {
@@ -210,13 +252,14 @@ const BranchSwitcher = ({ className = '' }) => {
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${className}`} ref={dropdownRef}>
       {/* Branch Selector Button */}
       <button
         type="button"
         onClick={handleDropdownClick}
-        disabled={switching || loading}
+        disabled={switching || loading || switchingRef.current}
         className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[200px]"
+        style={{ outline: 'none' }} // Prevenir outline de enfoque
       >
         <Building2 className="w-4 h-4 text-gray-600 flex-shrink-0" />
         <div className="text-left flex-1 min-w-0">
@@ -227,7 +270,7 @@ const BranchSwitcher = ({ className = '' }) => {
             {selectedBranch?.location || ''}
           </div>
         </div>
-        {switching ? (
+        {(switching || switchingRef.current) ? (
           <RefreshCw className="w-4 h-4 text-gray-400 animate-spin flex-shrink-0" />
         ) : (
           <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
@@ -236,7 +279,7 @@ const BranchSwitcher = ({ className = '' }) => {
 
       {/* Error Message */}
       {error && (
-        <div className="absolute top-full left-0 right-0 mt-1 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+        <div className="absolute top-full left-0 right-0 mt-1 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 z-50">
           {error}
           <button 
             onClick={() => setError(null)}
@@ -251,7 +294,7 @@ const BranchSwitcher = ({ className = '' }) => {
       {isOpen && (
         <div 
           className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-96 overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
+          onClick={preventDefaults} // Prevenir propagación en todo el dropdown
         >
           <div className="p-3 border-b border-gray-100">
             <div className="flex items-center justify-between">
@@ -270,6 +313,7 @@ const BranchSwitcher = ({ className = '' }) => {
                   className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
                   title="Actualizar"
                   disabled={branchesLoading || loadingStats}
+                  style={{ outline: 'none' }}
                 >
                   <RefreshCw className={`w-4 h-4 ${(branchesLoading || loadingStats) ? 'animate-spin' : ''}`} />
                 </button>
@@ -278,6 +322,7 @@ const BranchSwitcher = ({ className = '' }) => {
                   onClick={closeDropdown}
                   className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
                   title="Cerrar"
+                  style={{ outline: 'none' }}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -302,12 +347,13 @@ const BranchSwitcher = ({ className = '' }) => {
                   key={branch.id}
                   type="button"
                   onClick={(e) => handleBranchChange(e, branch)}
-                  disabled={switching}
+                  disabled={switching || switchingRef.current}
                   className={`w-full p-4 text-left hover:bg-gray-50 transition-colors disabled:opacity-50 border-b border-gray-50 last:border-b-0 ${
                     isSelected 
                       ? 'bg-blue-50 border-l-4 border-l-blue-500' 
                       : ''
-                  } ${switching ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  } ${(switching || switchingRef.current) ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  style={{ outline: 'none' }}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
@@ -318,7 +364,7 @@ const BranchSwitcher = ({ className = '' }) => {
                         {isSelected && (
                           <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
                         )}
-                        {switching && !isSelected && (
+                        {(switching || switchingRef.current) && !isSelected && (
                           <RefreshCw className="w-4 h-4 text-gray-400 animate-spin flex-shrink-0" />
                         )}
                       </div>
