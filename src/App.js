@@ -1,4 +1,4 @@
-// src/App.js - CORREGIDO SIN window.location
+// src/App.js - CON BRANCHSWITCHER SIMPLE + SIN PROBLEMAS
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
@@ -21,9 +21,7 @@ import BranchSelectionPage from './pages/Auth/BranchSelectionPage';
 import MainLayout from './layout/MainLayout';
 
 // debug
-import BranchSwitcherDebug from './components/debug/BranchSwitcherDebug';
 import EnhancedBranchDebug from './components/debug/EnhancedBranchDebug';
-import BranchSwitcherFailSafe from './components/common/BranchSwitcherFailSafe';
 
 // Import pages
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -98,7 +96,6 @@ const ProtectedRoute = ({ children }) => {
             <p className="text-gray-600 mb-6">
               Como administrador, necesitas seleccionar una sucursal para continuar.
             </p>
-            {/* 🔧 BOTÓN CORREGIDO */}
             <BranchSelectionButton />
           </div>
         </div>
@@ -341,9 +338,8 @@ function App() {
             
             <AppRoutes />
           </div>
+          {/* 🔧 SOLO EL DEBUG ESENCIAL */}
           <EnhancedBranchDebug />
-          <BranchSwitcherDebug />
-          <BranchSwitcherFailSafe />
         </ReceptionProvider>
       </AuthProvider>
     </Router>

@@ -1,4 +1,4 @@
-// src/components/common/Header.jsx - ACTUALIZADO
+// src/components/common/Header.jsx - CON BRANCHSWITCHER SIMPLE
 import React from 'react';
 import { 
   Menu, 
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import BranchSwitcherSimple from './BranchSwitcherSimple';
 
 const Header = ({ onMenuClick, sidebarOpen }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -56,6 +57,7 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
         {/* Left Section */}
         <div className="flex items-center space-x-4">
           <button
+            type="button"
             onClick={onMenuClick}
             className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors lg:hidden"
           >
@@ -93,6 +95,11 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
             </div>
           )}
 
+          {/* 🔧 BRANCH SWITCHER SIMPLE - Solo para admin */}
+          {hasRole('admin') && (
+            <BranchSwitcherSimple />
+          )}
+
           {/* Role Badge */}
           <div className="hidden sm:flex items-center space-x-2 px-3 py-1 bg-gray-50 rounded-lg">
             {getRoleIcon()}
@@ -104,6 +111,7 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
           {/* Notifications */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => setShowNotifications(!showNotifications)}
               className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors relative"
             >
@@ -128,7 +136,10 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
                   ))}
                 </div>
                 <div className="p-4">
-                  <button className="text-blue-600 text-sm font-medium hover:text-blue-700">
+                  <button 
+                    type="button"
+                    className="text-blue-600 text-sm font-medium hover:text-blue-700"
+                  >
                     Ver todas las notificaciones
                   </button>
                 </div>
@@ -139,6 +150,7 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
           {/* User Menu */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center space-x-3 p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
@@ -170,6 +182,7 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
 
                   {/* Menu Items */}
                   <button 
+                    type="button"
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                     onClick={() => setShowUserMenu(false)}
                   >
@@ -178,6 +191,7 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
                   </button>
                   
                   <button 
+                    type="button"
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                     onClick={() => setShowUserMenu(false)}
                   >
@@ -188,6 +202,7 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
                   <hr className="my-2" />
                   
                   <button 
+                    type="button"
                     className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 flex items-center"
                     onClick={handleLogout}
                   >
