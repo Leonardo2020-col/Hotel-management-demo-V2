@@ -358,9 +358,16 @@ export const AuthProvider = ({ children }) => {
       
       // Guardar sucursal seleccionada con información completa de Supabase
       const branchToSave = {
-        ...validBranch,
-        selectedAt: new Date().toISOString()
-      };
+      ...validBranch,
+      selectedAt: new Date().toISOString()
+    };
+
+    localStorage.setItem('hotel_selected_branch', JSON.stringify(branchToSave));
+    
+    dispatch({
+      type: 'BRANCH_SWITCHING_SUCCESS',
+      payload: branchToSave
+    });
       
       // Guardar de forma síncrona
       try {

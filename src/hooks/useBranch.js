@@ -103,76 +103,48 @@ export const useBranch = () => {
 
   // 🔧 FUNCIÓN PRINCIPAL DE CAMBIO DE SUCURSAL - OPTIMIZADA
   const changeBranch = useCallback(async (branchId) => {
-    console.log('🔄 useBranch.changeBranch called with ID:', branchId);
+  console.log('🔄 useBranch.changeBranch called with ID:', branchId);
+  
+  if (changingBranchRef.current) {
+    console.log('❌ Branch change already in progress, skipping...');
+    return { success: false, error: 'Cambio de sucursal ya en progreso' };
+  }
+
+  // ⚠️ REMOVER CUALQUIER window.location o navigate() AQUÍ
+  // NO REDIRIGIR - solo cambiar estado
+
+  try {
+    changingBranchRef.current = true;
     
-    // Verificar si ya hay una operación en progreso
-    if (changingBranchRef.current) {
-      console.log('❌ Branch change already in progress, skipping...');
-      return { success: false, error: 'Cambio de sucursal ya en progreso' };
+    let branch = availableBranches.find(b => b.id === branchId);
+    
+    if (!branch) {
+      branch = await getBranchById(branchId);
+    }
+    
+    if (!branch) {
+      throw new Error('Sucursal no encontrada');
     }
 
-    if (!canChangeBranch()) {
-      const error = new Error('No tienes permisos para cambiar de sucursal');
-      console.error('❌ Permission denied:', error.message);
-      return { success: false, error: error.message };
+    // SOLO LLAMAR selectBranch - SIN NAVEGACIÓN
+    const result = await selectBranch(branch);
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Error al cambiar de sucursal');
     }
-
-    try {
-      // Marcar como en progreso
-      changingBranchRef.current = true;
-      console.log('🚀 Starting branch change process...');
-      
-      // Buscar la sucursal en las disponibles primero (más rápido)
-      let branch = availableBranches.find(b => b.id === branchId);
-      
-      // Si no está en las disponibles, buscar en base de datos
-      if (!branch) {
-        console.log('🔍 Branch not in cache, fetching from database...');
-        branch = await getBranchById(branchId);
-      }
-      
-      if (!branch) {
-        const error = new Error('Sucursal no encontrada');
-        console.error('❌ Branch not found:', branchId);
-        throw error;
-      }
-
-      console.log('✅ Branch found:', branch.name);
-      console.log('🔄 Calling selectBranch from AuthContext...');
-      
-      // Llamar a selectBranch del AuthContext con timeout
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout: Selección de sucursal demoró más de 15 segundos')), 15000)
-      );
-      
-      const result = await Promise.race([
-        selectBranch(branch),
-        timeoutPromise
-      ]);
-      
-      console.log('✅ selectBranch result:', result);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Error al cambiar de sucursal');
-      }
-      
-      // Pequeña pausa para asegurar que el estado se haya actualizado
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      console.log('🎉 Branch change completed successfully');
-      return result;
-      
-    } catch (error) {
-      console.error('❌ Error in changeBranch:', error);
-      return { success: false, error: error.message };
-    } finally {
-      // Liberar el lock después de un breve delay
-      setTimeout(() => {
-        changingBranchRef.current = false;
-        console.log('🔓 Branch change lock released');
-      }, 1000);
-    }
-  }, [selectBranch, canChangeBranch, availableBranches, getBranchById]);
+    
+    console.log('🎉 Branch change completed successfully');
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Error in changeBranch:', error);
+    return { success: false, error: error.message };
+  } finally {
+    setTimeout(() => {
+      changingBranchRef.current = false;
+    }, 1000);
+  }
+}, [selectBranch, canChangeBranch, availableBranches, getBranchById]);
 
   const getBranchDisplayName = useCallback(() => {
     return selectedBranch?.name || branchStats?.branchName || 'Sin sucursal';

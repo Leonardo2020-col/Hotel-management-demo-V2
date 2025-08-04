@@ -1,4 +1,4 @@
-// src/components/common/BranchSwitcher.jsx - VERSIÓN OPTIMIZADA ANTI-REFRESH
+// src/components/common/BranchSwitcher.jsx - VERSIÓN ANTI-REFRESH DEFINITIVA
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Building2, 
@@ -26,99 +26,141 @@ const BranchSwitcher = ({ className = '' }) => {
 
   const [isOpen, setIsOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [branchStats, setBranchStats] = useState({});
-  const [loadingStats, setLoadingStats] = useState(false);
   const [error, setError] = useState(null);
   
-  // Referencias para prevenir eventos no deseados
+  // 🔧 REFERENCIAS CRÍTICAS PARA PREVENIR REFRESH
   const dropdownRef = useRef(null);
-  const switchingRef = useRef(false);
+  const operationInProgress = useRef(false);
+  const timeoutRef = useRef(null);
 
-  // 🔧 PREVENIR COMPORTAMIENTO POR DEFECTO Y PROPAGACIÓN
-  const preventDefaults = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
+  // 🛡️ FUNCIÓN ULTRA-SEGURA PARA PREVENIR TODOS LOS REFRESHES
+  const preventAllEvents = useCallback((e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      
+      // Prevenir submit de formularios
+      if (e.type === 'submit') {
+        return false;
+      }
+      
+      // Prevenir navegación de enlaces
+      if (e.target?.tagName === 'A' || e.target?.closest('a')) {
+        return false;
+      }
+    }
+    return false;
   }, []);
 
-  const handleDropdownClick = useCallback((e) => {
-    preventDefaults(e);
+  // 🔧 TOGGLE DROPDOWN ULTRA-SEGURO
+  const handleDropdownToggle = useCallback((e) => {
+    preventAllEvents(e);
     
-    if (switching || loading || switchingRef.current) {
-      console.log('🚫 Dropdown click blocked - operation in progress');
-      return;
+    if (switching || loading || operationInProgress.current) {
+      console.log('🚫 Dropdown toggle blocked - operation in progress');
+      return false;
     }
     
-    setIsOpen(!isOpen);
-    console.log('🔄 Dropdown toggled:', !isOpen);
-  }, [isOpen, switching, loading, preventDefaults]);
+    setIsOpen(prev => !prev);
+    return false;
+  }, [switching, loading, preventAllEvents]);
 
-  // 🔧 FUNCIÓN MEJORADA PARA CAMBIO DE SUCURSAL
-  const handleBranchChange = useCallback(async (e, branch) => {
-    preventDefaults(e);
+  // 🔧 CAMBIO DE SUCURSAL ULTRA-SEGURO
+  const handleBranchChange = useCallback(async (e, branchId) => {
+    preventAllEvents(e);
     
-    console.log('🔄 Branch change initiated for:', branch.name);
+    console.log('🏢 ANTI-REFRESH branch change initiated for ID:', branchId);
     
-    // Verificaciones múltiples para prevenir ejecuciones duplicadas
-    if (switching || switchingRef.current || !canChangeBranch() || loading) {
+    // VERIFICACIONES MÚLTIPLES
+    if (
+      switching || 
+      operationInProgress.current || 
+      !canChangeBranch() || 
+      loading ||
+      !branchId
+    ) {
       console.log('❌ Branch change blocked:', { 
         switching, 
-        switchingRef: switchingRef.current,
+        operationInProgress: operationInProgress.current,
         canChangeBranch: canChangeBranch(), 
-        loading 
+        loading,
+        branchId
       });
-      return;
+      return false;
     }
 
-    // Marcar como en proceso
+    // LOCKS MÚLTIPLES
     setSwitching(true);
-    switchingRef.current = true;
+    operationInProgress.current = true;
     setError(null);
     
+    // TIMEOUT DE SEGURIDAD
+    timeoutRef.current = setTimeout(() => {
+      console.error('⏰ Branch change timeout - resetting locks');
+      setSwitching(false);
+      operationInProgress.current = false;
+      setError('Timeout: La operación demoró demasiado');
+    }, 10000);
+    
     try {
-      console.log('📞 Calling changeBranch function...');
+      console.log('📞 Calling changeBranch with ANTI-REFRESH protection...');
       
-      // Agregar timeout para evitar colgados
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout: Operación demoró más de 10 segundos')), 10000)
-      );
-      
-      const result = await Promise.race([
-        changeBranch(branch.id),
-        timeoutPromise
-      ]);
+      const result = await changeBranch(branchId);
       
       console.log('✅ Branch change result:', result);
       
       if (result.success) {
         setIsOpen(false);
-        console.log('🎉 Branch successfully changed to:', branch.name);
+        console.log('🎉 Branch successfully changed - NO REFRESH');
         
-        // Limpiar estados después de un breve delay
+        // Limpiar locks después de éxito
         setTimeout(() => {
           setSwitching(false);
-          switchingRef.current = false;
-        }, 500);
+          operationInProgress.current = false;
+        }, 1000);
       } else {
         throw new Error(result.error || 'Error al cambiar de sucursal');
       }
       
     } catch (error) {
-      console.error('❌ Error changing branch:', error);
+      console.error('❌ Error in ANTI-REFRESH branch change:', error);
       setError(error.message);
       setSwitching(false);
-      switchingRef.current = false;
+      operationInProgress.current = false;
+    } finally {
+      // Limpiar timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
     }
-  }, [changeBranch, canChangeBranch, switching, loading, preventDefaults]);
+    
+    return false;
+  }, [changeBranch, canChangeBranch, switching, loading, preventAllEvents]);
 
-  // Cargar estadísticas cuando se abra el dropdown
-  useEffect(() => {
-    if (isOpen && availableBranches.length > 0 && !loadingStats) {
-      loadBranchStats();
+  // 🔧 REFRESH ULTRA-SEGURO
+  const handleRefresh = useCallback(async (e) => {
+    preventAllEvents(e);
+    
+    try {
+      await refreshAvailableBranches();
+    } catch (error) {
+      console.error('Error refreshing branches:', error);
+      setError('Error al actualizar sucursales');
     }
-  }, [isOpen, availableBranches]);
+    
+    return false;
+  }, [refreshAvailableBranches, preventAllEvents]);
 
-  // Cerrar dropdown cuando se haga clic fuera
+  // 🔧 CLOSE ULTRA-SEGURO
+  const handleClose = useCallback((e) => {
+    preventAllEvents(e);
+    setIsOpen(false);
+    return false;
+  }, [preventAllEvents]);
+
+  // Cerrar al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -137,78 +179,17 @@ const BranchSwitcher = ({ className = '' }) => {
     }
   }, [isOpen]);
 
-  // Limpiar estados cuando se desmonte el componente
+  // Limpiar al desmontar
   useEffect(() => {
     return () => {
-      setSwitching(false);
-      switchingRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      operationInProgress.current = false;
     };
   }, []);
 
-  const loadBranchStats = async () => {
-    if (loadingStats) return;
-
-    try {
-      setLoadingStats(true);
-      const { db } = await import('../../lib/supabase');
-      
-      const statsPromises = availableBranches.map(async (branch) => {
-        try {
-          const { data: stats } = await db.getBranchStats(branch.id);
-          return { branchId: branch.id, stats };
-        } catch (error) {
-          console.warn(`Error loading stats for branch ${branch.id}:`, error);
-          return { branchId: branch.id, stats: null };
-        }
-      });
-
-      const statsResults = await Promise.all(statsPromises);
-      
-      const statsMap = {};
-      statsResults.forEach(({ branchId, stats }) => {
-        statsMap[branchId] = stats || {
-          occupancyRate: 0,
-          currentGuests: 0,
-          totalRooms: 0
-        };
-      });
-
-      setBranchStats(statsMap);
-    } catch (error) {
-      console.error('Error loading branch stats:', error);
-    } finally {
-      setLoadingStats(false);
-    }
-  };
-
-  const handleRefresh = useCallback(async (e) => {
-    preventDefaults(e);
-    
-    try {
-      await refreshAvailableBranches();
-      if (isOpen) {
-        await loadBranchStats();
-      }
-    } catch (error) {
-      console.error('Error refreshing branches:', error);
-      setError('Error al actualizar sucursales');
-    }
-  }, [refreshAvailableBranches, isOpen, preventDefaults]);
-
-  const getBranchStats = (branchId) => {
-    return branchStats[branchId] || {
-      occupancyRate: 0,
-      currentGuests: 0,
-      totalRooms: 0
-    };
-  };
-
-  const closeDropdown = useCallback((e) => {
-    preventDefaults(e);
-    setIsOpen(false);
-  }, [preventDefaults]);
-
-  // Componente para usuarios sin permisos de cambio
+  // Componente para usuarios sin permisos
   if (!canChangeBranch() || !selectedBranch) {
     return (
       <div className={`flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-lg ${className}`}>
@@ -238,28 +219,19 @@ const BranchSwitcher = ({ className = '' }) => {
     );
   }
 
-  // Sin sucursales disponibles
-  if (availableBranches.length === 0) {
-    return (
-      <div className={`flex items-center space-x-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg ${className}`}>
-        <AlertCircle className="w-4 h-4 text-red-600" />
-        <div className="text-sm">
-          <div className="font-medium text-red-900">Sin sucursales</div>
-          <div className="text-red-600 text-xs">No hay sucursales disponibles</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
-      {/* Branch Selector Button */}
-      <button
-        type="button"
-        onClick={handleDropdownClick}
-        disabled={switching || loading || switchingRef.current}
-        className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[200px]"
-        style={{ outline: 'none' }} // Prevenir outline de enfoque
+      {/* 🛡️ BOTÓN PRINCIPAL ULTRA-SEGURO */}
+      <div
+        onMouseDown={handleDropdownToggle}
+        className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer min-w-[200px] select-none"
+        style={{ 
+          outline: 'none',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+          WebkitTouchCallout: 'none',
+          WebkitTapHighlightColor: 'transparent'
+        }}
       >
         <Building2 className="w-4 h-4 text-gray-600 flex-shrink-0" />
         <div className="text-left flex-1 min-w-0">
@@ -270,90 +242,86 @@ const BranchSwitcher = ({ className = '' }) => {
             {selectedBranch?.location || ''}
           </div>
         </div>
-        {(switching || switchingRef.current) ? (
+        {(switching || operationInProgress.current) ? (
           <RefreshCw className="w-4 h-4 text-gray-400 animate-spin flex-shrink-0" />
         ) : (
           <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
         )}
-      </button>
+      </div>
 
       {/* Error Message */}
       {error && (
         <div className="absolute top-full left-0 right-0 mt-1 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 z-50">
           {error}
-          <button 
-            onClick={() => setError(null)}
-            className="ml-2 text-red-500 hover:text-red-700"
+          <span 
+            onMouseDown={() => setError(null)}
+            className="ml-2 text-red-500 hover:text-red-700 cursor-pointer"
           >
             <X className="w-3 h-3 inline" />
-          </button>
+          </span>
         </div>
       )}
 
-      {/* Dropdown Menu */}
+      {/* 🛡️ DROPDOWN ULTRA-SEGURO */}
       {isOpen && (
         <div 
-          className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-96 overflow-hidden"
-          onClick={preventDefaults} // Prevenir propagación en todo el dropdown
+          className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-96 overflow-hidden select-none"
+          style={{ 
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none'
+          }}
         >
+          {/* Header */}
           <div className="p-3 border-b border-gray-100">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">
-                  Cambiar Sucursal
+                  🛡️ Anti-Refresh Branch Switcher
                 </h3>
                 <p className="text-xs text-gray-500">
                   {availableBranches.length} sucursal{availableBranches.length !== 1 ? 'es' : ''} disponible{availableBranches.length !== 1 ? 's' : ''}
                 </p>
               </div>
               <div className="flex space-x-1">
-                <button
-                  type="button"
-                  onClick={handleRefresh}
-                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                <div
+                  onMouseDown={handleRefresh}
+                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                   title="Actualizar"
-                  disabled={branchesLoading || loadingStats}
-                  style={{ outline: 'none' }}
                 >
-                  <RefreshCw className={`w-4 h-4 ${(branchesLoading || loadingStats) ? 'animate-spin' : ''}`} />
-                </button>
-                <button
-                  type="button"
-                  onClick={closeDropdown}
-                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  <RefreshCw className="w-4 h-4" />
+                </div>
+                <div
+                  onMouseDown={handleClose}
+                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                   title="Cerrar"
-                  style={{ outline: 'none' }}
                 >
                   <X className="w-4 h-4" />
-                </button>
+                </div>
               </div>
             </div>
           </div>
           
+          {/* Branch List */}
           <div className="max-h-80 overflow-y-auto">
-            {loadingStats && (
-              <div className="p-4 text-center">
-                <RefreshCw className="w-5 h-5 text-gray-400 animate-spin mx-auto mb-2" />
-                <p className="text-xs text-gray-500">Cargando estadísticas...</p>
-              </div>
-            )}
-            
             {availableBranches.map((branch) => {
-              const stats = getBranchStats(branch.id);
               const isSelected = isBranchSelected(branch.id);
               
               return (
-                <button
+                <div
                   key={branch.id}
-                  type="button"
-                  onClick={(e) => handleBranchChange(e, branch)}
-                  disabled={switching || switchingRef.current}
-                  className={`w-full p-4 text-left hover:bg-gray-50 transition-colors disabled:opacity-50 border-b border-gray-50 last:border-b-0 ${
+                  onMouseDown={(e) => handleBranchChange(e, branch.id)}
+                  className={`w-full p-4 text-left hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0 cursor-pointer select-none ${
                     isSelected 
                       ? 'bg-blue-50 border-l-4 border-l-blue-500' 
                       : ''
-                  } ${(switching || switchingRef.current) ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                  style={{ outline: 'none' }}
+                  } ${(switching || operationInProgress.current) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={{ 
+                    outline: 'none',
+                    WebkitUserSelect: 'none',
+                    userSelect: 'none',
+                    WebkitTouchCallout: 'none'
+                  }}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
@@ -364,7 +332,7 @@ const BranchSwitcher = ({ className = '' }) => {
                         {isSelected && (
                           <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
                         )}
-                        {(switching || switchingRef.current) && !isSelected && (
+                        {(switching || operationInProgress.current) && !isSelected && (
                           <RefreshCw className="w-4 h-4 text-gray-400 animate-spin flex-shrink-0" />
                         )}
                       </div>
@@ -381,30 +349,25 @@ const BranchSwitcher = ({ className = '' }) => {
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center text-gray-600">
                           <Users className="w-3 h-3 mr-1" />
-                          {stats.currentGuests}/{stats.totalRooms || branch.rooms_count || 0} ocupadas
+                          Habitaciones disponibles
                         </div>
                         <div className="text-right">
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            stats.occupancyRate >= 80 
-                              ? 'bg-green-100 text-green-700' 
-                              : stats.occupancyRate >= 60 
-                              ? 'bg-yellow-100 text-yellow-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}>
-                            {stats.occupancyRate}% ocupación
+                          <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">
+                            Activa
                           </span>
                         </div>
                       </div>
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
           
+          {/* Footer */}
           <div className="p-3 border-t border-gray-100 bg-gray-50">
             <p className="text-xs text-gray-500 text-center">
-              Los datos se actualizarán automáticamente al cambiar de sucursal
+              🛡️ Sin refresh - Los datos se actualizarán sin recargar la página
             </p>
           </div>
         </div>
