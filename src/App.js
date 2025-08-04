@@ -322,8 +322,8 @@ function App() {
             <AppRoutes />
           </div>
         </ReceptionProvider>
+        <BranchSwitcherDebug />
       </AuthProvider>
-      <BranchSwitcherDebug />
     </Router>
   );
 }
