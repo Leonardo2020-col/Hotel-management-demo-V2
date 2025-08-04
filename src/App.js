@@ -22,6 +22,11 @@ import MainLayout from './layout/MainLayout';
 
 // debug
 import BranchSwitcherDebug from './components/debug/BranchSwitcherDebug';
+import EnhancedBranchDebug from './components/debug/EnhancedBranchDebug';
+import BranchSwitcherFailSafe from './components/common/BranchSwitcherFailSafe';
+
+
+
 
 
 // Import pages
@@ -321,8 +326,10 @@ function App() {
             
             <AppRoutes />
           </div>
-        </ReceptionProvider>
+          <EnhancedBranchDebug />
         <BranchSwitcherDebug />
+        <BranchSwitcherFailSafe />
+        </ReceptionProvider>
       </AuthProvider>
     </Router>
   );
