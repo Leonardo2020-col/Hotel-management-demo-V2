@@ -27,34 +27,37 @@ export const useBranch = () => {
     }
   }, [selectedBranch?.id]);
 
-  const loadAvailableBranches = useCallback(async () => {
-    if (!user?.id || loadingBranchesRef.current) return;
-    
-    try {
-      setBranchesLoading(true);
-      loadingBranchesRef.current = true;
-      
-      console.log('🏢 Loading available branches for user:', user.id);
-      
-      if (user.role === 'admin') {
-        const { data: branches, error } = await db.getBranches();
-        if (error) throw error;
-        setAvailableBranches(branches || []);
-        console.log(`✅ Loaded ${branches?.length || 0} branches for admin`);
-      } else {
-        const { data: userBranches, error } = await db.getUserBranches(user.id);
-        if (error) throw error;
-        setAvailableBranches(userBranches || []);
-        console.log(`✅ Loaded ${userBranches?.length || 0} branches for user`);
-      }
-    } catch (error) {
-      console.error('Error loading available branches:', error);
-      setAvailableBranches([]);
-    } finally {
-      setBranchesLoading(false);
-      loadingBranchesRef.current = false;
-    }
-  }, [user?.id, user?.role]);
+  // En src/hooks/useBranch.js - actualizar loadAvailableBranches
+const loadAvailableBranches = useCallback(async () => {
+ if (!user?.id || loadingBranchesRef.current) return;
+ 
+ try {
+   setBranchesLoading(true);
+   loadingBranchesRef.current = true;
+   
+   console.log('🏢 Loading available branches for Supabase user:', user.id);
+   
+   if (user.role === 'admin') {
+     // Admin ve todas las sucursales
+     const { data: branches, error } = await db.getBranches();
+     if (error) throw error;
+     setAvailableBranches(branches || []);
+     console.log(`✅ Loaded ${branches?.length || 0} branches for admin`);
+   } else {
+     // Recepción ve solo sus sucursales asignadas
+     const { data: userBranches, error } = await db.getUserBranches(user.id);
+     if (error) throw error;
+     setAvailableBranches(userBranches || []);
+     console.log(`✅ Loaded ${userBranches?.length || 0} branches for user`);
+   }
+ } catch (error) {
+   console.error('Error loading available branches:', error);
+   setAvailableBranches([]);
+ } finally {
+   setBranchesLoading(false);
+   loadingBranchesRef.current = false;
+ }
+}, [user?.id, user?.role]);
 
   const loadCurrentBranchStats = useCallback(async () => {
     if (!selectedBranch?.id || statsLoading) return;

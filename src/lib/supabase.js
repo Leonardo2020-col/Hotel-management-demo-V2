@@ -489,48 +489,105 @@ async getRoomsByBranch(branchId, filters = {}) {
 // Obtener sucursales de un usuario
 async getUserBranches(userId) {
   try {
-    console.log(`👤 Getting branches for user ${userId}...`)
+    console.log(`👤 Getting branches for user ${userId} from Supabase...`);
+    
+    // Verificar que el userId sea válido
+    if (!userId) {
+      console.error('❌ No userId provided to getUserBranches');
+      return { data: [], error: { message: 'ID de usuario requerido' } };
+    }
     
     const { data, error } = await supabase
       .from('user_branches')
       .select(`
-        *,
-        branch:branches(*)
+        id,
+        is_default,
+        created_at,
+        branch:branches(
+          id,
+          name,
+          location,
+          address,
+          phone,
+          manager,
+          code,
+          features,
+          timezone,
+          rooms_count,
+          is_active
+        )
       `)
       .eq('user_id', userId)
       .eq('branch.is_active', true)
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true });
     
     if (error) {
-      console.error('Error getting user branches:', error)
-      throw error
+      console.error('❌ Error fetching user branches:', error);
+      throw error;
     }
     
-    const userBranches = data?.map(ub => ({
+    // Transformar datos para compatibilidad
+    const userBranches = (data || []).map(ub => ({
       ...ub.branch,
       isDefault: ub.is_default,
-      userBranchId: ub.id
-    })) || []
+      userBranchId: ub.id,
+      assignedAt: ub.created_at
+    }));
     
-    console.log(`✅ User ${userId} has access to ${userBranches.length} branches`)
-    return { data: userBranches, error: null }
+    console.log(`✅ User ${userId} has access to ${userBranches.length} branches:`, 
+      userBranches.map(b => `${b.name} (${b.isDefault ? 'default' : 'secondary'})`));
+    
+    return { data: userBranches, error: null };
     
   } catch (error) {
-    console.error(`Error getting branches for user ${userId}:`, error)
-    return { data: [], error }
+    console.error(`❌ Error getting branches for user ${userId}:`, error);
+    return { data: [], error };
+  }
+},
+
+// Función adicional para verificar si un usuario tiene acceso a una sucursal específica
+async checkUserBranchAccess(userId, branchId) {
+  try {
+    console.log(`🔍 Checking if user ${userId} has access to branch ${branchId}...`);
+    
+    const { data, error } = await supabase
+      .from('user_branches')
+      .select('id, is_default')
+      .eq('user_id', userId)
+      .eq('branch_id', branchId)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') {
+      throw error;
+    }
+    
+    const hasAccess = !!data;
+    console.log(`${hasAccess ? '✅' : '❌'} User ${userId} ${hasAccess ? 'has' : 'does not have'} access to branch ${branchId}`);
+    
+    return {
+      hasAccess,
+      isDefault: data?.is_default || false,
+      error: null
+    };
+    
+  } catch (error) {
+    console.error(`Error checking user branch access:`, error);
+    return { hasAccess: false, isDefault: false, error };
   }
 },
 
 // Asignar sucursal a usuario
 async assignUserToBranch(userId, branchId, isDefault = false) {
   try {
-    console.log(`👤 Assigning user ${userId} to branch ${branchId}...`)
+    console.log(`👤 Assigning user ${userId} to branch ${branchId} (default: ${isDefault})...`);
     
-    // Si es sucursal por defecto, remover default de otras
+    // Si va a ser default, remover default de otras sucursales del usuario
     if (isDefault) {
       await supabase
         .from('user_branches')
         .update({ is_default: false })
-        .eq('user_id', userId)
+        .eq('user_id', userId);
     }
     
     const { data, error } = await supabase
@@ -539,50 +596,157 @@ async assignUserToBranch(userId, branchId, isDefault = false) {
         user_id: userId,
         branch_id: branchId,
         is_default: isDefault
-      }])
-      .select()
-      .single()
+      }], {
+        onConflict: 'user_id,branch_id'
+      })
+      .select(`
+        id,
+        is_default,
+        branch:branches(name, code)
+      `)
+      .single();
     
     if (error) {
-      console.error('Error assigning user to branch:', error)
-      throw error
+      console.error('❌ Error assigning user to branch:', error);
+      throw error;
     }
     
-    console.log(`✅ User ${userId} assigned to branch ${branchId}`)
-    return { data, error: null }
+    console.log(`✅ User ${userId} assigned to branch ${data.branch.name} (${data.branch.code})`);
+    return { data, error: null };
     
   } catch (error) {
-    console.error(`Error assigning user to branch:`, error)
-    return { data: null, error }
+    console.error(`❌ Error assigning user to branch:`, error);
+    return { data: null, error };
   }
 },
 
 // Remover usuario de sucursal
 async removeUserFromBranch(userId, branchId) {
   try {
-    console.log(`👤 Removing user ${userId} from branch ${branchId}...`)
+    console.log(`👤 Removing user ${userId} from branch ${branchId}...`);
+    
+    // Verificar que no sea la única sucursal del usuario
+    const { data: userBranches } = await supabase
+      .from('user_branches')
+      .select('id')
+      .eq('user_id', userId);
+    
+    if (userBranches && userBranches.length <= 1) {
+      throw new Error('No se puede remover la única sucursal asignada al usuario');
+    }
     
     const { data, error } = await supabase
       .from('user_branches')
       .delete()
       .eq('user_id', userId)
       .eq('branch_id', branchId)
-      .select()
+      .select(`
+        branch:branches(name, code)
+      `);
     
     if (error) {
-      console.error('Error removing user from branch:', error)
-      throw error
+      console.error('❌ Error removing user from branch:', error);
+      throw error;
     }
     
-    console.log(`✅ User ${userId} removed from branch ${branchId}`)
-    return { data, error: null }
+    console.log(`✅ User ${userId} removed from branch`);
+    return { data, error: null };
     
   } catch (error) {
-    console.error(`Error removing user from branch:`, error)
-    return { data: null, error }
+    console.error(`❌ Error removing user from branch:`, error);
+    return { data: null, error };
   }
 },
 
+// Función para cambiar sucursal default de un usuario
+async setUserDefaultBranch(userId, branchId) {
+  try {
+    console.log(`👤 Setting branch ${branchId} as default for user ${userId}...`);
+    
+    // Verificar que el usuario tiene acceso a esa sucursal
+    const { hasAccess } = await this.checkUserBranchAccess(userId, branchId);
+    if (!hasAccess) {
+      throw new Error('El usuario no tiene acceso a esa sucursal');
+    }
+    
+    // Remover default de todas las sucursales del usuario
+    await supabase
+      .from('user_branches')
+      .update({ is_default: false })
+      .eq('user_id', userId);
+    
+    // Establecer nueva sucursal default
+    const { data, error } = await supabase
+      .from('user_branches')
+      .update({ is_default: true })
+      .eq('user_id', userId)
+      .eq('branch_id', branchId)
+      .select(`
+        id,
+        branch:branches(name, code)
+      `)
+      .single();
+    
+    if (error) {
+      console.error('❌ Error setting default branch:', error);
+      throw error;
+    }
+    
+    console.log(`✅ Branch ${data.branch.name} set as default for user ${userId}`);
+    return { data, error: null };
+    
+  } catch (error) {
+    console.error(`❌ Error setting default branch:`, error);
+    return { data: null, error };
+  }
+},
+
+// Función para obtener usuarios con acceso a una sucursal específica
+async getBranchUsers(branchId) {
+  try {
+    console.log(`👥 Getting users with access to branch ${branchId}...`);
+    
+    const { data, error } = await supabase
+      .from('user_branches')
+      .select(`
+        id,
+        is_default,
+        created_at,
+        user:users(
+          id,
+          email,
+          name,
+          role,
+          is_active,
+          last_login
+        )
+      `)
+      .eq('branch_id', branchId)
+      .eq('user.is_active', true)
+      .order('is_default', { ascending: false })
+      .order('user.role')
+      .order('user.name');
+    
+    if (error) {
+      console.error('❌ Error fetching branch users:', error);
+      throw error;
+    }
+    
+    const branchUsers = (data || []).map(ub => ({
+      ...ub.user,
+      isDefault: ub.is_default,
+      assignedAt: ub.created_at,
+      userBranchId: ub.id
+    }));
+    
+    console.log(`✅ Found ${branchUsers.length} users with access to branch ${branchId}`);
+    return { data: branchUsers, error: null };
+    
+  } catch (error) {
+    console.error(`❌ Error getting branch users:`, error);
+    return { data: [], error };
+  }
+},
 
 // Obtener reservas filtradas por sucursal
 async getReservationsByBranch(branchId, filters = {}) {
