@@ -322,70 +322,92 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const selectBranch = useCallback(async (branch) => {
-    if (branchSelectionRef.current) {
-      console.log('❌ Branch selection already in progress');
-      return { success: false, error: 'Selección de sucursal ya en progreso' };
+  if (branchSelectionRef.current) {
+    console.log('❌ Branch selection already in progress');
+    return { success: false, error: 'Selección de sucursal ya en progreso' };
+  }
+
+  console.log('🏢 AuthContext.selectBranch called for:', branch.name);
+  
+  dispatch({ type: 'BRANCH_SWITCHING_START' });
+  branchSelectionRef.current = true;
+  
+  try {
+    // Validar que la sucursal existe
+    const { data: validBranch, error } = await db.getBranchById(branch.id);
+    if (error || !validBranch) {
+      throw new Error('Sucursal no válida o no encontrada');
     }
 
-    console.log('🏢 AuthContext.selectBranch called for:', branch.name);
+    console.log('✅ Branch validated:', validBranch.name);
     
-    dispatch({ type: 'BRANCH_SWITCHING_START' });
-    branchSelectionRef.current = true;
+    // Guardar sucursal seleccionada
+    const branchToSave = {
+      ...validBranch,
+      selectedAt: new Date().toISOString()
+    };
     
+    // GUARDAR SIN NAVEGACIÓN
     try {
-      // Validar que la sucursal existe
-      const { data: validBranch, error } = await db.getBranchById(branch.id);
-      if (error || !validBranch) {
-        throw new Error('Sucursal no válida o no encontrada');
-      }
-
-      console.log('✅ Branch validated:', validBranch.name);
-      
-      // Guardar sucursal seleccionada
-      const branchToSave = {
-        ...validBranch,
-        selectedAt: new Date().toISOString()
-      };
-      
       localStorage.setItem('hotel_selected_branch', JSON.stringify(branchToSave));
-      
-      // Actualizar estado
-      dispatch({
-        type: 'BRANCH_SWITCHING_SUCCESS',
-        payload: branchToSave
-      });
-
-      console.log('🎉 Branch selection completed successfully:', branchToSave.name);
-      return { success: true };
-      
-    } catch (error) {
-      console.error('❌ Branch selection failed:', error.message);
-      dispatch({ 
-        type: 'BRANCH_SWITCHING_ERROR', 
-        payload: error.message 
-      });
-      return { success: false, error: error.message };
-    } finally {
-      setTimeout(() => {
-        branchSelectionRef.current = false;
-      }, 500);
+      console.log('💾 Branch saved to localStorage without navigation');
+    } catch (storageError) {
+      console.warn('Warning: Could not save to localStorage:', storageError);
+      // Continuar sin localStorage
     }
-  }, []);
+    
+    // ACTUALIZAR ESTADO SIN NAVEGACIÓN
+    dispatch({
+      type: 'BRANCH_SWITCHING_SUCCESS',
+      payload: branchToSave
+    });
+
+    console.log('🎉 Branch selection completed WITHOUT navigation/refresh:', branchToSave.name);
+    
+    // ❌ NO HACER ESTO - CAUSA REFRESH:
+    // window.location.reload();
+    // window.location.href = '/';
+    // navigate('/');
+    
+    return { success: true };
+    
+  } catch (error) {
+    console.error('❌ Branch selection failed:', error.message);
+    dispatch({ 
+      type: 'BRANCH_SWITCHING_ERROR', 
+      payload: error.message 
+    });
+    return { success: false, error: error.message };
+  } finally {
+    setTimeout(() => {
+      branchSelectionRef.current = false;
+      console.log('🔓 Branch selection lock released');
+    }, 500);
+  }
+}, []);
 
   const changeBranch = useCallback(async (branchId) => {
-    try {
-      console.log('🔄 AuthContext.changeBranch called with ID:', branchId);
-      const { data: branch, error } = await db.getBranchById(branchId);
-      if (error || !branch) {
-        return { success: false, error: 'Sucursal no encontrada' };
-      }
-
-      return await selectBranch(branch);
-    } catch (error) {
-      console.error('❌ changeBranch error:', error.message);
-      return { success: false, error: error.message };
+  try {
+    console.log('🔄 AuthContext.changeBranch called with ID:', branchId);
+    const { data: branch, error } = await db.getBranchById(branchId);
+    if (error || !branch) {
+      return { success: false, error: 'Sucursal no encontrada' };
     }
-  }, [selectBranch]);
+
+    // SOLO LLAMAR selectBranch - SIN NAVEGACIÓN
+    const result = await selectBranch(branch);
+    
+    // ❌ NO HACER ESTO - CAUSA REFRESH:
+    // if (result.success) {
+    //   window.location.reload();
+    // }
+    
+    return result;
+  } catch (error) {
+    console.error('❌ changeBranch error:', error.message);
+    return { success: false, error: error.message };
+  }
+}, [selectBranch]);
 
   const logout = useCallback(async () => {
     console.log('👋 Logging out user');

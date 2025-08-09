@@ -1,4 +1,4 @@
-// src/components/common/BranchSwitcher.jsx - VERSIÓN ANTI-REFRESH DEFINITIVA
+// src/components/common/BranchSwitcher.jsx - VERSIÓN DEFINITIVA SIN REFRESH
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Building2, 
@@ -28,106 +28,150 @@ const BranchSwitcher = ({ className = '' }) => {
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState(null);
   
-  // 🔧 REFERENCIAS CRÍTICAS PARA PREVENIR REFRESH
+  // 🔧 REFERENCIAS CRÍTICAS ANTI-REFRESH
   const dropdownRef = useRef(null);
-  const operationInProgress = useRef(false);
+  const operationLock = useRef(false);
   const timeoutRef = useRef(null);
+  const mountedRef = useRef(true);
 
-  // 🛡️ FUNCIÓN ULTRA-SEGURA PARA PREVENIR TODOS LOS REFRESHES
-  const preventAllEvents = useCallback((e) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+  // 🛡️ PREVENIR ABSOLUTAMENTE TODOS LOS REFRESHES
+  const preventAllRefresh = useCallback((e) => {
+    if (!e) return false;
+    
+    try {
+      // Prevenir comportamientos por defecto
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
       
-      // Prevenir submit de formularios
-      if (e.type === 'submit') {
+      // Prevenir submit de forms
+      if (e.type === 'submit' || e.target?.tagName === 'FORM') {
+        console.warn('🚫 Form submit prevented');
         return false;
       }
       
-      // Prevenir navegación de enlaces
+      // Prevenir navegación de links
       if (e.target?.tagName === 'A' || e.target?.closest('a')) {
+        console.warn('🚫 Link navigation prevented');
         return false;
       }
+      
+      // Prevenir teclas que pueden causar navegación
+      if (e.key === 'Enter' || e.key === ' ') {
+        return false;
+      }
+      
+    } catch (error) {
+      console.warn('Error in preventAllRefresh:', error);
     }
+    
     return false;
   }, []);
 
-  // 🔧 TOGGLE DROPDOWN ULTRA-SEGURO
-  const handleDropdownToggle = useCallback((e) => {
-    preventAllEvents(e);
-    
-    if (switching || loading || operationInProgress.current) {
-      console.log('🚫 Dropdown toggle blocked - operation in progress');
+  // 🔧 SAFE WRAPPER PARA TODOS LOS HANDLERS
+  const createSafeHandler = useCallback((handler) => {
+    return (e) => {
+      preventAllRefresh(e);
+      
+      if (!mountedRef.current) {
+        console.warn('🚫 Component unmounted, ignoring event');
+        return false;
+      }
+      
+      try {
+        handler(e);
+      } catch (error) {
+        console.error('Error in safe handler:', error);
+        setError('Error en la operación');
+      }
+      
       return false;
+    };
+  }, [preventAllRefresh]);
+
+  // 🔧 TOGGLE DROPDOWN ULTRA-SEGURO
+  const handleDropdownToggle = createSafeHandler(() => {
+    if (switching || loading || operationLock.current) {
+      console.log('🚫 Toggle blocked - operation in progress');
+      return;
     }
     
+    console.log('🔄 Toggling dropdown from', isOpen, 'to', !isOpen);
     setIsOpen(prev => !prev);
-    return false;
-  }, [switching, loading, preventAllEvents]);
+  });
 
   // 🔧 CAMBIO DE SUCURSAL ULTRA-SEGURO
-  const handleBranchChange = useCallback(async (e, branchId) => {
-    preventAllEvents(e);
+  const handleBranchChange = createSafeHandler(async (e) => {
+    const branchId = e.currentTarget?.dataset?.branchId;
+    const branchName = e.currentTarget?.dataset?.branchName;
     
-    console.log('🏢 ANTI-REFRESH branch change initiated for ID:', branchId);
+    console.log('🏢 Branch change initiated:', { branchId, branchName });
     
     // VERIFICACIONES MÚLTIPLES
-    if (
-      switching || 
-      operationInProgress.current || 
-      !canChangeBranch() || 
-      loading ||
-      !branchId
-    ) {
+    if (!branchId || 
+        switching || 
+        operationLock.current || 
+        !canChangeBranch() || 
+        loading) {
       console.log('❌ Branch change blocked:', { 
+        branchId: !!branchId,
         switching, 
-        operationInProgress: operationInProgress.current,
+        operationLock: operationLock.current,
         canChangeBranch: canChangeBranch(), 
-        loading,
-        branchId
+        loading 
       });
-      return false;
+      return;
     }
 
-    // LOCKS MÚLTIPLES
+    // TRIPLE LOCK SYSTEM
     setSwitching(true);
-    operationInProgress.current = true;
+    operationLock.current = true;
     setError(null);
     
     // TIMEOUT DE SEGURIDAD
     timeoutRef.current = setTimeout(() => {
-      console.error('⏰ Branch change timeout - resetting locks');
-      setSwitching(false);
-      operationInProgress.current = false;
-      setError('Timeout: La operación demoró demasiado');
-    }, 10000);
+      console.error('⏰ TIMEOUT: Branch change taking too long');
+      if (mountedRef.current) {
+        setError('Timeout: Operación demoró demasiado');
+        setSwitching(false);
+        operationLock.current = false;
+      }
+    }, 8000);
     
     try {
-      console.log('📞 Calling changeBranch with ANTI-REFRESH protection...');
+      console.log('📞 Calling changeBranch with MAXIMUM protection...');
       
-      const result = await changeBranch(branchId);
+      const result = await changeBranch(parseInt(branchId));
       
       console.log('✅ Branch change result:', result);
       
-      if (result.success) {
+      if (!mountedRef.current) {
+        console.warn('Component unmounted during operation');
+        return;
+      }
+      
+      if (result?.success) {
         setIsOpen(false);
-        console.log('🎉 Branch successfully changed - NO REFRESH');
+        console.log('🎉 SUCCESS: Branch changed without refresh!');
         
-        // Limpiar locks después de éxito
+        // Pequeña pausa para asegurar estado actualizado
         setTimeout(() => {
-          setSwitching(false);
-          operationInProgress.current = false;
-        }, 1000);
+          if (mountedRef.current) {
+            setSwitching(false);
+            operationLock.current = false;
+          }
+        }, 500);
       } else {
-        throw new Error(result.error || 'Error al cambiar de sucursal');
+        throw new Error(result?.error || 'Error desconocido al cambiar sucursal');
       }
       
     } catch (error) {
-      console.error('❌ Error in ANTI-REFRESH branch change:', error);
-      setError(error.message);
-      setSwitching(false);
-      operationInProgress.current = false;
+      console.error('❌ CRITICAL ERROR in branch change:', error);
+      if (mountedRef.current) {
+        setError(error.message || 'Error al cambiar sucursal');
+        setSwitching(false);
+        operationLock.current = false;
+      }
     } finally {
       // Limpiar timeout
       if (timeoutRef.current) {
@@ -135,32 +179,29 @@ const BranchSwitcher = ({ className = '' }) => {
         timeoutRef.current = null;
       }
     }
-    
-    return false;
-  }, [changeBranch, canChangeBranch, switching, loading, preventAllEvents]);
+  });
 
-  // 🔧 REFRESH ULTRA-SEGURO
-  const handleRefresh = useCallback(async (e) => {
-    preventAllEvents(e);
-    
+  // 🔧 REFRESH SEGURO
+  const handleRefresh = createSafeHandler(async () => {
     try {
       await refreshAvailableBranches();
     } catch (error) {
       console.error('Error refreshing branches:', error);
       setError('Error al actualizar sucursales');
     }
-    
-    return false;
-  }, [refreshAvailableBranches, preventAllEvents]);
+  });
 
-  // 🔧 CLOSE ULTRA-SEGURO
-  const handleClose = useCallback((e) => {
-    preventAllEvents(e);
+  // 🔧 CLOSE SEGURO
+  const handleClose = createSafeHandler(() => {
     setIsOpen(false);
-    return false;
-  }, [preventAllEvents]);
+  });
 
-  // Cerrar al hacer clic fuera
+  // 🔧 CLEAR ERROR SEGURO
+  const handleClearError = createSafeHandler(() => {
+    setError(null);
+  });
+
+  // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -179,13 +220,14 @@ const BranchSwitcher = ({ className = '' }) => {
     }
   }, [isOpen]);
 
-  // Limpiar al desmontar
+  // Cleanup al desmontar
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      operationInProgress.current = false;
+      operationLock.current = false;
     };
   }, []);
 
@@ -221,9 +263,10 @@ const BranchSwitcher = ({ className = '' }) => {
 
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
-      {/* 🛡️ BOTÓN PRINCIPAL ULTRA-SEGURO */}
+      {/* 🛡️ BOTÓN PRINCIPAL ULTRA-PROTEGIDO */}
       <div
         onMouseDown={handleDropdownToggle}
+        onTouchStart={handleDropdownToggle}
         className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer min-w-[200px] select-none"
         style={{ 
           outline: 'none',
@@ -242,8 +285,8 @@ const BranchSwitcher = ({ className = '' }) => {
             {selectedBranch?.location || ''}
           </div>
         </div>
-        {(switching || operationInProgress.current) ? (
-          <RefreshCw className="w-4 h-4 text-gray-400 animate-spin flex-shrink-0" />
+        {(switching || operationLock.current) ? (
+          <RefreshCw className="w-4 h-4 text-blue-600 animate-spin flex-shrink-0" />
         ) : (
           <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
         )}
@@ -252,17 +295,17 @@ const BranchSwitcher = ({ className = '' }) => {
       {/* Error Message */}
       {error && (
         <div className="absolute top-full left-0 right-0 mt-1 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 z-50">
-          {error}
-          <span 
-            onMouseDown={() => setError(null)}
-            className="ml-2 text-red-500 hover:text-red-700 cursor-pointer"
-          >
-            <X className="w-3 h-3 inline" />
-          </span>
+          <div className="flex items-center justify-between">
+            <span>{error}</span>
+            <X 
+              className="w-3 h-3 cursor-pointer hover:text-red-900" 
+              onMouseDown={handleClearError}
+            />
+          </div>
         </div>
       )}
 
-      {/* 🛡️ DROPDOWN ULTRA-SEGURO */}
+      {/* 🛡️ DROPDOWN ULTRA-PROTEGIDO */}
       {isOpen && (
         <div 
           className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-96 overflow-hidden select-none"
@@ -277,7 +320,7 @@ const BranchSwitcher = ({ className = '' }) => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">
-                  🛡️ Anti-Refresh Branch Switcher
+                  🛡️ Cambiar Sucursal (Anti-Refresh)
                 </h3>
                 <p className="text-xs text-gray-500">
                   {availableBranches.length} sucursal{availableBranches.length !== 1 ? 'es' : ''} disponible{availableBranches.length !== 1 ? 's' : ''}
@@ -310,12 +353,14 @@ const BranchSwitcher = ({ className = '' }) => {
               return (
                 <div
                   key={branch.id}
-                  onMouseDown={(e) => handleBranchChange(e, branch.id)}
+                  data-branch-id={branch.id}
+                  data-branch-name={branch.name}
+                  onMouseDown={handleBranchChange}
                   className={`w-full p-4 text-left hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0 cursor-pointer select-none ${
                     isSelected 
                       ? 'bg-blue-50 border-l-4 border-l-blue-500' 
                       : ''
-                  } ${(switching || operationInProgress.current) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  } ${(switching || operationLock.current) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   style={{ 
                     outline: 'none',
                     WebkitUserSelect: 'none',
@@ -332,7 +377,7 @@ const BranchSwitcher = ({ className = '' }) => {
                         {isSelected && (
                           <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
                         )}
-                        {(switching || operationInProgress.current) && !isSelected && (
+                        {(switching || operationLock.current) && !isSelected && (
                           <RefreshCw className="w-4 h-4 text-gray-400 animate-spin flex-shrink-0" />
                         )}
                       </div>
@@ -349,7 +394,7 @@ const BranchSwitcher = ({ className = '' }) => {
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center text-gray-600">
                           <Users className="w-3 h-3 mr-1" />
-                          Habitaciones disponibles
+                          {branch.rooms_count || 0} habitaciones
                         </div>
                         <div className="text-right">
                           <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">
@@ -367,8 +412,13 @@ const BranchSwitcher = ({ className = '' }) => {
           {/* Footer */}
           <div className="p-3 border-t border-gray-100 bg-gray-50">
             <p className="text-xs text-gray-500 text-center">
-              🛡️ Sin refresh - Los datos se actualizarán sin recargar la página
+              🛡️ Protección Anti-Refresh Activa - Sin recargas de página
             </p>
+            {(switching || operationLock.current) && (
+              <p className="text-xs text-blue-600 text-center mt-1">
+                🔄 Cambiando sucursal...
+              </p>
+            )}
           </div>
         </div>
       )}

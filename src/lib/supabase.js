@@ -742,7 +742,7 @@ async getBranchUsers(branchId) {
     console.log(`✅ Found ${branchUsers.length} users with access to branch ${branchId}`);
     return { data: branchUsers, error: null };
     
-  } catch (error) {
+  } catch (error) {v 
     console.error(`❌ Error getting branch users:`, error);
     return { data: [], error };
   }
