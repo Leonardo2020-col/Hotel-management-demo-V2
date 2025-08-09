@@ -1,11 +1,79 @@
-// src/context/AuthContext.js - VERSIÓN CON SUPABASE AUTH REAL
+// src/context/AuthContext.js - VERSIÓN OPTIMIZADA PARA EVITAR BUCLES
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { db, supabase } from '../lib/supabase';
 
 const AuthContext = createContext();
 
+// =============================================
+// VERSION MANAGEMENT PARA CACHE BUSTING
+// =============================================
+const APP_VERSION = process.env.REACT_APP_VERSION || '1.0.0';
+const BUILD_TIME = process.env.REACT_APP_BUILD_TIME || Date.now();
+
+const clearObsoleteCache = () => {
+  try {
+    const storedVersion = localStorage.getItem('hotel_app_version');
+    const storedBuildTime = localStorage.getItem('hotel_build_time');
+    
+    if (storedVersion !== APP_VERSION || storedBuildTime !== BUILD_TIME.toString()) {
+      console.log('🔄 New version detected, clearing cache...');
+      
+      // Limpiar solo datos de la app, mantener datos críticos
+      const keysToKeep = ['hotel_selected_branch'];
+      const allKeys = Object.keys(localStorage);
+      
+      allKeys.forEach(key => {
+        if (!keysToKeep.includes(key) && key.startsWith('hotel_')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Limpiar todo sessionStorage
+      sessionStorage.clear();
+      
+      // Guardar nueva versión
+      localStorage.setItem('hotel_app_version', APP_VERSION);
+      localStorage.setItem('hotel_build_time', BUILD_TIME.toString());
+      
+      console.log('✅ Cache cleared for new version:', APP_VERSION);
+    }
+  } catch (error) {
+    console.warn('Error managing cache version:', error);
+  }
+};
+
+// =============================================
+// REDUCER
+// =============================================
 const authReducer = (state, action) => {
   switch (action.type) {
+    case 'INIT_START':
+      return { ...state, loading: true, error: null };
+    
+    case 'INIT_SUCCESS':
+      return {
+        ...state,
+        loading: false,
+        isAuthenticated: true,
+        user: action.payload.user,
+        permissions: action.payload.permissions,
+        selectedBranch: action.payload.selectedBranch || null,
+        needsBranchSelection: action.payload.needsBranchSelection || false,
+        error: null
+      };
+    
+    case 'INIT_FAILURE':
+      return {
+        ...state,
+        loading: false,
+        isAuthenticated: false,
+        user: null,
+        permissions: null,
+        selectedBranch: null,
+        needsBranchSelection: false,
+        error: action.payload
+      };
+    
     case 'LOGIN_START':
       return { ...state, loading: true, error: null };
     
@@ -36,44 +104,8 @@ const authReducer = (state, action) => {
         loading: false
       };
     
-    case 'BRANCH_SWITCHING_START':
-      return {
-        ...state,
-        loading: true,
-        error: null
-      };
-    
-    case 'BRANCH_SWITCHING_SUCCESS':
-      return {
-        ...state,
-        loading: false,
-        selectedBranch: action.payload,
-        needsBranchSelection: false,
-        error: null
-      };
-    
-    case 'BRANCH_SWITCHING_ERROR':
-      return {
-        ...state,
-        loading: false,
-        error: action.payload
-      };
-    
-    case 'LOGIN_FAILURE':
-      return {
-        ...state,
-        loading: false,
-        isAuthenticated: false,
-        user: null,
-        permissions: null,
-        selectedBranch: null,
-        needsBranchSelection: false,
-        error: action.payload
-      };
-    
     case 'LOGOUT':
       return {
-        ...state,
         isAuthenticated: false,
         user: null,
         permissions: null,
@@ -85,9 +117,6 @@ const authReducer = (state, action) => {
     
     case 'CLEAR_ERROR':
       return { ...state, error: null };
-    
-    case 'SET_LOADING':
-      return { ...state, loading: action.payload };
     
     default:
       return state;
@@ -104,7 +133,9 @@ const initialState = {
   error: null
 };
 
-// Permisos por rol
+// =============================================
+// ROLE PERMISSIONS
+// =============================================
 const ROLE_PERMISSIONS = {
   admin: {
     dashboard: { read: true, write: true },
@@ -128,77 +159,119 @@ const ROLE_PERMISSIONS = {
   }
 };
 
+// =============================================
+// PROVIDER COMPONENT
+// =============================================
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
   
-  // Referencias para evitar operaciones duplicadas
-  const branchSelectionRef = useRef(false);
+  // Referencias para prevenir operaciones duplicadas
   const initializingRef = useRef(false);
+  const authListenerRef = useRef(null);
+  const mountedRef = useRef(true);
 
-  // Verificar sesión de Supabase al cargar
+  // ✅ CLEANUP CUANDO EL COMPONENTE SE DESMONTA
   useEffect(() => {
-    if (initializingRef.current) return;
-    checkSupabaseSession();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
-  // Listener para cambios de auth
+  // ✅ INICIALIZACIÓN ÚNICA
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('🔔 Auth state change:', event, session?.user?.email);
-        
-        if (event === 'SIGNED_IN' && session) {
-          await handleAuthUser(session.user);
-        } else if (event === 'SIGNED_OUT') {
-          handleLogout();
-        }
-      }
-    );
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const checkSupabaseSession = useCallback(async () => {
-    if (initializingRef.current) return;
+    // Limpiar caché obsoleto inmediatamente
+    clearObsoleteCache();
     
-    try {
+    // Solo inicializar una vez
+    if (!initializingRef.current) {
       initializingRef.current = true;
-      console.log('🔍 Checking Supabase session...');
+      initializeAuth();
+    }
+
+    // Cleanup al desmontar
+    return () => {
+      if (authListenerRef.current) {
+        authListenerRef.current.subscription?.unsubscribe();
+        authListenerRef.current = null;
+      }
+    };
+  }, []);
+
+  // ✅ FUNCIÓN DE INICIALIZACIÓN OPTIMIZADA
+  const initializeAuth = async () => {
+    try {
+      console.log('🔄 Initializing auth system...');
       
+      if (!mountedRef.current) return;
+      
+      dispatch({ type: 'INIT_START' });
+
+      // Configurar listener de auth una sola vez
+      if (!authListenerRef.current) {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (event, session) => {
+            if (!mountedRef.current) return;
+            
+            console.log('🔔 Auth state change:', event, session?.user?.email);
+            
+            if (event === 'SIGNED_IN' && session?.user) {
+              await handleAuthenticatedUser(session.user);
+            } else if (event === 'SIGNED_OUT') {
+              handleLogout();
+            }
+          }
+        );
+        
+        authListenerRef.current = { subscription };
+      }
+
+      // Verificar sesión actual
       const { data: { session }, error } = await supabase.auth.getSession();
       
-      if (error) throw error;
+      if (!mountedRef.current) return;
+      
+      if (error) {
+        console.error('Error getting session:', error);
+        dispatch({ type: 'INIT_FAILURE', payload: error.message });
+        return;
+      }
       
       if (session?.user) {
-        console.log('👤 Found active session for:', session.user.email);
-        await handleAuthUser(session.user);
+        console.log('👤 Found existing session for:', session.user.email);
+        await handleAuthenticatedUser(session.user);
       } else {
         console.log('📭 No active session found');
-        dispatch({ type: 'SET_LOADING', payload: false });
+        dispatch({ type: 'INIT_FAILURE', payload: null });
       }
+      
     } catch (error) {
-      console.error('Error checking session:', error);
-      dispatch({ type: 'SET_LOADING', payload: false });
-    } finally {
-      initializingRef.current = false;
+      console.error('Error initializing auth:', error);
+      if (mountedRef.current) {
+        dispatch({ type: 'INIT_FAILURE', payload: error.message });
+      }
     }
-  }, []);
+  };
 
-  const handleAuthUser = async (authUser) => {
+  // ✅ FUNCIÓN PARA MANEJAR USUARIO AUTENTICADO
+  const handleAuthenticatedUser = async (authUser) => {
     try {
+      if (!mountedRef.current) return;
+      
       console.log('🔄 Processing authenticated user:', authUser.email);
       
-      // Obtener perfil de usuario de la tabla users
+      // Obtener perfil de usuario
       const { data: userProfile, error: profileError } = await supabase
         .from('users')
         .select('*')
         .eq('id', authUser.id)
         .single();
       
-      if (profileError) {
-        console.error('Error fetching user profile:', profileError);
+      if (profileError || !userProfile) {
         throw new Error('Usuario no encontrado en el sistema');
       }
+      
+      if (!mountedRef.current) return;
       
       console.log('👤 User profile loaded:', userProfile.name, userProfile.role);
       
@@ -207,48 +280,39 @@ export const AuthProvider = ({ children }) => {
       
       // Verificar sucursal guardada
       let selectedBranch = null;
-      const savedBranch = localStorage.getItem('hotel_selected_branch');
+      let needsBranchSelection = false;
       
-      if (savedBranch) {
-        try {
-          const branchData = JSON.parse(savedBranch);
+      // Para administradores, verificar sucursal
+      if (userProfile.role === 'admin') {
+        const savedBranch = getBranchFromStorage();
+        
+        if (savedBranch) {
           // Verificar que la sucursal aún existe
-          const { data: validBranch } = await db.getBranchById(branchData.id);
-          if (validBranch) {
-            selectedBranch = validBranch;
-            console.log('✅ Restored saved branch:', selectedBranch.name);
-          } else {
-            localStorage.removeItem('hotel_selected_branch');
+          try {
+            const { data: validBranch } = await db.getBranchById(savedBranch.id);
+            if (validBranch) {
+              selectedBranch = validBranch;
+              console.log('✅ Restored saved branch:', selectedBranch.name);
+            } else {
+              clearBranchFromStorage();
+              needsBranchSelection = true;
+            }
+          } catch (error) {
+            console.warn('Error validating saved branch:', error);
+            clearBranchFromStorage();
+            needsBranchSelection = true;
           }
-        } catch (error) {
-          console.warn('Error restoring saved branch:', error);
-          localStorage.removeItem('hotel_selected_branch');
+        } else {
+          needsBranchSelection = true;
         }
-      }
-      
-      // Para administradores, cargar sucursal por defecto si no hay una guardada
-      if (userProfile.role === 'admin' && !selectedBranch) {
-        try {
-          const { data: userBranches } = await db.getUserBranches(authUser.id);
-          const defaultBranch = userBranches?.find(b => b.isDefault) || userBranches?.[0];
-          if (defaultBranch) {
-            selectedBranch = defaultBranch;
-            localStorage.setItem('hotel_selected_branch', JSON.stringify(defaultBranch));
-            console.log('🏢 Set default branch for admin:', defaultBranch.name);
-          }
-        } catch (error) {
-          console.warn('Error loading admin branches:', error);
-        }
-      }
-      
-      // Para recepción, cargar sucursal asignada
-      if (userProfile.role === 'reception' && !selectedBranch) {
+      } else if (userProfile.role === 'reception') {
+        // Para recepción, cargar sucursal asignada
         try {
           const { data: userBranches } = await db.getUserBranches(authUser.id);
           const assignedBranch = userBranches?.[0];
           if (assignedBranch) {
             selectedBranch = assignedBranch;
-            localStorage.setItem('hotel_selected_branch', JSON.stringify(assignedBranch));
+            saveBranchToStorage(assignedBranch);
             console.log('🏢 Set assigned branch for reception:', assignedBranch.name);
           }
         } catch (error) {
@@ -256,16 +320,17 @@ export const AuthProvider = ({ children }) => {
         }
       }
       
-      const needsBranchSelection = userProfile.role === 'admin' && !selectedBranch;
+      if (!mountedRef.current) return;
       
       // Actualizar last_login
-      await supabase
+      supabase
         .from('users')
         .update({ last_login: new Date().toISOString() })
-        .eq('id', authUser.id);
+        .eq('id', authUser.id)
+        .then(() => console.log('✅ Last login updated'));
       
       dispatch({
-        type: 'LOGIN_SUCCESS',
+        type: 'INIT_SUCCESS',
         payload: {
           user: {
             id: authUser.id,
@@ -281,19 +346,52 @@ export const AuthProvider = ({ children }) => {
       });
       
     } catch (error) {
-      console.error('Error handling auth user:', error);
-      dispatch({
-        type: 'LOGIN_FAILURE',
-        payload: error.message
-      });
+      console.error('Error handling authenticated user:', error);
+      if (mountedRef.current) {
+        dispatch({ type: 'INIT_FAILURE', payload: error.message });
+      }
     }
   };
 
+  // ✅ FUNCIONES DE STORAGE OPTIMIZADAS
+  const getBranchFromStorage = () => {
+    try {
+      const savedBranch = localStorage.getItem('hotel_selected_branch');
+      return savedBranch ? JSON.parse(savedBranch) : null;
+    } catch (error) {
+      console.warn('Error reading branch from storage:', error);
+      return null;
+    }
+  };
+
+  const saveBranchToStorage = (branch) => {
+    try {
+      const branchData = {
+        ...branch,
+        selectedAt: new Date().toISOString()
+      };
+      localStorage.setItem('hotel_selected_branch', JSON.stringify(branchData));
+    } catch (error) {
+      console.warn('Error saving branch to storage:', error);
+    }
+  };
+
+  const clearBranchFromStorage = () => {
+    try {
+      localStorage.removeItem('hotel_selected_branch');
+    } catch (error) {
+      console.warn('Error clearing branch from storage:', error);
+    }
+  };
+
+  // ✅ FUNCIÓN DE LOGIN OPTIMIZADA
   const login = useCallback(async (email, password) => {
+    if (!mountedRef.current) return { success: false, error: 'Component unmounted' };
+    
     dispatch({ type: 'LOGIN_START' });
 
     try {
-      console.log('🔐 Attempting Supabase login for:', email);
+      console.log('🔐 Attempting login for:', email);
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -306,109 +404,59 @@ export const AuthProvider = ({ children }) => {
         throw new Error('No se recibieron datos del usuario');
       }
 
-      console.log('✅ Supabase login successful for:', data.user.email);
+      console.log('✅ Login successful for:', data.user.email);
       
-      // handleAuthUser se llamará automáticamente por el listener
+      // handleAuthenticatedUser se llamará automáticamente por el listener
       return { success: true };
       
     } catch (error) {
       console.error('❌ Login failed:', error.message);
-      dispatch({
-        type: 'LOGIN_FAILURE',
-        payload: error.message
-      });
+      if (mountedRef.current) {
+        dispatch({ type: 'INIT_FAILURE', payload: error.message });
+      }
       return { success: false, error: error.message };
     }
   }, []);
 
+  // ✅ FUNCIÓN DE SELECCIÓN DE SUCURSAL OPTIMIZADA
   const selectBranch = useCallback(async (branch) => {
-  console.log('🏢 AuthContext.selectBranch called for:', branch.name);
-  
-  // Validación simple
-  if (!branch || !branch.id) {
-    console.error('❌ Invalid branch data');
-    return { success: false, error: 'Datos de sucursal inválidos' };
-  }
-
-  // Si ya está seleccionada la misma sucursal, no hacer nada
-  if (state.selectedBranch?.id === branch.id) {
-    console.log('✅ Branch already selected, skipping...');
-    return { success: true };
-  }
-
-  console.log(`🔄 Switching from ${state.selectedBranch?.name || 'none'} to ${branch.name}`);
-  
-  try {
-    dispatch({ type: 'BRANCH_SWITCHING_START' });
+    if (!mountedRef.current) return { success: false, error: 'Component unmounted' };
     
-    // Validar que la sucursal existe en la base de datos
-    const { data: validBranch, error } = await db.getBranchById(branch.id);
-    if (error || !validBranch) {
-      throw new Error('Sucursal no válida o no encontrada');
+    console.log('🏢 Selecting branch:', branch.name);
+    
+    if (!branch || !branch.id) {
+      return { success: false, error: 'Datos de sucursal inválidos' };
     }
 
-    console.log('✅ Branch validated:', validBranch.name);
-    
-    // Preparar datos de la sucursal
-    const branchToSave = {
-      ...validBranch,
-      selectedAt: new Date().toISOString()
-    };
-    
-    // Guardar en localStorage (con manejo de errores)
     try {
-      localStorage.setItem('hotel_selected_branch', JSON.stringify(branchToSave));
-      console.log('💾 Branch saved to localStorage');
-    } catch (storageError) {
-      console.warn('Warning: Could not save to localStorage:', storageError);
-      // Continuar sin localStorage
+      // Validar sucursal
+      const { data: validBranch, error } = await db.getBranchById(branch.id);
+      if (error || !validBranch) {
+        throw new Error('Sucursal no válida');
+      }
+
+      if (!mountedRef.current) return { success: false, error: 'Component unmounted' };
+
+      // Guardar en storage
+      saveBranchToStorage(validBranch);
+      
+      // Actualizar estado
+      dispatch({ type: 'SET_BRANCH', payload: validBranch });
+
+      console.log('✅ Branch selected successfully:', validBranch.name);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('❌ Branch selection failed:', error);
+      return { success: false, error: error.message };
     }
-    
-    // Actualizar estado del contexto
-    dispatch({
-      type: 'BRANCH_SWITCHING_SUCCESS',
-      payload: branchToSave
-    });
+  }, []);
 
-    console.log('🎉 Branch selection completed successfully:', branchToSave.name);
-    
-    return { success: true };
-    
-  } catch (error) {
-    console.error('❌ Branch selection failed:', error.message);
-    dispatch({ 
-      type: 'BRANCH_SWITCHING_ERROR', 
-      payload: error.message 
-    });
-    return { success: false, error: error.message };
-  }
-}, [state.selectedBranch]);
-
-  // FUNCIÓN changeBranch SIMPLIFICADA
-const changeBranch = useCallback(async (branchId) => {
-  try {
-    console.log('🔄 AuthContext.changeBranch called with ID:', branchId);
-    
-    const { data: branch, error } = await db.getBranchById(branchId);
-    if (error || !branch) {
-      return { success: false, error: 'Sucursal no encontrada' };
-    }
-
-    // Llamar selectBranch con el objeto completo
-    const result = await selectBranch(branch);
-    return result;
-    
-  } catch (error) {
-    console.error('❌ changeBranch error:', error.message);
-    return { success: false, error: error.message };
-  }
-}, [selectBranch]);
-
+  // ✅ FUNCIÓN DE LOGOUT OPTIMIZADA
   const logout = useCallback(async () => {
     console.log('👋 Logging out user');
     
     try {
-      // Logout de Supabase
       await supabase.auth.signOut();
     } catch (error) {
       console.warn('Error during Supabase logout:', error);
@@ -418,20 +466,18 @@ const changeBranch = useCallback(async (branchId) => {
   }, []);
 
   const handleLogout = () => {
-    // Limpiar localStorage
-    try {
-      localStorage.removeItem('hotel_selected_branch');
-    } catch (error) {
-      console.warn('Error clearing localStorage:', error);
-    }
+    // Limpiar storage
+    clearBranchFromStorage();
     
     // Limpiar referencias
-    branchSelectionRef.current = false;
     initializingRef.current = false;
     
-    dispatch({ type: 'LOGOUT' });
+    if (mountedRef.current) {
+      dispatch({ type: 'LOGOUT' });
+    }
   };
 
+  // ✅ FUNCIONES DE UTILIDAD
   const clearError = useCallback(() => {
     dispatch({ type: 'CLEAR_ERROR' });
   }, []);
@@ -447,20 +493,6 @@ const changeBranch = useCallback(async (branchId) => {
     return state.user?.role === role;
   }, [state.user?.role]);
 
-  const getAllowedRoutes = useCallback(() => {
-    if (!state.permissions) return [];
-
-    const routes = [];
-    
-    Object.keys(state.permissions).forEach(module => {
-      if (state.permissions[module].read) {
-        routes.push(module);
-      }
-    });
-
-    return routes;
-  }, [state.permissions]);
-
   const isReady = useCallback(() => {
     if (!state.isAuthenticated) return false;
     if (state.user?.role === 'admin') {
@@ -469,29 +501,12 @@ const changeBranch = useCallback(async (branchId) => {
     return true;
   }, [state.isAuthenticated, state.user?.role, state.needsBranchSelection, state.selectedBranch]);
 
-  const getAvailableBranches = useCallback(async () => {
-    try {
-      if (state.user?.role === 'admin') {
-        const { data: branches, error } = await db.getBranches();
-        if (error) throw error;
-        return branches || [];
-      } else if (state.user?.id) {
-        const { data: userBranches, error } = await db.getUserBranches(state.user.id);
-        if (error) throw error;
-        return userBranches || [];
-      }
-      return [];
-    } catch (error) {
-      console.error('Error getting available branches:', error);
-      return [];
-    }
-  }, [state.user]);
-
   const canChangeBranch = useCallback(() => {
     return state.user?.role === 'admin';
   }, [state.user?.role]);
 
-  const value = {
+  // ✅ VALUE OBJECT ESTABLE
+  const value = React.useMemo(() => ({
     // Estado principal
     isAuthenticated: state.isAuthenticated,
     user: state.user,
@@ -508,16 +523,23 @@ const changeBranch = useCallback(async (branchId) => {
     
     // Funciones de sucursales
     selectBranch,
-    changeBranch,
-    getAvailableBranches,
     canChangeBranch,
     
     // Funciones de permisos
     hasPermission,
     hasRole,
-    getAllowedRoutes,
     isReady
-  };
+  }), [
+    state,
+    login,
+    logout,
+    clearError,
+    selectBranch,
+    canChangeBranch,
+    hasPermission,
+    hasRole,
+    isReady
+  ]);
 
   return (
     <AuthContext.Provider value={value}>
