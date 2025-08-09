@@ -1,4 +1,4 @@
-// src/pages/Admin/BranchManagementPage.jsx
+// src/pages/Admin/BranchManagementPage.jsx - ACTUALIZADA CON NUEVO BRANCH SWITCHER
 import React, { useState, useEffect } from 'react';
 import { 
   Building2, 
@@ -12,24 +12,47 @@ import {
   Settings,
   TrendingUp,
   Eye,
-  MoreVertical
+  MoreVertical,
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../hooks/useBranch';
+import BranchSwitcher from '../../components/common/BranchSwitcher';
 import Button from '../../components/common/Button';
 
 const BranchManagementPage = () => {
-  const { user, getAvailableBranches } = useAuth();
-  const { selectedBranch, changeBranch } = useBranch();
-  const [branches, setBranches] = useState([]);
+  const { user } = useAuth();
+  const { 
+    selectedBranch, 
+    availableBranches,
+    branchesLoading,
+    switchToBranch,
+    refreshAvailableBranches,
+    getBranchesWithStats
+  } = useBranch();
+  
+  const [branchesWithStats, setBranchesWithStats] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedBranchForAction, setSelectedBranchForAction] = useState(null);
   const [showBranchModal, setShowBranchModal] = useState(false);
-  const [modalMode, setModalMode] = useState('create'); // 'create', 'edit', 'view'
+  const [modalMode, setModalMode] = useState('create');
 
+  // Cargar sucursales con estadísticas
   useEffect(() => {
-    const availableBranches = getAvailableBranches();
-    setBranches(availableBranches);
-  }, []);
+    loadBranchesWithStats();
+  }, [availableBranches]);
+
+  const loadBranchesWithStats = async () => {
+    try {
+      setLoading(true);
+      const branchesWithStats = await getBranchesWithStats();
+      setBranchesWithStats(branchesWithStats);
+    } catch (error) {
+      console.error('Error loading branches with stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreateBranch = () => {
     setSelectedBranchForAction(null);
@@ -49,14 +72,26 @@ const BranchManagementPage = () => {
     setShowBranchModal(true);
   };
 
-  const handleSwitchToBranch = async (branchId) => {
+  // NUEVO MÉTODO SIMPLIFICADO PARA CAMBIAR SUCURSAL
+  const handleSwitchToBranch = async (branch) => {
     try {
-      await changeBranch(branchId);
-      // Mostrar notificación de éxito
+      const result = await switchToBranch(branch);
+      if (result.success) {
+        // Mostrar notificación de éxito
+        console.log(`✅ Switched to ${branch.name}`);
+        // Opcional: mostrar toast notification
+      } else {
+        console.error('Error switching branch:', result.error);
+        // Mostrar notificación de error
+      }
     } catch (error) {
       console.error('Error switching branch:', error);
-      // Mostrar notificación de error
     }
+  };
+
+  const handleRefresh = async () => {
+    await refreshAvailableBranches();
+    await loadBranchesWithStats();
   };
 
   const getOccupancyColor = (rate) => {
@@ -64,6 +99,33 @@ const BranchManagementPage = () => {
     if (rate >= 60) return 'text-yellow-600 bg-yellow-100';
     return 'text-red-600 bg-red-100';
   };
+
+  const calculateTotalStats = () => {
+    return branchesWithStats.reduce((totals, branch) => {
+      const stats = branch.stats || {};
+      return {
+        totalRooms: totals.totalRooms + (stats.totalRooms || 0),
+        currentGuests: totals.currentGuests + (stats.currentGuests || 0),
+        averageOccupancy: totals.averageOccupancy + (stats.occupancyRate || 0)
+      };
+    }, { totalRooms: 0, currentGuests: 0, averageOccupancy: 0 });
+  };
+
+  const totalStats = calculateTotalStats();
+  const averageOccupancy = branchesWithStats.length > 0 
+    ? Math.round(totalStats.averageOccupancy / branchesWithStats.length) 
+    : 0;
+
+  if (loading || branchesLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Cargando sucursales...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -80,32 +142,53 @@ const BranchManagementPage = () => {
               </p>
             </div>
             
-            <Button
-              variant="primary"
-              icon={Plus}
-              onClick={handleCreateBranch}
-            >
-              Nueva Sucursal
-            </Button>
+            <div className="flex items-center space-x-4">
+              <Button
+                variant="outline"
+                icon={RefreshCw}
+                onClick={handleRefresh}
+                loading={loading}
+              >
+                Actualizar
+              </Button>
+              
+              <Button
+                variant="primary"
+                icon={Plus}
+                onClick={handleCreateBranch}
+              >
+                Nueva Sucursal
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Current Branch Alert */}
-        {selectedBranch && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center space-x-3">
-              <Building2 className="w-5 h-5 text-blue-600" />
-              <div>
-                <h3 className="text-sm font-medium text-blue-900">
-                  Sucursal Activa
-                </h3>
-                <p className="text-sm text-blue-700">
-                  Actualmente administrando: <strong>{selectedBranch.name}</strong> - {selectedBranch.location}
-                </p>
+        {/* Current Branch Alert + Branch Switcher */}
+        <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Current Branch Info */}
+          {selectedBranch && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <Building2 className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h3 className="text-sm font-medium text-blue-900">
+                    Sucursal Activa
+                  </h3>
+                  <p className="text-sm text-blue-700">
+                    <strong>{selectedBranch.name}</strong> - {selectedBranch.location}
+                  </p>
+                </div>
               </div>
             </div>
+          )}
+
+          {/* Branch Switcher */}
+          <div className="flex items-center justify-end">
+            <div className="w-full max-w-md">
+              <BranchSwitcher variant="dropdown" className="w-full" />
+            </div>
           </div>
-        )}
+        </div>
 
         {/* Branch Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -114,7 +197,7 @@ const BranchManagementPage = () => {
               <h3 className="text-sm font-medium text-gray-700">Total Sucursales</h3>
               <Building2 className="w-5 h-5 text-blue-600" />
             </div>
-            <div className="text-2xl font-bold text-gray-900">{branches.length}</div>
+            <div className="text-2xl font-bold text-gray-900">{branchesWithStats.length}</div>
             <p className="text-xs text-gray-500">sucursales activas</p>
           </div>
 
@@ -123,9 +206,7 @@ const BranchManagementPage = () => {
               <h3 className="text-sm font-medium text-gray-700">Total Habitaciones</h3>
               <Bed className="w-5 h-5 text-green-600" />
             </div>
-            <div className="text-2xl font-bold text-gray-900">
-              {branches.reduce((sum, branch) => sum + branch.rooms, 0)}
-            </div>
+            <div className="text-2xl font-bold text-gray-900">{totalStats.totalRooms}</div>
             <p className="text-xs text-gray-500">habitaciones en total</p>
           </div>
 
@@ -134,9 +215,7 @@ const BranchManagementPage = () => {
               <h3 className="text-sm font-medium text-gray-700">Huéspedes Actuales</h3>
               <Users className="w-5 h-5 text-purple-600" />
             </div>
-            <div className="text-2xl font-bold text-gray-900">
-              {branches.reduce((sum, branch) => sum + branch.currentGuests, 0)}
-            </div>
+            <div className="text-2xl font-bold text-gray-900">{totalStats.currentGuests}</div>
             <p className="text-xs text-gray-500">huéspedes activos</p>
           </div>
 
@@ -145,16 +224,14 @@ const BranchManagementPage = () => {
               <h3 className="text-sm font-medium text-gray-700">Ocupación Promedio</h3>
               <TrendingUp className="w-5 h-5 text-orange-600" />
             </div>
-            <div className="text-2xl font-bold text-gray-900">
-              {Math.round(branches.reduce((sum, branch) => sum + branch.occupancyRate, 0) / branches.length || 0)}%
-            </div>
+            <div className="text-2xl font-bold text-gray-900">{averageOccupancy}%</div>
             <p className="text-xs text-gray-500">ocupación general</p>
           </div>
         </div>
 
         {/* Branches Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {branches.map((branch) => (
+          {branchesWithStats.map((branch) => (
             <div
               key={branch.id}
               className={`bg-white rounded-xl shadow-sm border-2 transition-all duration-200 hover:shadow-md ${
@@ -207,7 +284,7 @@ const BranchManagementPage = () => {
                     <div className="flex items-center justify-center mb-1">
                       <Bed className="w-4 h-4 text-gray-500 mr-1" />
                       <span className="text-lg font-semibold text-gray-900">
-                        {branch.rooms}
+                        {branch.stats?.totalRooms || 0}
                       </span>
                     </div>
                     <span className="text-xs text-gray-500">Habitaciones</span>
@@ -217,7 +294,7 @@ const BranchManagementPage = () => {
                     <div className="flex items-center justify-center mb-1">
                       <Users className="w-4 h-4 text-gray-500 mr-1" />
                       <span className="text-lg font-semibold text-gray-900">
-                        {branch.currentGuests}
+                        {branch.stats?.currentGuests || 0}
                       </span>
                     </div>
                     <span className="text-xs text-gray-500">Huéspedes</span>
@@ -228,49 +305,55 @@ const BranchManagementPage = () => {
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-600">Ocupación</span>
-                    <span className={`text-sm px-2 py-1 rounded-full ${getOccupancyColor(branch.occupancyRate)}`}>
-                      {branch.occupancyRate}%
+                    <span className={`text-sm px-2 py-1 rounded-full ${getOccupancyColor(branch.stats?.occupancyRate || 0)}`}>
+                      {branch.stats?.occupancyRate || 0}%
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${branch.occupancyRate}%` }}
+                      style={{ width: `${branch.stats?.occupancyRate || 0}%` }}
                     />
                   </div>
                 </div>
 
                 {/* Branch Info */}
                 <div className="space-y-2 mb-4">
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Phone className="w-4 h-4 mr-2" />
-                    {branch.phone}
-                  </div>
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Users className="w-4 h-4 mr-2" />
-                    Gerente: {branch.manager}
-                  </div>
+                  {branch.phone && (
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Phone className="w-4 h-4 mr-2" />
+                      {branch.phone}
+                    </div>
+                  )}
+                  {branch.manager && (
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Users className="w-4 h-4 mr-2" />
+                      Gerente: {branch.manager}
+                    </div>
+                  )}
                 </div>
 
                 {/* Features */}
-                <div className="mb-6">
-                  <span className="text-sm font-medium text-gray-700">Servicios:</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {branch.features.slice(0, 2).map((feature, index) => (
-                      <span
-                        key={index}
-                        className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded"
-                      >
-                        {feature}
-                      </span>
-                    ))}
-                    {branch.features.length > 2 && (
-                      <span className="text-xs text-gray-500">
-                        +{branch.features.length - 2} más
-                      </span>
-                    )}
+                {branch.features && branch.features.length > 0 && (
+                  <div className="mb-6">
+                    <span className="text-sm font-medium text-gray-700">Servicios:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {branch.features.slice(0, 2).map((feature, index) => (
+                        <span
+                          key={index}
+                          className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded"
+                        >
+                          {feature}
+                        </span>
+                      ))}
+                      {branch.features.length > 2 && (
+                        <span className="text-xs text-gray-500">
+                          +{branch.features.length - 2} más
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="space-y-2">
@@ -279,7 +362,7 @@ const BranchManagementPage = () => {
                       variant="primary"
                       size="sm"
                       className="w-full"
-                      onClick={() => handleSwitchToBranch(branch.id)}
+                      onClick={() => handleSwitchToBranch(branch)}
                     >
                       Cambiar a esta Sucursal
                     </Button>
@@ -317,6 +400,26 @@ const BranchManagementPage = () => {
           ))}
         </div>
 
+        {/* Empty State */}
+        {branchesWithStats.length === 0 && !loading && (
+          <div className="text-center py-12">
+            <Building2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              No hay sucursales disponibles
+            </h3>
+            <p className="text-gray-500 mb-4">
+              Comienza creando tu primera sucursal
+            </p>
+            <Button
+              variant="primary"
+              icon={Plus}
+              onClick={handleCreateBranch}
+            >
+              Crear Primera Sucursal
+            </Button>
+          </div>
+        )}
+
         {/* Branch Modal */}
         {showBranchModal && (
           <BranchModal
@@ -325,7 +428,10 @@ const BranchManagementPage = () => {
             onClose={() => setShowBranchModal(false)}
             onSave={(branchData) => {
               // Handle save
+              console.log('Saving branch:', branchData);
               setShowBranchModal(false);
+              // Refresh data
+              handleRefresh();
             }}
           />
         )}
@@ -334,7 +440,7 @@ const BranchManagementPage = () => {
   );
 };
 
-// Modal Component for Branch Details
+// Modal Component for Branch Details (simplificado)
 const BranchModal = ({ branch, mode, onClose, onSave }) => {
   const [formData, setFormData] = useState(
     branch || {
@@ -343,7 +449,6 @@ const BranchModal = ({ branch, mode, onClose, onSave }) => {
       address: '',
       phone: '',
       manager: '',
-      rooms: 0,
       features: []
     }
   );
@@ -357,16 +462,44 @@ const BranchModal = ({ branch, mode, onClose, onSave }) => {
     onSave(formData);
   };
 
+  const handleFeatureChange = (feature, checked) => {
+    if (checked) {
+      setFormData({
+        ...formData,
+        features: [...(formData.features || []), feature]
+      });
+    } else {
+      setFormData({
+        ...formData,
+        features: (formData.features || []).filter(f => f !== feature)
+      });
+    }
+  };
+
+  const availableFeatures = [
+    'WiFi Gratuito', 'Restaurante', 'Spa', 'Piscina', 
+    'Gimnasio', 'Bar', 'Centro de Negocios', 
+    'Shuttle Gratuito', 'Check-in 24h'
+  ];
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Modal Header */}
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">
-            {isCreate && 'Nueva Sucursal'}
-            {isEdit && 'Editar Sucursal'}
-            {isReadOnly && 'Detalles de Sucursal'}
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-gray-900">
+              {isCreate && 'Nueva Sucursal'}
+              {isEdit && 'Editar Sucursal'}
+              {isReadOnly && 'Detalles de Sucursal'}
+            </h2>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         {/* Modal Content */}
@@ -375,7 +508,7 @@ const BranchModal = ({ branch, mode, onClose, onSave }) => {
             {/* Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Nombre de la Sucursal
+                Nombre de la Sucursal *
               </label>
               <input
                 type="text"
@@ -391,7 +524,7 @@ const BranchModal = ({ branch, mode, onClose, onSave }) => {
             {/* Location */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Ubicación
+                Ubicación *
               </label>
               <input
                 type="text"
@@ -449,46 +582,18 @@ const BranchModal = ({ branch, mode, onClose, onSave }) => {
               />
             </div>
 
-            {/* Rooms */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Número de Habitaciones
-              </label>
-              <input
-                type="number"
-                value={formData.rooms}
-                onChange={(e) => setFormData({ ...formData, rooms: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="0"
-                min="0"
-                disabled={isReadOnly}
-              />
-            </div>
-
             {/* Features */}
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Servicios y Amenidades
               </label>
-              <div className="space-y-2">
-                {['WiFi Gratuito', 'Restaurante', 'Spa', 'Piscina', 'Gimnasio', 'Bar', 'Centro de Negocios', 'Shuttle Gratuito', 'Check-in 24h'].map((feature) => (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {availableFeatures.map((feature) => (
                   <label key={feature} className="flex items-center">
                     <input
                       type="checkbox"
                       checked={formData.features?.includes(feature) || false}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setFormData({
-                            ...formData,
-                            features: [...(formData.features || []), feature]
-                          });
-                        } else {
-                          setFormData({
-                            ...formData,
-                            features: (formData.features || []).filter(f => f !== feature)
-                          });
-                        }
-                      }}
+                      onChange={(e) => handleFeatureChange(feature, e.target.checked)}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       disabled={isReadOnly}
                     />

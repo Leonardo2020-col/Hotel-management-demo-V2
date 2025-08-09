@@ -1,4 +1,4 @@
-// src/components/common/Header.jsx - CON BRANCHSWITCHER SIMPLE
+// src/components/common/Header.jsx - ACTUALIZADO CON BRANCHSWITCHER INTEGRADO
 import React from 'react';
 import { 
   Menu, 
@@ -9,7 +9,8 @@ import {
   Settings,
   ChevronDown,
   Shield,
-  UserCheck
+  UserCheck,
+  Building2
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
@@ -18,7 +19,7 @@ import BranchSwitcherSimple from './BranchSwitcherSimple';
 const Header = ({ onMenuClick, sidebarOpen }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const { user, logout, hasRole } = useAuth();
+  const { user, logout, hasRole, selectedBranch } = useAuth();
 
   const notifications = [
     { id: 1, message: 'Nueva reserva de Juan Pérez', time: '5 min', type: 'info' },
@@ -75,6 +76,29 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
           </div>
         </div>
 
+        {/* Center Section - Branch Info */}
+        <div className="flex-1 flex justify-center">
+          {/* 🔧 BRANCH SWITCHER SIMPLE - Solo para admin */}
+          {hasRole('admin') && (
+            <BranchSwitcherSimple />
+          )}
+          
+          {/* Branch Display - Solo para recepción */}
+          {hasRole('reception') && selectedBranch && (
+            <div className="flex items-center space-x-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+              <Building2 className="w-5 h-5 text-blue-600" />
+              <div>
+                <div className="font-medium text-blue-900 text-sm">
+                  {selectedBranch.name}
+                </div>
+                <div className="text-xs text-blue-600">
+                  {selectedBranch.location}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Right Section */}
         <div className="flex items-center space-x-4">
           {/* Quick Stats - Solo para recepción */}
@@ -93,11 +117,6 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
                 <p className="font-semibold text-purple-600">S/ 2,850</p>
               </div>
             </div>
-          )}
-
-          {/* 🔧 BRANCH SWITCHER SIMPLE - Solo para admin */}
-          {hasRole('admin') && (
-            <BranchSwitcherSimple />
           )}
 
           {/* Role Badge */}
@@ -123,27 +142,34 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="font-semibold text-gray-900">Notificaciones</h3>
+              <>
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="p-4 border-b border-gray-200">
+                    <h3 className="font-semibold text-gray-900">Notificaciones</h3>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {notifications.map((notification) => (
+                      <div key={notification.id} className="p-4 border-b border-gray-100 hover:bg-gray-50">
+                        <p className="text-sm text-gray-900">{notification.message}</p>
+                        <p className="text-xs text-gray-500 mt-1">{notification.time}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-4">
+                    <button 
+                      type="button"
+                      className="text-blue-600 text-sm font-medium hover:text-blue-700"
+                    >
+                      Ver todas las notificaciones
+                    </button>
+                  </div>
                 </div>
-                <div className="max-h-64 overflow-y-auto">
-                  {notifications.map((notification) => (
-                    <div key={notification.id} className="p-4 border-b border-gray-100 hover:bg-gray-50">
-                      <p className="text-sm text-gray-900">{notification.message}</p>
-                      <p className="text-xs text-gray-500 mt-1">{notification.time}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="p-4">
-                  <button 
-                    type="button"
-                    className="text-blue-600 text-sm font-medium hover:text-blue-700"
-                  >
-                    Ver todas las notificaciones
-                  </button>
-                </div>
-              </div>
+                {/* Click outside handler */}
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowNotifications(false)}
+                />
+              </>
             )}
           </div>
 
@@ -168,53 +194,86 @@ const Header = ({ onMenuClick, sidebarOpen }) => {
 
             {/* User Dropdown */}
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                <div className="py-2">
-                  {/* User Info */}
-                  <div className="px-4 py-2 border-b border-gray-100">
-                    <div className="flex items-center space-x-2">
-                      {getRoleIcon()}
-                      <span className={`text-sm font-medium ${getRoleColor()}`}>
-                        {getRoleLabel()}
-                      </span>
+              <>
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="py-2">
+                    {/* User Info */}
+                    <div className="px-4 py-2 border-b border-gray-100">
+                      <div className="flex items-center space-x-2">
+                        {getRoleIcon()}
+                        <span className={`text-sm font-medium ${getRoleColor()}`}>
+                          {getRoleLabel()}
+                        </span>
+                      </div>
+                      {/* Branch info en mobile para admin */}
+                      {hasRole('admin') && selectedBranch && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          <div className="flex items-center">
+                            <Building2 className="w-3 h-3 mr-1" />
+                            <span className="truncate">{selectedBranch.name}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
 
-                  {/* Menu Items */}
-                  <button 
-                    type="button"
-                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                    onClick={() => setShowUserMenu(false)}
-                  >
-                    <User size={16} className="mr-3" />
-                    Perfil
-                  </button>
-                  
-                  <button 
-                    type="button"
-                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                    onClick={() => setShowUserMenu(false)}
-                  >
-                    <Settings size={16} className="mr-3" />
-                    Configuración
-                  </button>
-                  
-                  <hr className="my-2" />
-                  
-                  <button 
-                    type="button"
-                    className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 flex items-center"
-                    onClick={handleLogout}
-                  >
-                    <LogOut size={16} className="mr-3" />
-                    Cerrar Sesión
-                  </button>
+                    {/* Menu Items */}
+                    <button 
+                      type="button"
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                      onClick={() => setShowUserMenu(false)}
+                    >
+                      <User size={16} className="mr-3" />
+                      Perfil
+                    </button>
+                    
+                    <button 
+                      type="button"
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                      onClick={() => setShowUserMenu(false)}
+                    >
+                      <Settings size={16} className="mr-3" />
+                      Configuración
+                    </button>
+                    
+                    <hr className="my-2" />
+                    
+                    <button 
+                      type="button"
+                      className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 flex items-center"
+                      onClick={handleLogout}
+                    >
+                      <LogOut size={16} className="mr-3" />
+                      Cerrar Sesión
+                    </button>
+                  </div>
                 </div>
-              </div>
+                {/* Click outside handler */}
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowUserMenu(false)}
+                />
+              </>
             )}
           </div>
         </div>
       </div>
+
+      {/* Mobile Branch Info - Para admin en pantallas pequeñas */}
+      {hasRole('admin') && selectedBranch && (
+        <div className="md:hidden mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center space-x-2">
+            <Building2 className="w-4 h-4 text-blue-600" />
+            <div>
+              <div className="font-medium text-blue-900 text-sm">
+                {selectedBranch.name}
+              </div>
+              <div className="text-xs text-blue-600">
+                {selectedBranch.location} • {selectedBranch.code}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

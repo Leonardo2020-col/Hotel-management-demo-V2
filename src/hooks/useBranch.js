@@ -1,4 +1,4 @@
-// src/hooks/useBranch.js - VERSIÓN OPTIMIZADA ANTI-REFRESH
+// src/hooks/useBranch.js - VERSIÓN COMPLETA Y OPTIMIZADA
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/supabase';
@@ -12,7 +12,6 @@ export const useBranch = () => {
   
   // Referencias para evitar operaciones duplicadas
   const loadingBranchesRef = useRef(false);
-  const changingBranchRef = useRef(false);
 
   // Cargar sucursales disponibles desde Supabase
   useEffect(() => {
@@ -27,37 +26,36 @@ export const useBranch = () => {
     }
   }, [selectedBranch?.id]);
 
-  // En src/hooks/useBranch.js - actualizar loadAvailableBranches
-const loadAvailableBranches = useCallback(async () => {
- if (!user?.id || loadingBranchesRef.current) return;
- 
- try {
-   setBranchesLoading(true);
-   loadingBranchesRef.current = true;
-   
-   console.log('🏢 Loading available branches for Supabase user:', user.id);
-   
-   if (user.role === 'admin') {
-     // Admin ve todas las sucursales
-     const { data: branches, error } = await db.getBranches();
-     if (error) throw error;
-     setAvailableBranches(branches || []);
-     console.log(`✅ Loaded ${branches?.length || 0} branches for admin`);
-   } else {
-     // Recepción ve solo sus sucursales asignadas
-     const { data: userBranches, error } = await db.getUserBranches(user.id);
-     if (error) throw error;
-     setAvailableBranches(userBranches || []);
-     console.log(`✅ Loaded ${userBranches?.length || 0} branches for user`);
-   }
- } catch (error) {
-   console.error('Error loading available branches:', error);
-   setAvailableBranches([]);
- } finally {
-   setBranchesLoading(false);
-   loadingBranchesRef.current = false;
- }
-}, [user?.id, user?.role]);
+  const loadAvailableBranches = useCallback(async () => {
+    if (!user?.id || loadingBranchesRef.current) return;
+    
+    try {
+      setBranchesLoading(true);
+      loadingBranchesRef.current = true;
+      
+      console.log('🏢 Loading available branches for user:', user.id);
+      
+      if (user.role === 'admin') {
+        // Admin ve todas las sucursales
+        const { data: branches, error } = await db.getBranches();
+        if (error) throw error;
+        setAvailableBranches(branches || []);
+        console.log(`✅ Loaded ${branches?.length || 0} branches for admin`);
+      } else {
+        // Recepción ve solo sus sucursales asignadas
+        const { data: userBranches, error } = await db.getUserBranches(user.id);
+        if (error) throw error;
+        setAvailableBranches(userBranches || []);
+        console.log(`✅ Loaded ${userBranches?.length || 0} branches for user`);
+      }
+    } catch (error) {
+      console.error('Error loading available branches:', error);
+      setAvailableBranches([]);
+    } finally {
+      setBranchesLoading(false);
+      loadingBranchesRef.current = false;
+    }
+  }, [user?.id, user?.role]);
 
   const loadCurrentBranchStats = useCallback(async () => {
     if (!selectedBranch?.id || statsLoading) return;
@@ -75,6 +73,59 @@ const loadAvailableBranches = useCallback(async () => {
       setStatsLoading(false);
     }
   }, [selectedBranch?.id]);
+
+  // 🔧 FUNCIÓN PRINCIPAL DE CAMBIO DE SUCURSAL - SIMPLIFICADA
+  const changeBranch = useCallback(async (branchId) => {
+    console.log('🔄 useBranch.changeBranch called with ID:', branchId);
+    
+    try {
+      // Buscar la sucursal en las disponibles
+      let branch = availableBranches.find(b => b.id === branchId);
+      
+      if (!branch) {
+        // Si no está en las disponibles, buscarla en la base de datos
+        const { data: foundBranch, error } = await db.getBranchById(branchId);
+        if (error || !foundBranch) {
+          throw new Error('Sucursal no encontrada');
+        }
+        branch = foundBranch;
+      }
+
+      // SOLO LLAMAR selectBranch del AuthContext
+      const result = await selectBranch(branch);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Error al cambiar de sucursal');
+      }
+      
+      console.log('🎉 Branch change completed successfully');
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Error in changeBranch:', error);
+      return { success: false, error: error.message };
+    }
+  }, [selectBranch, availableBranches]);
+
+  // MÉTODO SIMPLIFICADO PARA CAMBIAR SUCURSAL POR OBJETO
+  const switchToBranch = useCallback(async (branch) => {
+    console.log('🔄 useBranch.switchToBranch called with:', branch.name);
+    
+    try {
+      const result = await selectBranch(branch);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Error al cambiar de sucursal');
+      }
+      
+      console.log('🎉 Branch switch completed successfully');
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Error in switchToBranch:', error);
+      return { success: false, error: error.message };
+    }
+  }, [selectBranch]);
 
   const getCurrentBranchInfo = useCallback(async () => {
     if (!selectedBranch?.id) return null;
@@ -103,51 +154,6 @@ const loadAvailableBranches = useCallback(async () => {
   const canChangeBranch = useCallback(() => {
     return user?.role === 'admin';
   }, [user?.role]);
-
-  // 🔧 FUNCIÓN PRINCIPAL DE CAMBIO DE SUCURSAL - OPTIMIZADA
-  const changeBranch = useCallback(async (branchId) => {
-  console.log('🔄 useBranch.changeBranch called with ID:', branchId);
-  
-  if (changingBranchRef.current) {
-    console.log('❌ Branch change already in progress, skipping...');
-    return { success: false, error: 'Cambio de sucursal ya en progreso' };
-  }
-
-  // ⚠️ REMOVER CUALQUIER window.location o navigate() AQUÍ
-  // NO REDIRIGIR - solo cambiar estado
-
-  try {
-    changingBranchRef.current = true;
-    
-    let branch = availableBranches.find(b => b.id === branchId);
-    
-    if (!branch) {
-      branch = await getBranchById(branchId);
-    }
-    
-    if (!branch) {
-      throw new Error('Sucursal no encontrada');
-    }
-
-    // SOLO LLAMAR selectBranch - SIN NAVEGACIÓN
-    const result = await selectBranch(branch);
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Error al cambiar de sucursal');
-    }
-    
-    console.log('🎉 Branch change completed successfully');
-    return result;
-    
-  } catch (error) {
-    console.error('❌ Error in changeBranch:', error);
-    return { success: false, error: error.message };
-  } finally {
-    setTimeout(() => {
-      changingBranchRef.current = false;
-    }, 1000);
-  }
-}, [selectBranch, canChangeBranch, availableBranches, getBranchById]);
 
   const getBranchDisplayName = useCallback(() => {
     return selectedBranch?.name || branchStats?.branchName || 'Sin sucursal';
@@ -247,6 +253,7 @@ const loadAvailableBranches = useCallback(async () => {
     }
   }, [canChangeBranch, refreshAvailableBranches, selectedBranch?.id, refreshBranchStats]);
 
+  // 🔧 FUNCIÓN FALTANTE: deleteBranch
   const deleteBranch = useCallback(async (branchId) => {
     if (!canChangeBranch()) {
       throw new Error('No tienes permisos para eliminar sucursales');
@@ -260,6 +267,7 @@ const loadAvailableBranches = useCallback(async () => {
       
       if (selectedBranch?.id === branchId) {
         console.warn('Current branch was deleted');
+        // Si la sucursal actual fue eliminada, podrías necesitar seleccionar otra
       }
       
       return data;
@@ -297,11 +305,52 @@ const loadAvailableBranches = useCallback(async () => {
     }
   }, [selectedBranch?.id, loadCurrentBranchStats]);
 
+  // NUEVO: Función para obtener sucursales con estadísticas
+  const getBranchesWithStats = useCallback(async () => {
+    try {
+      const branches = await Promise.all(
+        availableBranches.map(async (branch) => {
+          try {
+            const { data: stats } = await db.getBranchStats(branch.id);
+            return {
+              ...branch,
+              stats: stats || {
+                occupancyRate: 0,
+                currentGuests: 0,
+                totalRooms: branch.rooms_count || 0
+              }
+            };
+          } catch (error) {
+            console.warn(`Error loading stats for branch ${branch.id}:`, error);
+            return {
+              ...branch,
+              stats: {
+                occupancyRate: 0,
+                currentGuests: 0,
+                totalRooms: branch.rooms_count || 0
+              }
+            };
+          }
+        })
+      );
+      
+      return branches;
+    } catch (error) {
+      console.error('Error getting branches with stats:', error);
+      return availableBranches;
+    }
+  }, [availableBranches]);
+
+  // NUEVO: Función para validar acceso a sucursal
+  const validateBranchAccess = useCallback((branchId) => {
+    if (user?.role === 'admin') return true;
+    return availableBranches.some(branch => branch.id === branchId);
+  }, [user?.role, availableBranches]);
+
   // Limpiar referencias al desmontar
   useEffect(() => {
     return () => {
       loadingBranchesRef.current = false;
-      changingBranchRef.current = false;
     };
   }, []);
 
@@ -321,21 +370,24 @@ const loadAvailableBranches = useCallback(async () => {
     getCurrentBranchStats,
     getBranchDisplayName,
     getBranchShortName,
+    getBranchesWithStats,
     
     // Funciones de datos
     getCurrentBranchRooms,
     getCurrentBranchReservations,
     
-    // Funciones de acción
-    changeBranch,
+    // Funciones de acción - SIMPLIFICADAS
+    changeBranch,        // Por ID
+    switchToBranch,      // Por objeto completo
     canChangeBranch,
     isBranchSelected,
     canOperateInCurrentBranch,
+    validateBranchAccess,
     
     // Funciones de gestión (solo admin)
     createBranch,
     updateBranch,
-    deleteBranch,
+    deleteBranch,        // ✅ YA INCLUIDA
     
     // Funciones de actualización
     refreshBranchStats,
