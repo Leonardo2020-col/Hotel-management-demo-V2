@@ -5,7 +5,7 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2563eb" />
-
+    
     <!-- PWA Meta Tags -->
     <meta name="application-name" content="Hotel Paraíso">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,50 +15,61 @@
     <meta name="msapplication-TileColor" content="#2563eb">
     <meta name="msapplication-tap-highlight" content="no">
     
-    <!-- Cache Control Meta Tags -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-
-    <!-- App Version for Cache Busting -->
-    <meta name="app-version" content="%REACT_APP_VERSION%">
-    <meta name="build-time" content="%REACT_APP_BUILD_TIME%">
-
     <!-- Descripción para SEO y PWA -->
-    <meta name="description" content="Sistema completo de gestión hotelera - Hotel Paraíso. Administra reservas, habitaciones, huéspedes y más." />
-
+    <meta
+      name="description"
+      content="Sistema completo de gestión hotelera - Hotel Paraíso. Administra reservas, habitaciones, huéspedes y más con funcionalidad offline."
+    />
+    
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://hotel-paraiso.com/">
     <meta property="og:title" content="Hotel Paraíso - Sistema de Gestión">
-    <meta property="og:description" content="Sistema completo de gestión hotelera">
-    <meta property="og:image" content="%PUBLIC_URL%/logo512.png">
+    <meta property="og:description" content="Sistema completo de gestión hotelera con funcionalidad offline">
+    <meta property="og:image" content="%PUBLIC_URL%/og-image.png">
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://hotel-paraiso.com/">
     <meta property="twitter:title" content="Hotel Paraíso - Sistema de Gestión">
-    <meta property="twitter:description" content="Sistema completo de gestión hotelera">
-    <meta property="twitter:image" content="%PUBLIC_URL%/logo512.png">
+    <meta property="twitter:description" content="Sistema completo de gestión hotelera con funcionalidad offline">
+    <meta property="twitter:image" content="%PUBLIC_URL%/twitter-image.png">
     
-    <!-- Icons -->
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/icons/apple-touch-icon.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="%PUBLIC_URL%/icons/icon-152x152.png">
+    <link rel="apple-touch-icon" sizes="144x144" href="%PUBLIC_URL%/icons/icon-144x144.png">
+    <link rel="apple-touch-icon" sizes="120x120" href="%PUBLIC_URL%/icons/icon-120x120.png">
+    <link rel="apple-touch-icon" sizes="114x114" href="%PUBLIC_URL%/icons/icon-114x114.png">
+    <link rel="apple-touch-icon" sizes="76x76" href="%PUBLIC_URL%/icons/icon-76x76.png">
+    <link rel="apple-touch-icon" sizes="72x72" href="%PUBLIC_URL%/icons/icon-72x72.png">
+    <link rel="apple-touch-icon" sizes="60x60" href="%PUBLIC_URL%/icons/icon-60x60.png">
+    <link rel="apple-touch-icon" sizes="57x57" href="%PUBLIC_URL%/icons/icon-57x57.png">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/icons/favicon-16x16.png">
+    <link rel="mask-icon" href="%PUBLIC_URL%/icons/safari-pinned-tab.svg" color="#2563eb">
+    <link rel="shortcut icon" href="%PUBLIC_URL%/favicon.ico">
+    
+    <!-- Microsoft -->
+    <meta name="msapplication-TileImage" content="%PUBLIC_URL%/icons/mstile-144x144.png">
+    <meta name="msapplication-config" content="%PUBLIC_URL%/browserconfig.xml">
+    
+    <!-- Web App Manifest -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-
-    <!-- Preload Critical Resources -->
+    
+    <!-- Preload crítico para performance -->
+    <link rel="preload" href="%PUBLIC_URL%/icons/icon-192x192.png" as="image">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     
     <title>Hotel Paraíso - Sistema de Gestión</title>
-
-    <!-- CSS crítico para loading -->
+    
+    <!-- CSS crítico para evitar FOUC -->
     <style>
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-
-      #pwa-loading {
+      /* Loading spinner crítico */
+      .pwa-loading {
         position: fixed;
         top: 0;
         left: 0;
@@ -66,61 +77,46 @@
         height: 100%;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         display: flex;
-        flex-direction: column;
-        justify-content: center;
         align-items: center;
+        justify-content: center;
         z-index: 9999;
-        transition: opacity 0.5s ease-out;
         color: white;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }
-
-      #pwa-loading .spinner {
-        width: 60px;
-        height: 60px;
-        border: 3px solid rgba(255,255,255,0.3);
-        border-top: 3px solid white;
+      
+      .pwa-loading .spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255,255,255,0.3);
         border-radius: 50%;
-        animation: spin 1s linear infinite;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
         margin-bottom: 20px;
       }
-
-      #pwa-loading h1 {
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      .pwa-loading .content {
+        text-align: center;
+      }
+      
+      .pwa-loading h1 {
+        margin: 20px 0 10px;
         font-size: 24px;
-        margin: 0 0 10px 0;
         font-weight: 600;
       }
-
-      #pwa-loading p {
+      
+      .pwa-loading p {
         margin: 0;
-        font-size: 14px;
         opacity: 0.8;
+        font-size: 14px;
       }
-
-      /* Hide loading after React loads */
-      body.app-loaded #pwa-loading {
-        opacity: 0;
-        pointer-events: none;
-      }
-
-      /* Ensure the loading screen is hidden after 10 seconds max */
-      #pwa-loading {
-        animation: hideAfterDelay 10s forwards;
-      }
-
-      @keyframes hideAfterDelay {
-        0%, 90% { opacity: 1; }
-        100% { opacity: 0; pointer-events: none; }
-      }
-
-      /* Prevent FOUC */
-      #root {
-        opacity: 0;
-        transition: opacity 0.3s ease-in;
-      }
-
-      body.app-loaded #root {
-        opacity: 1;
+      
+      /* Ocultar cuando la app carga */
+      .app-loaded .pwa-loading {
+        display: none;
       }
     </style>
   </head>
@@ -133,108 +129,66 @@
       </div>
     </noscript>
     
-    <!-- Loading Screen -->
-    <div id="pwa-loading">
-      <div class="spinner"></div>
-      <h1>Hotel Paraíso</h1>
-      <p>Inicializando aplicación...</p>
+    <!-- Loading screen inicial -->
+    <div class="pwa-loading" id="pwa-loading">
+      <div class="content">
+        <div class="spinner"></div>
+        <h1>Hotel Paraíso</h1>
+        <p>Cargando sistema de gestión...</p>
+      </div>
     </div>
-
+    
     <!-- Root de la aplicación React -->
     <div id="root"></div>
-
-    <!-- Cache Busting y Inicialización -->
+    
+    <!-- Script para ocultar loading cuando React carga -->
     <script>
-      // Version y cache management
-      (function() {
-        const version = '%REACT_APP_VERSION%';
-        const buildTime = '%REACT_APP_BUILD_TIME%';
-        
-        const storedVersion = localStorage.getItem('hotel_app_version');
-        const storedBuildTime = localStorage.getItem('hotel_build_time');
-        
-        if (storedVersion && storedVersion !== version) {
-          console.log('🔄 Nueva versión detectada, limpiando cache...');
-          
-          // Clear application cache but keep critical data
-          const keysToKeep = ['hotel_selected_branch'];
-          Object.keys(localStorage).forEach(key => {
-            if (!keysToKeep.includes(key) && key.startsWith('hotel_')) {
-              localStorage.removeItem(key);
-            }
-          });
-          sessionStorage.clear();
-          
-          console.log('✅ Cache limpiado para nueva versión:', version);
-        }
-        
-        localStorage.setItem('hotel_app_version', version);
-        localStorage.setItem('hotel_build_time', buildTime);
-      })();
-      
-      // Hide loading screen when React is ready
-      function hideLoadingScreen() {
+      // Ocultar loading screen cuando React monte
+      window.addEventListener('load', function() {
         setTimeout(function() {
           document.body.classList.add('app-loaded');
-          console.log('✅ App loaded, hiding loading screen');
-        }, 1000);
-      }
-
-      // Multiple triggers to ensure loading screen hides
-      window.addEventListener('load', hideLoadingScreen);
-      document.addEventListener('DOMContentLoaded', function() {
-        setTimeout(hideLoadingScreen, 2000);
+        }, 500);
       });
-
-      // Fallback to hide loading screen after 8 seconds
-      setTimeout(function() {
-        if (!document.body.classList.contains('app-loaded')) {
-          console.log('⚠️ Fallback: hiding loading screen after timeout');
-          document.body.classList.add('app-loaded');
-        }
-      }, 8000);
       
-      // PWA Detection
+      // Detectar si viene de instalación PWA
       if (window.matchMedia('(display-mode: standalone)').matches) {
-        console.log('📱 Ejecutándose como PWA instalada');
-        document.documentElement.classList.add('pwa-mode');
+        console.log('Ejecutándose como PWA instalada');
+        // Agregar analytics o tracking específico para PWA
       }
       
-      // Service Worker Registration
+      // Registrar Service Worker
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
           navigator.serviceWorker.register('/sw.js')
             .then(function(registration) {
-              console.log('✅ Service Worker registrado:', registration.scope);
+              console.log('SW registrado con éxito:', registration.scope);
             })
             .catch(function(error) {
-              console.log('⚠️ Service Worker falló:', error);
+              console.log('SW falló al registrar:', error);
             });
         });
       }
       
-      // Global Error Handling
+      // Manejar errores globales para PWA
       window.addEventListener('error', function(e) {
-        console.error('❌ Error global:', e.error);
-        // Ensure loading screen is hidden even if there's an error
-        document.body.classList.add('app-loaded');
+        console.error('Error global capturado:', e.error);
+        // Aquí podrías enviar errores a un servicio de logging
       });
       
+      // Manejar promesas rechazadas
       window.addEventListener('unhandledrejection', function(e) {
-        console.error('❌ Promise rechazada:', e.reason);
+        console.error('Promise rechazada:', e.reason);
         e.preventDefault();
       });
       
-      // iOS PWA Touch Handling
+      // Prevenir zoom en iOS cuando está instalado como PWA
       if (window.matchMedia('(display-mode: standalone)').matches) {
-        // Prevent zoom on iOS when installed as PWA
         document.addEventListener('touchstart', function(e) {
           if (e.touches.length > 1) {
             e.preventDefault();
           }
         }, { passive: false });
         
-        // Prevent double-tap zoom
         let lastTouchEnd = 0;
         document.addEventListener('touchend', function(e) {
           const now = (new Date()).getTime();
@@ -245,5 +199,10 @@
         }, false);
       }
     </script>
+    
+    <!-- 
+      Este HTML será reemplazado por React cuando se cargue.
+      Los comentarios y scripts anteriores se ejecutan antes de que React tome control.
+    -->
   </body>
 </html>
