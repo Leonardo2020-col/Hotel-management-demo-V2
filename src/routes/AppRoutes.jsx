@@ -4,7 +4,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 // Layouts - RUTA CORREGIDA: layout (singular) no layouts (plural)
-import DashboardLayout from '../layouts/DashboardLayout';
+import DashboardLayout from '/layouts/DashboardLayout';
 
 // Pages - RUTAS CORREGIDAS
 import Dashboard from '../pages/Dashboard/Dashboard';
