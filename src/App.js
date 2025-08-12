@@ -4,8 +4,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
-// Layout
-import DashboardLayout from '../layout/DashboardLayout';
+// Layout - CORREGIR RUTA SEGÚN TU ESTRUCTURA
+import DashboardLayout from './layout/DashboardLayout'; // Si está en src/layout/
+// O usar: import DashboardLayout from './layouts/DashboardLayout'; // Si está en src/layouts/
 
 // Components
 import ProtectedRoute from './components/common/ProtectedRoute';
