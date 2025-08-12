@@ -1,5 +1,13 @@
-// src/context/AuthContext.js - VERSIÓN CORREGIDA CON MEJORES PRÁCTICAS
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
+// src/context/AuthContext.js - VERSIÓN CORREGIDA CON useMemo IMPORTADO
+import React, { 
+  createContext, 
+  useContext, 
+  useReducer, 
+  useEffect, 
+  useCallback, 
+  useRef,
+  useMemo // ← AGREGAR ESTA IMPORTACIÓN
+} from 'react';
 import { db, supabase } from '../lib/supabase';
 
 const AuthContext = createContext();
@@ -189,58 +197,40 @@ export const AuthProvider = ({ children }) => {
   const initializingRef = useRef(false);
   const authStateChangeRef = useRef(null);
 
-  // Check Supabase session on mount
+  // Check for existing auth session on mount
   useEffect(() => {
     if (initializingRef.current) return;
-    checkSupabaseSession();
+    checkAuthSession();
   }, []);
 
-  // Auth state change listener
-  useEffect(() => {
-    if (authStateChangeRef.current) {
-      authStateChangeRef.current.unsubscribe();
-    }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('🔔 Auth state change:', event, session?.user?.email);
-        
-        if (event === 'SIGNED_IN' && session) {
-          await handleAuthUser(session.user);
-        } else if (event === 'SIGNED_OUT') {
-          handleLogout();
-        }
-      }
-    );
-
-    authStateChangeRef.current = subscription;
-
-    return () => {
-      if (authStateChangeRef.current) {
-        authStateChangeRef.current.unsubscribe();
-      }
-    };
-  }, []);
-
-  const checkSupabaseSession = useCallback(async () => {
+  const checkAuthSession = useCallback(async () => {
     if (initializingRef.current) return;
     
     try {
       initializingRef.current = true;
-      console.log('🔍 Checking Supabase session...');
+      console.log('🔍 Checking auth session...');
       
-      const { data: { session }, error } = await supabase.auth.getSession();
+      // Simple session check without Supabase for now
+      const savedUser = getItem('hotel_user_data');
+      const savedBranch = getItem('hotel_selected_branch');
       
-      if (error) {
-        console.error('Session check error:', error);
-        throw error;
-      }
-      
-      if (session?.user) {
-        console.log('👤 Found active session for:', session.user.email);
-        await handleAuthUser(session.user);
+      if (savedUser) {
+        console.log('👤 Found saved user session:', savedUser.email);
+        
+        const permissions = ROLE_PERMISSIONS[savedUser.role] || {};
+        const needsBranchSelection = savedUser.role === 'admin' && !savedBranch;
+        
+        dispatch({
+          type: AUTH_ACTIONS.LOGIN_SUCCESS,
+          payload: {
+            user: savedUser,
+            permissions,
+            selectedBranch: savedBranch,
+            needsBranchSelection
+          }
+        });
       } else {
-        console.log('📭 No active session found');
+        console.log('📭 No saved session found');
         dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
       }
     } catch (error) {
@@ -249,140 +239,76 @@ export const AuthProvider = ({ children }) => {
     } finally {
       initializingRef.current = false;
     }
-  }, []);
+  }, [getItem]);
 
-  const handleAuthUser = useCallback(async (authUser) => {
-    try {
-      console.log('🔄 Processing authenticated user:', authUser.email);
-      
-      // Fetch user profile
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-      
-      if (profileError) {
-        console.error('Error fetching user profile:', profileError);
-        throw new Error('Usuario no encontrado en el sistema');
-      }
-      
-      console.log('👤 User profile loaded:', userProfile.name, userProfile.role);
-      
-      // Get permissions based on role
-      const permissions = ROLE_PERMISSIONS[userProfile.role] || {};
-      
-      // Check for saved branch
-      let selectedBranch = null;
-      const savedBranch = getItem('hotel_selected_branch');
-      
-      if (savedBranch) {
-        try {
-          // Verify branch still exists
-          const { data: validBranch } = await db.getBranchById(savedBranch.id);
-          if (validBranch) {
-            selectedBranch = validBranch;
-            console.log('✅ Restored saved branch:', selectedBranch.name);
-          } else {
-            removeItem('hotel_selected_branch');
-          }
-        } catch (error) {
-          console.warn('Error restoring saved branch:', error);
-          removeItem('hotel_selected_branch');
-        }
-      }
-      
-      // For admins, load default branch if none saved
-      if (userProfile.role === 'admin' && !selectedBranch) {
-        try {
-          const { data: userBranches } = await db.getUserBranches(authUser.id);
-          const defaultBranch = userBranches?.find(b => b.isDefault) || userBranches?.[0];
-          if (defaultBranch) {
-            selectedBranch = defaultBranch;
-            setItem('hotel_selected_branch', defaultBranch);
-            console.log('🏢 Set default branch for admin:', defaultBranch.name);
-          }
-        } catch (error) {
-          console.warn('Error loading admin branches:', error);
-        }
-      }
-      
-      // For reception, load assigned branch
-      if (userProfile.role === 'reception' && !selectedBranch) {
-        try {
-          const { data: userBranches } = await db.getUserBranches(authUser.id);
-          const assignedBranch = userBranches?.[0];
-          if (assignedBranch) {
-            selectedBranch = assignedBranch;
-            setItem('hotel_selected_branch', assignedBranch);
-            console.log('🏢 Set assigned branch for reception:', assignedBranch.name);
-          }
-        } catch (error) {
-          console.warn('Error loading reception branch:', error);
-        }
-      }
-      
-      const needsBranchSelection = userProfile.role === 'admin' && !selectedBranch;
-      
-      // Update last login
-      await supabase
-        .from('users')
-        .update({ last_login: new Date().toISOString() })
-        .eq('id', authUser.id);
-      
-      dispatch({
-        type: AUTH_ACTIONS.LOGIN_SUCCESS,
-        payload: {
-          user: {
-            id: authUser.id,
-            email: authUser.email,
-            name: userProfile.name,
-            role: userProfile.role,
-            avatar: userProfile.avatar_url
-          },
-          permissions,
-          selectedBranch,
-          needsBranchSelection
-        }
-      });
-      
-    } catch (error) {
-      console.error('Error handling auth user:', error);
-      dispatch({
-        type: AUTH_ACTIONS.LOGIN_FAILURE,
-        payload: error.message
-      });
-    }
-  }, [getItem, setItem, removeItem]);
-
+  // Mock login function for demo
   const login = useCallback(async (email, password) => {
     dispatch({ type: AUTH_ACTIONS.LOGIN_START });
 
     try {
-      console.log('🔐 Attempting Supabase login for:', email);
+      console.log('🔐 Attempting login for:', email);
       
       // Validate input
       if (!email || !password) {
         throw new Error('Email y contraseña son requeridos');
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password
+      // Mock user data for demo
+      const mockUsers = {
+        'admin@hotelparaiso.com': {
+          id: 1,
+          email: 'admin@hotelparaiso.com',
+          name: 'Administrador del Sistema',
+          role: 'admin',
+          password: 'admin123'
+        },
+        'recepcion@hotelparaiso.com': {
+          id: 2,
+          email: 'recepcion@hotelparaiso.com',
+          name: 'Personal de Recepción',
+          role: 'reception',
+          password: 'recepcion123'
+        }
+      };
+
+      const user = mockUsers[email];
+      if (!user || user.password !== password) {
+        throw new Error('Credenciales incorrectas');
+      }
+
+      const { password: _, ...userWithoutPassword } = user;
+      const permissions = ROLE_PERMISSIONS[user.role] || {};
+      
+      // For reception, auto-assign branch
+      let selectedBranch = null;
+      let needsBranchSelection = false;
+      
+      if (user.role === 'reception') {
+        selectedBranch = { 
+          id: 1, 
+          name: 'Sucursal Principal', 
+          location: 'Lima Centro',
+          code: 'MAIN' 
+        };
+        setItem('hotel_selected_branch', selectedBranch);
+      } else if (user.role === 'admin') {
+        needsBranchSelection = true;
+      }
+
+      // Save user data
+      setItem('hotel_user_data', userWithoutPassword);
+      
+      dispatch({
+        type: AUTH_ACTIONS.LOGIN_SUCCESS,
+        payload: {
+          user: userWithoutPassword,
+          permissions,
+          selectedBranch,
+          needsBranchSelection
+        }
       });
 
-      if (error) {
-        console.error('Login error:', error);
-        throw error;
-      }
-      
-      if (!data.user) {
-        throw new Error('No se recibieron datos del usuario');
-      }
-
-      console.log('✅ Supabase login successful for:', data.user.email);
-      
-      // handleAuthUser will be called automatically by the listener
+      console.log('✅ Login successful for:', user.email);
       return { success: true };
       
     } catch (error) {
@@ -393,7 +319,7 @@ export const AuthProvider = ({ children }) => {
       });
       return { success: false, error: error.message };
     }
-  }, []);
+  }, [setItem]);
 
   const selectBranch = useCallback(async (branch) => {
     console.log('🏢 AuthContext.selectBranch called for:', branch.name);
@@ -415,17 +341,9 @@ export const AuthProvider = ({ children }) => {
     try {
       dispatch({ type: AUTH_ACTIONS.BRANCH_SWITCHING_START });
       
-      // Validate branch exists
-      const { data: validBranch, error } = await db.getBranchById(branch.id);
-      if (error || !validBranch) {
-        throw new Error('Sucursal no válida o no encontrada');
-      }
-
-      console.log('✅ Branch validated:', validBranch.name);
-      
       // Prepare branch data
       const branchToSave = {
-        ...validBranch,
+        ...branch,
         selectedAt: new Date().toISOString()
       };
       
@@ -453,37 +371,11 @@ export const AuthProvider = ({ children }) => {
     }
   }, [state.selectedBranch, setItem]);
 
-  const changeBranch = useCallback(async (branchId) => {
-    try {
-      console.log('🔄 AuthContext.changeBranch called with ID:', branchId);
-      
-      const { data: branch, error } = await db.getBranchById(branchId);
-      if (error || !branch) {
-        return { success: false, error: 'Sucursal no encontrada' };
-      }
-
-      return await selectBranch(branch);
-      
-    } catch (error) {
-      console.error('❌ changeBranch error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }, [selectBranch]);
-
   const logout = useCallback(async () => {
     console.log('👋 Logging out user');
     
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.warn('Error during Supabase logout:', error);
-    }
-    
-    handleLogout();
-  }, []);
-
-  const handleLogout = useCallback(() => {
     // Clear localStorage
+    removeItem('hotel_user_data');
     removeItem('hotel_selected_branch');
     
     // Reset refs
@@ -508,20 +400,6 @@ export const AuthProvider = ({ children }) => {
     return state.user?.role === role;
   }, [state.user?.role]);
 
-  const getAllowedRoutes = useCallback(() => {
-    if (!state.permissions) return [];
-
-    const routes = [];
-    
-    Object.keys(state.permissions).forEach(module => {
-      if (state.permissions[module].read) {
-        routes.push(module);
-      }
-    });
-
-    return routes;
-  }, [state.permissions]);
-
   const isReady = useCallback(() => {
     if (!state.isAuthenticated) return false;
     if (state.user?.role === 'admin') {
@@ -529,28 +407,6 @@ export const AuthProvider = ({ children }) => {
     }
     return true;
   }, [state.isAuthenticated, state.user?.role, state.needsBranchSelection, state.selectedBranch]);
-
-  const getAvailableBranches = useCallback(async () => {
-    try {
-      if (state.user?.role === 'admin') {
-        const { data: branches, error } = await db.getBranches();
-        if (error) throw error;
-        return branches || [];
-      } else if (state.user?.id) {
-        const { data: userBranches, error } = await db.getUserBranches(state.user.id);
-        if (error) throw error;
-        return userBranches || [];
-      }
-      return [];
-    } catch (error) {
-      console.error('Error getting available branches:', error);
-      return [];
-    }
-  }, [state.user]);
-
-  const canChangeBranch = useCallback(() => {
-    return state.user?.role === 'admin';
-  }, [state.user?.role]);
 
   // Memoized context value to prevent unnecessary re-renders
   const contextValue = useMemo(() => ({
@@ -570,14 +426,10 @@ export const AuthProvider = ({ children }) => {
     
     // Funciones de sucursales
     selectBranch,
-    changeBranch,
-    getAvailableBranches,
-    canChangeBranch,
     
     // Funciones de permisos
     hasPermission,
     hasRole,
-    getAllowedRoutes,
     isReady
   }), [
     state,
@@ -585,12 +437,8 @@ export const AuthProvider = ({ children }) => {
     logout,
     clearError,
     selectBranch,
-    changeBranch,
-    getAvailableBranches,
-    canChangeBranch,
     hasPermission,
     hasRole,
-    getAllowedRoutes,
     isReady
   ]);
 
