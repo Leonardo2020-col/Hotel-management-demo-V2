@@ -1,6 +1,6 @@
-// src/pages/Reservations/Reservations.jsx - ACTUALIZADO CON RESTRICCIONES POR ROL
+// src/pages/Reservations/Reservations.jsx - VERSIÓN CORREGIDA Y OPTIMIZADA
 import React, { useState } from 'react';
-import { Plus, Calendar, Filter, Download, Upload, Lock, AlertCircle } from 'lucide-react';
+import { Plus, Calendar, Filter, Download, Upload, Lock, AlertCircle, RefreshCw } from 'lucide-react';
 import { useReservations } from '../../hooks/useReservations';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/common/Button';
@@ -9,16 +9,19 @@ import ReservationList from '../../components/reservations/ReservationList';
 import ReservationStats from '../../components/reservations/ReservationStats';
 import CreateReservationModal from '../../components/reservations/CreateReservationModal';
 import ReservationCalendar from '../../components/reservations/ReservationCalendar';
+import toast from 'react-hot-toast';
 
 const Reservations = () => {
-  const { hasPermission, hasRole } = useAuth();
+  const { hasPermission, hasRole, user } = useAuth();
   const canWrite = hasPermission('reservations', 'write');
   const isAdmin = hasRole('admin');
+  const isReception = hasRole('reception');
 
   const {
     reservations,
     allReservations,
     loading,
+    error,
     filters,
     setFilters,
     pagination,
@@ -28,12 +31,13 @@ const Reservations = () => {
     deleteReservation,
     changeReservationStatus,
     getReservationStats,
-    availableRooms
+    refresh
   } = useReservations();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
   const [selectedReservation, setSelectedReservation] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const stats = getReservationStats();
 
@@ -42,7 +46,7 @@ const Reservations = () => {
     let filteredReservations = reservations;
 
     // Si es administrador, mostrar solo las reservas limitadas (ejemplo: solo las de hoy o próximas)
-    if (isAdmin) {
+    if (isAdmin && !isReception) {
       const today = new Date();
       const nextWeek = new Date();
       nextWeek.setDate(today.getDate() + 7);
@@ -60,22 +64,102 @@ const Reservations = () => {
 
   const handleCreateReservation = async (reservationData) => {
     if (!canWrite) {
-      alert('No tienes permisos para crear reservas');
+      toast.error('No tienes permisos para crear reservas');
       return;
     }
 
     try {
+      console.log('🏨 Creating reservation from page component:', reservationData);
       await createReservation(reservationData);
       setShowCreateModal(false);
+      toast.success('Reserva creada exitosamente');
     } catch (error) {
       console.error('Error creating reservation:', error);
+      toast.error('Error al crear la reserva: ' + (error.message || 'Error desconocido'));
+    }
+  };
+
+  const handleStatusChange = async (reservationId, newStatus) => {
+    if (!canWrite) {
+      toast.error('No tienes permisos para cambiar estados de reservas');
+      return;
+    }
+
+    try {
+      await changeReservationStatus(reservationId, newStatus);
+    } catch (error) {
+      console.error('Error changing reservation status:', error);
+    }
+  };
+
+  const handleEditReservation = (reservation) => {
+    if (!canWrite) {
+      toast.error('No tienes permisos para editar reservas');
+      return;
+    }
+    setSelectedReservation(reservation);
+    // TODO: Implementar modal de edición
+    console.log('Edit reservation:', reservation);
+  };
+
+  const handleDeleteReservation = async (reservationId) => {
+    if (!canWrite) {
+      toast.error('No tienes permisos para cancelar reservas');
+      return;
+    }
+
+    if (window.confirm('¿Estás seguro de que quieres cancelar esta reserva?')) {
+      try {
+        await deleteReservation(reservationId);
+      } catch (error) {
+        console.error('Error deleting reservation:', error);
+      }
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+      toast.success('Datos actualizados');
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast.error('Error al actualizar los datos');
+    } finally {
+      setRefreshing(false);
     }
   };
 
   const handleExportReservations = () => {
-    // Implementar exportación a CSV/Excel
+    // TODO: Implementar exportación a CSV/Excel
+    toast.info('Función de exportación en desarrollo');
     console.log('Exporting reservations...');
   };
+
+  const handleImportReservations = () => {
+    // TODO: Implementar importación desde CSV/Excel
+    toast.info('Función de importación en desarrollo');
+    console.log('Importing reservations...');
+  };
+
+  const getViewModeReservations = () => {
+    return viewMode === 'calendar' && !isAdmin ? allReservations : filteredReservations;
+  };
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Error al cargar las reservas</h3>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button variant="primary" onClick={handleRefresh} icon={RefreshCw}>
+            Reintentar
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -84,35 +168,52 @@ const Reservations = () => {
         <div>
           <div className="flex items-center space-x-3">
             <h1 className="text-3xl font-bold text-gray-900">Gestión de Reservas</h1>
-            {isAdmin && (
+            {isAdmin && !isReception && (
               <div className="flex items-center space-x-2 px-3 py-1 bg-yellow-100 rounded-lg">
                 <Lock size={16} className="text-yellow-600" />
                 <span className="text-sm font-medium text-yellow-800">Vista Limitada</span>
               </div>
             )}
+            {!canWrite && (
+              <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-lg">
+                <AlertCircle size={16} className="text-gray-500" />
+                <span className="text-sm font-medium text-gray-700">Solo lectura</span>
+              </div>
+            )}
           </div>
           <p className="text-gray-600 mt-1">
-            {isAdmin 
+            {isAdmin && !isReception
               ? 'Vista limitada: Reservas de los próximos 7 días'
-              : 'Administra todas las reservas del hotel'
+              : canWrite 
+              ? 'Administra todas las reservas del hotel'
+              : 'Visualiza las reservas del hotel'
             }
           </p>
+          {user && (
+            <p className="text-sm text-gray-500 mt-1">
+              Conectado como: {user.email} ({isAdmin ? 'Administrador' : isReception ? 'Recepción' : 'Usuario'})
+            </p>
+          )}
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 mt-4 lg:mt-0">
-          {!canWrite && (
-            <div className="flex items-center space-x-2 px-3 py-2 bg-red-50 rounded-lg border border-red-200">
-              <AlertCircle size={16} className="text-red-500" />
-              <span className="text-sm text-red-700">Solo lectura</span>
-            </div>
-          )}
+          <Button
+            variant="outline"
+            icon={RefreshCw}
+            onClick={handleRefresh}
+            loading={refreshing}
+            size="sm"
+          >
+            Actualizar
+          </Button>
           
           {canWrite && (
             <>
               <Button
                 variant="outline"
                 icon={Upload}
-                onClick={handleExportReservations}
+                onClick={handleImportReservations}
+                size="sm"
               >
                 Importar
               </Button>
@@ -120,6 +221,7 @@ const Reservations = () => {
                 variant="outline"
                 icon={Download}
                 onClick={handleExportReservations}
+                size="sm"
               >
                 Exportar
               </Button>
@@ -136,7 +238,7 @@ const Reservations = () => {
       </div>
 
       {/* Admin Restriction Notice */}
-      {isAdmin && (
+      {isAdmin && !isReception && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-start space-x-3">
             <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
@@ -144,7 +246,7 @@ const Reservations = () => {
               <h3 className="text-sm font-semibold text-yellow-800">Acceso Limitado</h3>
               <p className="text-sm text-yellow-700 mt-1">
                 Como administrador, solo puedes ver las reservas de los próximos 7 días. 
-                Para acceso completo a reservas, inicia sesión como personal de recepción.
+                Para acceso completo a reservas, necesitas permisos de recepción.
               </p>
             </div>
           </div>
@@ -153,10 +255,18 @@ const Reservations = () => {
 
       {/* Stats Cards */}
       <ReservationStats 
-        stats={isAdmin ? {
+        stats={isAdmin && !isReception ? {
           ...stats,
           total: filteredReservations.length,
           // Recalcular stats solo para las reservas filtradas
+          pending: filteredReservations.filter(r => r.status === 'pending').length,
+          confirmed: filteredReservations.filter(r => r.status === 'confirmed').length,
+          checkedIn: filteredReservations.filter(r => r.status === 'checked_in').length,
+          checkedOut: filteredReservations.filter(r => r.status === 'checked_out').length,
+          cancelled: filteredReservations.filter(r => r.status === 'cancelled').length,
+          totalRevenue: filteredReservations
+            .filter(r => ['checked_in', 'checked_out'].includes(r.status))
+            .reduce((sum, r) => sum + (r.totalAmount || 0), 0)
         } : stats} 
         loading={loading} 
       />
@@ -183,10 +293,10 @@ const Reservations = () => {
 
         <div className="text-sm text-gray-500">
           {filteredReservations.length} reserva{filteredReservations.length !== 1 ? 's' : ''} 
-          {isAdmin && (
+          {isAdmin && !isReception && (
             <span className="text-yellow-600 font-medium"> (vista limitada)</span>
           )}
-          {filters.search || filters.status || filters.dateRange ? ' (filtradas)' : ''}
+          {filters.search || filters.status || filters.dateRange || filters.source ? ' (filtradas)' : ''}
         </div>
       </div>
 
@@ -204,14 +314,14 @@ const Reservations = () => {
           loading={loading}
           pagination={pagination}
           onPaginationChange={setPagination}
-          onStatusChange={canWrite ? changeReservationStatus : null}
-          onEdit={canWrite ? setSelectedReservation : null}
-          onDelete={canWrite ? deleteReservation : null}
+          onStatusChange={canWrite ? handleStatusChange : null}
+          onEdit={canWrite ? handleEditReservation : null}
+          onDelete={canWrite ? handleDeleteReservation : null}
           readOnly={!canWrite}
         />
       ) : (
         <ReservationCalendar
-          reservations={isAdmin ? filteredReservations : allReservations}
+          reservations={getViewModeReservations()}
           loading={loading}
           onSelectReservation={setSelectedReservation}
           readOnly={!canWrite}
@@ -224,7 +334,6 @@ const Reservations = () => {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateReservation}
-          availableRooms={availableRooms}
         />
       )}
 
@@ -239,15 +348,66 @@ const Reservations = () => {
               <h3 className="text-lg font-semibold text-gray-900">Sin Permisos</h3>
             </div>
             <p className="text-gray-600 mb-6">
-              No tienes permisos para crear nuevas reservas. Esta función está disponible solo para el personal de recepción.
+              No tienes permisos para crear nuevas reservas. Esta función está disponible solo para usuarios con permisos de escritura.
             </p>
-            <Button
-              variant="primary"
-              onClick={() => setShowCreateModal(false)}
-              className="w-full"
-            >
-              Entendido
-            </Button>
+            <div className="flex space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowCreateModal(false)}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => setShowCreateModal(false)}
+                className="flex-1"
+              >
+                Entendido
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Reservation Modal - TODO: Implementar */}
+      {selectedReservation && canWrite && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md mx-4">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Calendar className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Editar Reserva</h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              La funcionalidad de edición de reservas está en desarrollo.
+            </p>
+            <div className="space-y-2 text-sm">
+              <p><strong>Reserva:</strong> {selectedReservation.confirmationCode}</p>
+              <p><strong>Huésped:</strong> {selectedReservation.guest?.name}</p>
+              <p><strong>Habitación:</strong> {selectedReservation.room?.number}</p>
+              <p><strong>Estado:</strong> {selectedReservation.status}</p>
+            </div>
+            <div className="flex space-x-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setSelectedReservation(null)}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  toast.info('Función en desarrollo');
+                  setSelectedReservation(null);
+                }}
+                className="flex-1"
+              >
+                Editar
+              </Button>
+            </div>
           </div>
         </div>
       )}

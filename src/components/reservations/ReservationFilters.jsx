@@ -1,6 +1,25 @@
 import React from 'react';
 import { Search, Filter, X } from 'lucide-react';
-import { RESERVATION_STATUS, reservationSources } from '../../utils/reservationMockData';
+
+// Usar constantes directas en lugar de importar desde mock data
+const RESERVATION_STATUS = {
+  PENDING: 'pending',
+  CONFIRMED: 'confirmed',
+  CHECKED_IN: 'checked_in',
+  CHECKED_OUT: 'checked_out',
+  CANCELLED: 'cancelled',
+  NO_SHOW: 'no_show'
+};
+
+const RESERVATION_SOURCES = [
+  'direct',
+  'booking.com',
+  'airbnb',
+  'expedia',
+  'agoda',
+  'phone',
+  'walk-in'
+];
 
 const ReservationFilters = ({ filters, onFiltersChange, loading }) => {
   const handleFilterChange = (key, value) => {
@@ -23,10 +42,12 @@ const ReservationFilters = ({ filters, onFiltersChange, loading }) => {
 
   const statusOptions = [
     { value: '', label: 'Todos los estados' },
-    ...Object.values(RESERVATION_STATUS).map(status => ({
-      value: status,
-      label: status
-    }))
+    { value: RESERVATION_STATUS.PENDING, label: 'Pendiente' },
+    { value: RESERVATION_STATUS.CONFIRMED, label: 'Confirmada' },
+    { value: RESERVATION_STATUS.CHECKED_IN, label: 'Check-in' },
+    { value: RESERVATION_STATUS.CHECKED_OUT, label: 'Check-out' },
+    { value: RESERVATION_STATUS.CANCELLED, label: 'Cancelada' },
+    { value: RESERVATION_STATUS.NO_SHOW, label: 'No Show' }
   ];
 
   const dateRangeOptions = [
@@ -39,10 +60,13 @@ const ReservationFilters = ({ filters, onFiltersChange, loading }) => {
 
   const sourceOptions = [
     { value: '', label: 'Todas las fuentes' },
-    ...reservationSources.map(source => ({
-      value: source,
-      label: source
-    }))
+    { value: 'direct', label: 'Directo' },
+    { value: 'booking.com', label: 'Booking.com' },
+    { value: 'airbnb', label: 'Airbnb' },
+    { value: 'expedia', label: 'Expedia' },
+    { value: 'agoda', label: 'Agoda' },
+    { value: 'phone', label: 'Teléfono' },
+    { value: 'walk-in', label: 'Walk-in' }
   ];
 
   if (loading) {
@@ -75,7 +99,7 @@ const ReservationFilters = ({ filters, onFiltersChange, loading }) => {
         {hasActiveFilters && (
           <button
             onClick={clearFilters}
-            className="flex items-center space-x-1 text-sm text-gray-500 hover:text-gray-700"
+            className="flex items-center space-x-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
           >
             <X size={16} />
             <span>Limpiar filtros</span>
@@ -90,17 +114,17 @@ const ReservationFilters = ({ filters, onFiltersChange, loading }) => {
           <input
             type="text"
             placeholder="Buscar reservas..."
-            value={filters.search}
+            value={filters.search || ''}
             onChange={(e) => handleFilterChange('search', e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
           />
         </div>
 
         {/* Status Filter */}
         <select
-          value={filters.status}
+          value={filters.status || ''}
           onChange={(e) => handleFilterChange('status', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
         >
           {statusOptions.map(option => (
             <option key={option.value} value={option.value}>
@@ -111,9 +135,9 @@ const ReservationFilters = ({ filters, onFiltersChange, loading }) => {
 
         {/* Date Range Filter */}
         <select
-          value={filters.dateRange}
+          value={filters.dateRange || ''}
           onChange={(e) => handleFilterChange('dateRange', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
         >
           {dateRangeOptions.map(option => (
             <option key={option.value} value={option.value}>
@@ -124,9 +148,9 @@ const ReservationFilters = ({ filters, onFiltersChange, loading }) => {
 
         {/* Source Filter */}
         <select
-          value={filters.source}
+          value={filters.source || ''}
           onChange={(e) => handleFilterChange('source', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
         >
           {sourceOptions.map(option => (
             <option key={option.value} value={option.value}>

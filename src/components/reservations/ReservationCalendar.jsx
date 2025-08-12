@@ -3,9 +3,23 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-reac
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import classNames from 'classnames';
-import { RESERVATION_STATUS } from '../../utils/reservationMockData';
 
-const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => {
+// Usar constantes directas
+const RESERVATION_STATUS = {
+  PENDING: 'pending',
+  CONFIRMED: 'confirmed',
+  CHECKED_IN: 'checked_in',
+  CHECKED_OUT: 'checked_out',
+  CANCELLED: 'cancelled',
+  NO_SHOW: 'no_show'
+};
+
+const ReservationCalendar = ({ 
+  reservations = [], 
+  loading, 
+  onSelectReservation,
+  readOnly = false
+}) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
 
@@ -18,25 +32,35 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
     const grouped = {};
     
     reservations.forEach(reservation => {
-      const checkInDate = new Date(reservation.checkIn);
-      const checkOutDate = new Date(reservation.checkOut);
-      
-      // Crear rango de fechas para la reserva
-      const dateRange = eachDayOfInterval({ start: checkInDate, end: checkOutDate });
-      
-      dateRange.forEach((date, index) => {
-        const dateKey = format(date, 'yyyy-MM-dd');
-        if (!grouped[dateKey]) {
-          grouped[dateKey] = [];
+      try {
+        const checkInDate = new Date(reservation.checkIn);
+        const checkOutDate = new Date(reservation.checkOut);
+        
+        // Validar fechas
+        if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) {
+          console.warn('Invalid dates in reservation:', reservation.id);
+          return;
         }
         
-        grouped[dateKey].push({
-          ...reservation,
-          isCheckIn: index === 0,
-          isCheckOut: index === dateRange.length - 1,
-          isStay: index > 0 && index < dateRange.length - 1
+        // Crear rango de fechas para la reserva
+        const dateRange = eachDayOfInterval({ start: checkInDate, end: checkOutDate });
+        
+        dateRange.forEach((date, index) => {
+          const dateKey = format(date, 'yyyy-MM-dd');
+          if (!grouped[dateKey]) {
+            grouped[dateKey] = [];
+          }
+          
+          grouped[dateKey].push({
+            ...reservation,
+            isCheckIn: index === 0,
+            isCheckOut: index === dateRange.length - 1,
+            isStay: index > 0 && index < dateRange.length - 1
+          });
         });
-      });
+      } catch (error) {
+        console.warn('Error processing reservation dates:', reservation.id, error);
+      }
     });
     
     return grouped;
@@ -59,8 +83,29 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
         return 'bg-gray-500';
       case RESERVATION_STATUS.CANCELLED:
         return 'bg-red-500';
+      case RESERVATION_STATUS.NO_SHOW:
+        return 'bg-orange-500';
       default:
         return 'bg-gray-400';
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case RESERVATION_STATUS.PENDING:
+        return 'Pendiente';
+      case RESERVATION_STATUS.CONFIRMED:
+        return 'Confirmada';
+      case RESERVATION_STATUS.CHECKED_IN:
+        return 'Check-in';
+      case RESERVATION_STATUS.CHECKED_OUT:
+        return 'Check-out';
+      case RESERVATION_STATUS.CANCELLED:
+        return 'Cancelada';
+      case RESERVATION_STATUS.NO_SHOW:
+        return 'No Show';
+      default:
+        return status;
     }
   };
 
@@ -69,18 +114,6 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
     newDate.setMonth(currentDate.getMonth() + direction);
     setCurrentDate(newDate);
   };
-
-  const ReservationDot = ({ reservation, type }) => (
-    <div
-      className={classNames(
-        'w-2 h-2 rounded-full',
-        getStatusColor(reservation.status),
-        type === 'checkIn' && 'ring-2 ring-white',
-        type === 'checkOut' && 'ring-2 ring-gray-300'
-      )}
-      title={`${reservation.guest.name} - ${reservation.status}`}
-    />
-  );
 
   const DayCell = ({ date }) => {
     const dayReservations = getReservationsForDate(date);
@@ -106,7 +139,7 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
             {format(date, 'd')}
           </span>
           {dayReservations.length > 0 && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
               {dayReservations.length}
             </span>
           )}
@@ -120,21 +153,24 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
               <div
                 key={`${reservation.id}-${index}`}
                 className={classNames(
-                  'text-xs p-1 rounded cursor-pointer hover:opacity-75',
+                  'text-xs p-1 rounded cursor-pointer hover:opacity-75 transition-opacity',
                   getStatusColor(reservation.status).replace('bg-', 'bg-opacity-20 bg-'),
                   'text-gray-800 border-l-2',
                   getStatusColor(reservation.status).replace('bg-', 'border-')
                 )}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSelectReservation(reservation);
+                  if (onSelectReservation && !readOnly) {
+                    onSelectReservation(reservation);
+                  }
                 }}
+                title={`${reservation.guest?.name || 'Sin nombre'} - Hab. ${reservation.room?.number || 'N/A'} - ${getStatusLabel(reservation.status)}`}
               >
                 <div className="flex items-center space-x-1">
-                  {isCheckIn && <span className="text-green-600 font-bold">→</span>}
-                  {isCheckOut && <span className="text-red-600 font-bold">←</span>}
+                  {isCheckIn && <span className="text-green-600 font-bold text-xs">→</span>}
+                  {isCheckOut && <span className="text-red-600 font-bold text-xs">←</span>}
                   <span className="truncate">
-                    {reservation.guest.name} - {reservation.room.number}
+                    {reservation.guest?.name || 'Sin nombre'} - {reservation.room?.number || 'N/A'}
                   </span>
                 </div>
               </div>
@@ -142,7 +178,7 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
           })}
           
           {dayReservations.length > 3 && (
-            <div className="text-xs text-gray-500 text-center">
+            <div className="text-xs text-gray-500 text-center bg-gray-100 rounded px-1">
               +{dayReservations.length - 3} más
             </div>
           )}
@@ -176,6 +212,11 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
             <h2 className="text-xl font-semibold text-gray-900">
               {format(currentDate, 'MMMM yyyy', { locale: es })}
             </h2>
+            {readOnly && (
+              <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                Solo lectura
+              </span>
+            )}
           </div>
           
           <div className="flex items-center space-x-2">
@@ -201,7 +242,7 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
         </div>
 
         {/* Legend */}
-        <div className="flex items-center space-x-4 mt-4 text-sm">
+        <div className="flex flex-wrap items-center gap-4 mt-4 text-sm">
           <div className="flex items-center space-x-1">
             <div className="w-3 h-3 bg-green-500 rounded-full"></div>
             <span>Confirmada</span>
@@ -217,6 +258,10 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
           <div className="flex items-center space-x-1">
             <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
             <span>Check-out</span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+            <span>Cancelada</span>
           </div>
           <div className="flex items-center space-x-1">
             <span className="text-green-600 font-bold">→</span>
@@ -262,14 +307,15 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
           </h3>
           
           {getReservationsForDate(selectedDate).length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {getReservationsForDate(selectedDate).map((reservationData, index) => {
                 const { reservation, isCheckIn, isCheckOut } = reservationData;
                 
                 return (
                   <div 
                     key={`${reservation.id}-${index}`}
-                    className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200"
+                    className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => onSelectReservation && !readOnly && onSelectReservation(reservation)}
                   >
                     <div className="flex items-center space-x-3">
                       <div className={classNames(
@@ -278,16 +324,22 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
                       )}></div>
                       <div>
                         <p className="font-medium text-gray-900">
-                          {reservation.guest.name}
+                          {reservation.guest?.name || 'Huésped sin nombre'}
                         </p>
                         <p className="text-sm text-gray-500">
-                          Habitación {reservation.room.number} - {reservation.room.type}
+                          Habitación {reservation.room?.number || 'N/A'} 
+                          {reservation.room?.type && ` - ${reservation.room.type}`}
                         </p>
+                        {reservation.confirmationCode && (
+                          <p className="text-xs text-gray-400">
+                            #{reservation.confirmationCode}
+                          </p>
+                        )}
                       </div>
                     </div>
                     
                     <div className="text-right">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 mb-1">
                         {isCheckIn && (
                           <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                             Llegada
@@ -299,22 +351,45 @@ const ReservationCalendar = ({ reservations, loading, onSelectReservation }) => 
                           </span>
                         )}
                         <span className={classNames(
-                          'text-xs px-2 py-1 rounded',
-                          getStatusColor(reservation.status).replace('bg-', 'bg-opacity-20 bg-')
+                          'text-xs px-2 py-1 rounded font-medium',
+                          getStatusColor(reservation.status).replace('bg-', 'bg-opacity-20 bg-'),
+                          'border',
+                          getStatusColor(reservation.status).replace('bg-', 'border-')
                         )}>
-                          {reservation.status}
+                          {getStatusLabel(reservation.status)}
                         </span>
                       </div>
+                      <p className="text-xs text-gray-500">
+                        {reservation.adults || 1} huésped{(reservation.adults || 1) > 1 ? 'es' : ''}
+                        {reservation.children > 0 && `, ${reservation.children} niño${reservation.children > 1 ? 's' : ''}`}
+                      </p>
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <p className="text-gray-500">No hay reservas para esta fecha</p>
+            <div className="text-center py-8">
+              <CalendarIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No hay reservas para esta fecha</p>
+            </div>
           )}
         </div>
       )}
+
+      {/* Summary Footer */}
+      <div className="p-4 border-t border-gray-200 bg-gray-50">
+        <div className="text-sm text-gray-600 text-center">
+          Total de reservas este mes: {reservations.filter(r => {
+            const checkIn = new Date(r.checkIn);
+            return checkIn.getMonth() === currentDate.getMonth() && 
+                   checkIn.getFullYear() === currentDate.getFullYear();
+          }).length}
+          {readOnly && (
+            <span className="ml-2 text-yellow-600">• Modo solo lectura</span>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

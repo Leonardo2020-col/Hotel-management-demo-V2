@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, User, Calendar, FileText, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, User, Calendar, FileText, Search, AlertCircle, CheckCircle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -10,8 +10,8 @@ import toast from 'react-hot-toast';
 const schema = yup.object().shape({
   // Guest Information - Simplificado
   guestName: yup.string().required('El nombre es obligatorio'),
-  guestEmail: yup.string().email('Email inválido'),
-  guestPhone: yup.string(),
+  guestEmail: yup.string().email('Email inválido').nullable(),
+  guestPhone: yup.string().nullable(),
   guestDocument: yup.string().required('El documento es obligatorio'),
   
   // Reservation Details
@@ -32,14 +32,16 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
   const [existingGuests, setExistingGuests] = useState([]);
   const [selectedGuest, setSelectedGuest] = useState(null);
   const [loadingRooms, setLoadingRooms] = useState(false);
+  const [searchTimeout, setSearchTimeout] = useState(null);
 
   const {
     register,
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors, isSubmitting },
-    reset
+    clearErrors
   } = useForm({
     resolver: yupResolver(schema),
     defaultValues: {
@@ -50,26 +52,36 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
 
   const watchedValues = watch();
 
-  // Buscar huéspedes existentes
+  // Buscar huéspedes existentes con debounce
   const searchGuests = async (searchTerm) => {
     if (searchTerm.length < 2) {
       setExistingGuests([]);
       return;
     }
 
-    setSearchingGuest(true);
-    try {
-      const { data, error } = await db.searchGuests(searchTerm);
-      if (error) {
-        console.error('Error searching guests:', error);
-        return;
-      }
-      setExistingGuests(data || []);
-    } catch (error) {
-      console.error('Error searching guests:', error);
-    } finally {
-      setSearchingGuest(false);
+    // Clear previous timeout
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
     }
+
+    // Set new timeout
+    const timeoutId = setTimeout(async () => {
+      setSearchingGuest(true);
+      try {
+        const { data, error } = await db.searchGuests(searchTerm);
+        if (error) {
+          console.error('Error searching guests:', error);
+          return;
+        }
+        setExistingGuests(data || []);
+      } catch (error) {
+        console.error('Error searching guests:', error);
+      } finally {
+        setSearchingGuest(false);
+      }
+    }, 300);
+
+    setSearchTimeout(timeoutId);
   };
 
   // Seleccionar huésped existente
@@ -80,12 +92,23 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
     setValue('guestPhone', guest.phone || '');
     setValue('guestDocument', guest.document_number || guest.document || '');
     setExistingGuests([]);
+    clearErrors(['guestName', 'guestDocument']);
+    toast.success('Huésped seleccionado');
   };
 
-  // FUNCIÓN CORREGIDA: Buscar habitaciones disponibles
+  // FUNCIÓN MEJORADA: Buscar habitaciones disponibles
   const searchAvailableRooms = async () => {
     if (!watchedValues.checkIn || !watchedValues.checkOut) {
       console.log('❌ Missing check-in or check-out dates');
+      setAvailableRooms([]);
+      return;
+    }
+
+    const checkInDate = new Date(watchedValues.checkIn);
+    const checkOutDate = new Date(watchedValues.checkOut);
+    
+    if (checkOutDate <= checkInDate) {
+      console.log('❌ Invalid date range');
       setAvailableRooms([]);
       return;
     }
@@ -97,18 +120,20 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
 
     setLoadingRooms(true);
     try {
-      // Método 1: Intentar usar la función específica de disponibilidad
+      // Intentar usar la función específica de disponibilidad
       let { data: rooms, error } = await db.getAvailableRooms(
         watchedValues.checkIn,
         watchedValues.checkOut
       );
 
-      // Método 2: Si no funciona, usar método alternativo
+      // Método alternativo si no funciona la función principal
       if (error || !rooms || rooms.length === 0) {
-        console.log('🔄 Fallback: Using alternative room search method');
+        console.log('🔄 Using fallback method for room search');
         
-        // Obtener todas las habitaciones
-        const { data: allRooms, error: roomsError } = await db.getRooms();
+        // Obtener todas las habitaciones disponibles
+        const { data: allRooms, error: roomsError } = await db.getRooms({
+          where: { status: 'available' }
+        });
         
         if (roomsError) {
           throw new Error('Error al obtener habitaciones: ' + roomsError.message);
@@ -117,12 +142,13 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
         if (!allRooms || allRooms.length === 0) {
           console.log('❌ No rooms found in database');
           setAvailableRooms([]);
+          toast.info('No hay habitaciones disponibles en el sistema');
           return;
         }
 
         // Obtener reservas que podrían conflictar
         const { data: conflictingReservations, error: reservationsError } = await db.getReservations({
-          status: ['confirmed', 'checked_in', 'pending']
+          in: { status: ['confirmed', 'checked_in', 'pending'] }
         });
 
         if (reservationsError) {
@@ -130,15 +156,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
         }
 
         // Filtrar habitaciones disponibles
-        const checkInDate = new Date(watchedValues.checkIn);
-        const checkOutDate = new Date(watchedValues.checkOut);
-
         const availableRoomsList = allRooms.filter(room => {
-          // Solo habitaciones disponibles
-          if (room.status !== 'available') {
-            return false;
-          }
-
           // Verificar conflictos con reservas existentes
           const hasConflict = (conflictingReservations || []).some(reservation => {
             if (reservation.room_id !== room.id) return false;
@@ -163,11 +181,13 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
 
       if (!rooms || rooms.length === 0) {
         toast.info('No hay habitaciones disponibles para las fechas seleccionadas');
+      } else {
+        toast.success(`${rooms.length} habitacion${rooms.length > 1 ? 'es' : ''} disponible${rooms.length > 1 ? 's' : ''}`);
       }
 
     } catch (error) {
       console.error('Error loading available rooms:', error);
-      toast.error('Error al buscar habitaciones disponibles: ' + error.message);
+      toast.error('Error al buscar habitaciones: ' + error.message);
       setAvailableRooms([]);
     } finally {
       setLoadingRooms(false);
@@ -175,18 +195,20 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
   };
 
   // Actualizar habitación seleccionada
-  React.useEffect(() => {
+  useEffect(() => {
     if (watchedValues.roomId && availableRooms && availableRooms.length > 0) {
       const room = availableRooms.find(r => r.id === parseInt(watchedValues.roomId));
       if (room) {
         setSelectedRoom(room);
         console.log('🏠 Room selected:', room);
       }
+    } else {
+      setSelectedRoom(null);
     }
   }, [watchedValues.roomId, availableRooms]);
 
-  // Buscar habitaciones cuando cambien las fechas
-  React.useEffect(() => {
+  // Buscar habitaciones cuando cambien las fechas (con debounce)
+  useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (watchedValues.checkIn && watchedValues.checkOut) {
         const checkIn = new Date(watchedValues.checkIn);
@@ -200,10 +222,19 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
       } else {
         setAvailableRooms([]);
       }
-    }, 500); // Debounce de 500ms
+    }, 500);
 
     return () => clearTimeout(timeoutId);
   }, [watchedValues.checkIn, watchedValues.checkOut]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+    };
+  }, [searchTimeout]);
 
   const onFormSubmit = async (data) => {
     try {
@@ -218,70 +249,33 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
       const checkOut = new Date(data.checkOut);
       const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
-      let guestData;
-      
-      // Si hay un huésped seleccionado, usar ese
-      if (selectedGuest) {
-        guestData = selectedGuest;
-      } else {
-        // Crear nuevo huésped con estructura simplificada
-        const newGuestData = {
-          full_name: data.guestName.trim(),
-          email: data.guestEmail?.trim() || null,
-          phone: data.guestPhone?.trim() || null,
-          document_type: 'DNI',
-          document_number: data.guestDocument.trim(),
-          status: 'active'
-        };
+      // Preparar datos del huésped
+      const guestData = selectedGuest || {
+        name: data.guestName.trim(),
+        email: data.guestEmail?.trim() || null,
+        phone: data.guestPhone?.trim() || null,
+        document: data.guestDocument.trim()
+      };
 
-        console.log('👤 Creating new guest:', newGuestData);
-
-        const { data: createdGuest, error: guestError } = await db.createGuest(newGuestData);
-        
-        if (guestError) {
-          console.error('Guest creation error:', guestError);
-          toast.error('Error al crear el huésped: ' + guestError.message);
-          return;
-        }
-        
-        guestData = createdGuest;
-        console.log('✅ Guest created:', guestData);
-      }
-
-      // Crear reserva
+      // Preparar datos de la reserva
       const reservationData = {
-        guest_id: guestData.id,
-        room_id: selectedRoom.id,
-        branch_id: 1,
-        check_in: data.checkIn,
-        check_out: data.checkOut,
+        guest: guestData,
+        room: selectedRoom,
+        checkIn: data.checkIn,
+        checkOut: data.checkOut,
         adults: data.adults,
         children: data.children || 0,
-        rate: selectedRoom.base_rate || selectedRoom.rate,
-        total_amount: nights * (selectedRoom.base_rate || selectedRoom.rate),
+        specialRequests: data.specialRequests || '',
         source: 'direct',
-        special_requests: data.specialRequests || '',
         status: 'pending'
       };
 
-      console.log('📋 Creating reservation:', reservationData);
+      console.log('📋 Final reservation data:', reservationData);
 
-      const { data: reservation, error: reservationError } = await db.createReservation(reservationData);
-
-      if (reservationError) {
-        console.error('Reservation creation error:', reservationError);
-        toast.error('Error al crear la reserva: ' + reservationError.message);
-        return;
-      }
-
-      console.log('✅ Reservation created successfully:', reservation);
-      toast.success('Reserva creada exitosamente');
-      
       // Llamar callback del padre
-      if (onSubmit) {
-        onSubmit(reservation);
-      }
-
+      await onSubmit(reservationData);
+      
+      toast.success('Reserva creada exitosamente');
       handleClose();
       
     } catch (error) {
@@ -291,11 +285,25 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
   };
 
   const nextStep = () => {
-    setCurrentStep(prev => Math.min(prev + 1, 3));
+    const newStep = Math.min(currentStep + 1, 3);
+    setCurrentStep(newStep);
   };
 
   const prevStep = () => {
-    setCurrentStep(prev => Math.max(prev - 1, 1));
+    const newStep = Math.max(currentStep - 1, 1);
+    setCurrentStep(newStep);
+  };
+
+  const canProceedToStep2 = () => {
+    return watchedValues.guestName && watchedValues.guestDocument;
+  };
+
+  const canProceedToStep3 = () => {
+    return watchedValues.checkIn && 
+           watchedValues.checkOut && 
+           watchedValues.roomId && 
+           selectedRoom &&
+           !loadingRooms;
   };
 
   const handleClose = () => {
@@ -305,6 +313,9 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
     setSelectedGuest(null);
     setAvailableRooms([]);
     setExistingGuests([]);
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
     onClose();
   };
 
@@ -350,9 +361,9 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                       ? 'bg-green-600 border-green-600 text-white'
                       : 'border-gray-300 text-gray-400'
                   }`}>
-                    <Icon size={20} />
+                    {isCompleted ? <CheckCircle size={20} /> : <Icon size={20} />}
                   </div>
-                  <div className="ml-3">
+                  <div className="ml-3 hidden sm:block">
                     <p className={`text-sm font-medium ${
                       isActive ? 'text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-500'
                     }`}>
@@ -365,7 +376,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                     </p>
                   </div>
                   {index < steps.length - 1 && (
-                    <div className={`w-16 h-1 mx-6 rounded-full ${
+                    <div className={`w-8 sm:w-16 h-1 mx-2 sm:mx-6 rounded-full ${
                       isCompleted ? 'bg-green-600' : 'bg-gray-200'
                     }`} />
                   )}
@@ -399,6 +410,11 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                       onChange={(e) => searchGuests(e.target.value)}
                     />
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    {searchingGuest && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Search Results */}
@@ -409,11 +425,12 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                           key={guest.id}
                           type="button"
                           onClick={() => selectExistingGuest(guest)}
-                          className="w-full text-left px-4 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                          className="w-full text-left px-4 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
                         >
                           <div className="font-medium">{guest.full_name || guest.name}</div>
                           <div className="text-sm text-gray-500">
-                            {guest.email} • {guest.document_number || guest.document}
+                            {guest.email && `${guest.email} • `}
+                            {guest.document_number || guest.document}
                           </div>
                         </button>
                       ))}
@@ -423,9 +440,12 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
 
                 {selectedGuest && (
                   <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-sm text-green-800">
-                      <strong>Huésped seleccionado:</strong> {selectedGuest.full_name || selectedGuest.name}
-                    </p>
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <p className="text-sm text-green-800">
+                        <strong>Huésped seleccionado:</strong> {selectedGuest.full_name || selectedGuest.name}
+                      </p>
+                    </div>
                   </div>
                 )}
 
@@ -437,11 +457,16 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                     <input
                       type="text"
                       {...register('guestName')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.guestName ? 'border-red-300' : 'border-gray-300'
+                      }`}
                       placeholder="Ej: Juan Pérez García"
                     />
                     {errors.guestName && (
-                      <p className="text-red-600 text-sm mt-1">{errors.guestName.message}</p>
+                      <div className="flex items-center space-x-1 mt-1">
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                        <p className="text-red-600 text-sm">{errors.guestName.message}</p>
+                      </div>
                     )}
                   </div>
 
@@ -452,11 +477,16 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                     <input
                       type="email"
                       {...register('guestEmail')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.guestEmail ? 'border-red-300' : 'border-gray-300'
+                      }`}
                       placeholder="ejemplo@email.com"
                     />
                     {errors.guestEmail && (
-                      <p className="text-red-600 text-sm mt-1">{errors.guestEmail.message}</p>
+                      <div className="flex items-center space-x-1 mt-1">
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                        <p className="text-red-600 text-sm">{errors.guestEmail.message}</p>
+                      </div>
                     )}
                   </div>
 
@@ -479,11 +509,16 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                     <input
                       type="text"
                       {...register('guestDocument')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.guestDocument ? 'border-red-300' : 'border-gray-300'
+                      }`}
                       placeholder="DNI, Pasaporte, etc."
                     />
                     {errors.guestDocument && (
-                      <p className="text-red-600 text-sm mt-1">{errors.guestDocument.message}</p>
+                      <div className="flex items-center space-x-1 mt-1">
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                        <p className="text-red-600 text-sm">{errors.guestDocument.message}</p>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -508,10 +543,15 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                         type="date"
                         {...register('checkIn')}
                         min={new Date().toISOString().split('T')[0]}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          errors.checkIn ? 'border-red-300' : 'border-gray-300'
+                        }`}
                       />
                       {errors.checkIn && (
-                        <p className="text-red-600 text-sm mt-1">{errors.checkIn.message}</p>
+                        <div className="flex items-center space-x-1 mt-1">
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                          <p className="text-red-600 text-sm">{errors.checkIn.message}</p>
+                        </div>
                       )}
                     </div>
 
@@ -523,10 +563,15 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                         type="date"
                         {...register('checkOut')}
                         min={watchedValues.checkIn || new Date().toISOString().split('T')[0]}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          errors.checkOut ? 'border-red-300' : 'border-gray-300'
+                        }`}
                       />
                       {errors.checkOut && (
-                        <p className="text-red-600 text-sm mt-1">{errors.checkOut.message}</p>
+                        <div className="flex items-center space-x-1 mt-1">
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                          <p className="text-red-600 text-sm">{errors.checkOut.message}</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -540,10 +585,15 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                         type="number"
                         min="1"
                         {...register('adults')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          errors.adults ? 'border-red-300' : 'border-gray-300'
+                        }`}
                       />
                       {errors.adults && (
-                        <p className="text-red-600 text-sm mt-1">{errors.adults.message}</p>
+                        <div className="flex items-center space-x-1 mt-1">
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                          <p className="text-red-600 text-sm">{errors.adults.message}</p>
+                        </div>
                       )}
                     </div>
 
@@ -567,7 +617,9 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                     </label>
                     <select
                       {...register('roomId')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.roomId ? 'border-red-300' : 'border-gray-300'
+                      }`}
                       disabled={loadingRooms}
                     >
                       <option value="">
@@ -581,16 +633,23 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                       {availableRooms.map(room => (
                         <option key={room.id} value={room.id}>
                           Habitación {room.number} - {room.room_type || 'Estándar'} - S/ {room.base_rate || room.rate}/noche
+                          {room.capacity && ` (${room.capacity} personas)`}
                         </option>
                       ))}
                     </select>
                     {errors.roomId && (
-                      <p className="text-red-600 text-sm mt-1">{errors.roomId.message}</p>
+                      <div className="flex items-center space-x-1 mt-1">
+                        <AlertCircle className="w-4 h-4 text-red-500" />
+                        <p className="text-red-600 text-sm">{errors.roomId.message}</p>
+                      </div>
                     )}
                     {watchedValues.checkIn && watchedValues.checkOut && availableRooms.length === 0 && !loadingRooms && (
-                      <p className="text-yellow-600 text-sm mt-1">
-                        No hay habitaciones disponibles para las fechas seleccionadas
-                      </p>
+                      <div className="flex items-center space-x-1 mt-1">
+                        <AlertCircle className="w-4 h-4 text-yellow-500" />
+                        <p className="text-yellow-600 text-sm">
+                          No hay habitaciones disponibles para las fechas seleccionadas
+                        </p>
+                      </div>
                     )}
                   </div>
 
@@ -642,9 +701,38 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                       {watchedValues.checkIn && watchedValues.checkOut && selectedRoom && (
                         <>
                           <p><span className="text-gray-600">Noches:</span> <span className="font-medium">{Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24))}</span></p>
-                          <p><span className="text-gray-600">Total:</span> <span className="font-medium text-lg text-green-600">S/ {(Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24)) * (selectedRoom.base_rate || selectedRoom.rate)).toFixed(2)}</span></p>
+                          <p><span className="text-gray-600">Tarifa por noche:</span> <span className="font-medium">S/ {(selectedRoom.base_rate || selectedRoom.rate || 0).toFixed(2)}</span></p>
+                          <p><span className="text-gray-600">Total:</span> <span className="font-medium text-lg text-green-600">S/ {(Math.ceil((new Date(watchedValues.checkOut) - new Date(watchedValues.checkIn)) / (1000 * 60 * 60 * 24)) * (selectedRoom.base_rate || selectedRoom.rate || 0)).toFixed(2)}</span></p>
                         </>
                       )}
+                      {watchedValues.specialRequests && (
+                        <p><span className="text-gray-600">Solicitudes especiales:</span> <span className="font-medium">{watchedValues.specialRequests}</span></p>
+                      )}
+                    </div>
+                  </div>
+
+                  {selectedRoom && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <h4 className="font-semibold text-gray-900 mb-3">Información de la Habitación</h4>
+                      <div className="space-y-2 text-sm">
+                        <p><span className="text-gray-600">Capacidad:</span> <span className="font-medium">{selectedRoom.capacity || 2} personas</span></p>
+                        {selectedRoom.features && selectedRoom.features.length > 0 && (
+                          <p><span className="text-gray-600">Características:</span> <span className="font-medium">{selectedRoom.features.join(', ')}</span></p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-semibold text-blue-800">Información importante</h4>
+                      <p className="text-sm text-blue-700 mt-1">
+                        La reserva se creará en estado "Pendiente" y deberá ser confirmada posteriormente. 
+                        Se enviará un código de confirmación una vez completado el proceso.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -680,7 +768,10 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                   type="button"
                   variant="primary"
                   onClick={nextStep}
-                  disabled={currentStep === 2 && (!selectedRoom || loadingRooms)}
+                  disabled={
+                    (currentStep === 1 && !canProceedToStep2()) ||
+                    (currentStep === 2 && !canProceedToStep3())
+                  }
                 >
                   Siguiente
                 </Button>
@@ -689,9 +780,9 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                   type="submit"
                   variant="primary"
                   loading={isSubmitting}
-                  disabled={!selectedRoom}
+                  disabled={!selectedRoom || isSubmitting}
                 >
-                  Crear Reserva
+                  {isSubmitting ? 'Creando...' : 'Crear Reserva'}
                 </Button>
               )}
             </div>
