@@ -1,10 +1,10 @@
-// src/routes/AppRoutes.jsx - VERSIÓN CORREGIDA
+// src/routes/AppRoutes.jsx - RUTA DE IMPORTACIÓN CORREGIDA
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-// Layouts
-import DashboardLayout from '../layouts/DashboardLayout';
+// Layouts - RUTA CORREGIDA: layout (singular) no layouts (plural)
+import DashboardLayout from '../layout/DashboardLayout';
 
 // Pages - RUTAS CORREGIDAS
 import Dashboard from '../pages/Dashboard/Dashboard';
