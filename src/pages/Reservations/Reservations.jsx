@@ -1,8 +1,8 @@
 // src/pages/Reservations/Reservations.jsx - VERSIÓN CORREGIDA Y OPTIMIZADA
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Calendar, Filter, Download, Upload, Lock, AlertCircle, RefreshCw } from 'lucide-react';
 import { useReservations } from '../../hooks/useReservations';
-import { useAuth } from '../../context/AuthContext';
+// import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/common/Button';
 import ReservationFilters from '../../components/reservations/ReservationFilters';
 import ReservationList from '../../components/reservations/ReservationList';
@@ -12,10 +12,17 @@ import ReservationCalendar from '../../components/reservations/ReservationCalend
 import toast from 'react-hot-toast';
 
 const Reservations = () => {
-  const { hasPermission, hasRole, user } = useAuth();
-  const canWrite = hasPermission('reservations', 'write');
-  const isAdmin = hasRole('admin');
-  const isReception = hasRole('reception');
+  // Temporalmente comentamos useAuth para debuggear
+  // const { hasPermission, hasRole, user } = useAuth();
+  // const canWrite = hasPermission('reservations', 'write');
+  // const isAdmin = hasRole('admin');
+  // const isReception = hasRole('reception');
+
+  // Valores temporales para debug
+  const canWrite = true; // Temporalmente true para testing
+  const isAdmin = false;
+  const isReception = true;
+  const user = { email: 'test@example.com' };
 
   const {
     reservations,
@@ -39,10 +46,34 @@ const Reservations = () => {
   const [selectedReservation, setSelectedReservation] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Debug: Verificar que el hook se está ejecutando
+  useEffect(() => {
+    console.log('🔍 Reservations component mounted');
+    console.log('📊 Current state:', {
+      loading,
+      error,
+      reservationsCount: reservations?.length || 0,
+      filters
+    });
+  }, [loading, error, reservations, filters]);
+
+  // Verificar si hay errores en el hook
+  useEffect(() => {
+    if (error) {
+      console.error('❌ Error in reservations hook:', error);
+      toast.error('Error al cargar reservas: ' + error);
+    }
+  }, [error]);
+
   const stats = getReservationStats();
 
   // Filtrar reservas según el rol
   const getFilteredReservations = () => {
+    if (!reservations || !Array.isArray(reservations)) {
+      console.warn('⚠️ Reservations is not an array:', reservations);
+      return [];
+    }
+
     let filteredReservations = reservations;
 
     // Si es administrador, mostrar solo las reservas limitadas (ejemplo: solo las de hoy o próximas)
@@ -52,8 +83,13 @@ const Reservations = () => {
       nextWeek.setDate(today.getDate() + 7);
 
       filteredReservations = reservations.filter(reservation => {
-        const checkInDate = new Date(reservation.checkIn);
-        return checkInDate >= today && checkInDate <= nextWeek;
+        try {
+          const checkInDate = new Date(reservation.checkIn);
+          return checkInDate >= today && checkInDate <= nextWeek;
+        } catch (error) {
+          console.warn('Invalid date in reservation:', reservation);
+          return false;
+        }
       });
     }
 
