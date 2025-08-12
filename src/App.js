@@ -5,7 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 // Layout
-import DashboardLayout from '/layouts/DashboardLayout';
+import DashboardLayout from '../layouts/DashboardLayout';
 
 // Components
 import ProtectedRoute from './components/common/ProtectedRoute';
