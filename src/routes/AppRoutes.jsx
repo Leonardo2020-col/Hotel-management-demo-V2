@@ -1,169 +1,149 @@
- // src/routes/AppRoutes.jsx - INTEGRACIÓN CON SISTEMA DE SUCURSALES
+// src/routes/AppRoutes.jsx - VERSIÓN CORREGIDA
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+
+// Layouts
+import DashboardLayout from '../layouts/DashboardLayout';
+
+// Pages - RUTAS CORREGIDAS
+import Dashboard from '../pages/Dashboard/Dashboard';
+import CheckIn from '../pages/CheckIn/CheckIn';
+import Reservations from '../pages/Reservations/Reservations';
+import Guests from '../pages/Guests/Guests';
+import Rooms from '../pages/Rooms/Rooms';
+import Supplies from '../pages/Supplies/Supplies';
+import Reports from '../pages/Reports/Reports';
+import Settings from '../pages/Settings/Settings';
 
 // Auth Pages
 import LoginPage from '../pages/Auth/LoginPage';
 import BranchSelectionPage from '../pages/Auth/BranchSelectionPage';
 
-// Protected Layout
-import DashboardLayout from '../layouts/DashboardLayout';
-
-// Dashboard Pages
-import DashboardPage from '../pages/Dashboard/DashboardPage';
-
 // Admin Pages
 import BranchManagementPage from '../pages/Admin/BranchManagementPage';
-
-// Reception Pages (solo accesibles para recepción)
-import ReservationsPage from '../pages/Reception/ReservationsPage';
-import CheckInPage from '../pages/Reception/CheckInPage';
-
-// Shared Pages
-import GuestsPage from '../pages/Guests/GuestsPage';
-import RoomsPage from '../pages/Rooms/RoomsPage';
-import SuppliesPage from '../pages/Supplies/SuppliesPage';
-import ReportsPage from '../pages/Reports/ReportsPage';
-import SettingsPage from '../pages/Settings/SettingsPage';
 
 // Components
 import ProtectedRoute from '../components/auth/ProtectedRoute';
 
 const AppRoutes = () => {
-  const { isAuthenticated, needsBranchSelection, user, isReady } = useAuth();
+  const { isAuthenticated, needsBranchSelection } = useAuth();
+
+  // Redirección automática para usuarios no autenticados
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  // Redirección para selección de sucursal (solo admin)
+  if (needsBranchSelection) {
+    return (
+      <Routes>
+        <Route path="/select-branch" element={<BranchSelectionPage />} />
+        <Route path="*" element={<Navigate to="/select-branch" replace />} />
+      </Routes>
+    );
+  }
 
   return (
     <Routes>
-      {/* Auth Routes */}
-      <Route 
-        path="/login" 
-        element={
-          isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
-        } 
-      />
-      
-      <Route 
-        path="/select-branch" 
-        element={
-          <ProtectedRoute>
-            <BranchSelectionPage />
-          </ProtectedRoute>
-        } 
-      />
-
-      {/* Protected App Routes */}
       <Route 
         path="/*" 
         element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Routes>
-                {/* Dashboard - Accesible para todos */}
-                <Route path="/" element={<DashboardPage />} />
+          <DashboardLayout>
+            <Routes>
+              {/* Dashboard */}
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Dashboard />} />
 
-                {/* Rutas específicas para ADMINISTRADORES */}
-                <Route 
-                  path="/branches" 
-                  element={
-                    <ProtectedRoute requireRole="admin">
-                      <BranchManagementPage />
-                    </ProtectedRoute>
-                  } 
-                />
+              {/* Recepción */}
+              <Route 
+                path="/checkin" 
+                element={
+                  <ProtectedRoute requirePermission="checkin">
+                    <CheckIn />
+                  </ProtectedRoute>
+                } 
+              />
 
-                {/* Rutas específicas para RECEPCIÓN */}
-                <Route 
-                  path="/reservations/*" 
-                  element={
-                    <ProtectedRoute requirePermission="reservations">
-                      <Routes>
-                        <Route path="/" element={<ReservationsPage />} />
-                        <Route path="/new" element={<ReservationsPage />} />
-                        <Route path="/:id" element={<ReservationsPage />} />
-                      </Routes>
-                    </ProtectedRoute>
-                  } 
-                />
+              {/* Reservaciones */}
+              <Route 
+                path="/reservations" 
+                element={
+                  <ProtectedRoute requirePermission="reservations">
+                    <Reservations />
+                  </ProtectedRoute>
+                } 
+              />
 
-                <Route 
-                  path="/checkin/*" 
-                  element={
-                    <ProtectedRoute requirePermission="checkin">
-                      <Routes>
-                        <Route path="/" element={<CheckInPage />} />
-                        <Route path="/quick" element={<CheckInPage />} />
-                      </Routes>
-                    </ProtectedRoute>
-                  } 
-                />
+              {/* Huéspedes */}
+              <Route 
+                path="/guests" 
+                element={
+                  <ProtectedRoute requirePermission="guests">
+                    <Guests />
+                  </ProtectedRoute>
+                } 
+              />
 
-                {/* Rutas compartidas (con permisos específicos) */}
-                <Route 
-                  path="/guests/*" 
-                  element={
-                    <ProtectedRoute requirePermission="guests">
-                      <Routes>
-                        <Route path="/" element={<GuestsPage />} />
-                        <Route path="/:id" element={<GuestsPage />} />
-                      </Routes>
-                    </ProtectedRoute>
-                  } 
-                />
+              {/* Habitaciones */}
+              <Route 
+                path="/rooms" 
+                element={
+                  <ProtectedRoute requirePermission="rooms">
+                    <Rooms />
+                  </ProtectedRoute>
+                } 
+              />
 
-                <Route 
-                  path="/rooms/*" 
-                  element={
-                    <ProtectedRoute requirePermission="rooms">
-                      <Routes>
-                        <Route path="/" element={<RoomsPage />} />
-                        <Route path="/floor/:floor" element={<RoomsPage />} />
-                      </Routes>
-                    </ProtectedRoute>
-                  } 
-                />
+              {/* Suministros */}
+              <Route 
+                path="/supplies" 
+                element={
+                  <ProtectedRoute requirePermission="supplies">
+                    <Supplies />
+                  </ProtectedRoute>
+                } 
+              />
 
-                <Route 
-                  path="/supplies/*" 
-                  element={
-                    <ProtectedRoute requirePermission="supplies">
-                      <Routes>
-                        <Route path="/" element={<SuppliesPage />} />
-                        <Route path="/category/:category" element={<SuppliesPage />} />
-                      </Routes>
-                    </ProtectedRoute>
-                  } 
-                />
+              {/* Reportes */}
+              <Route 
+                path="/reports" 
+                element={
+                  <ProtectedRoute requirePermission="reports">
+                    <Reports />
+                  </ProtectedRoute>
+                } 
+              />
 
-                <Route 
-                  path="/reports/*" 
-                  element={
-                    <ProtectedRoute requirePermission="reports">
-                      <Routes>
-                        <Route path="/" element={<ReportsPage />} />
-                        <Route path="/:type" element={<ReportsPage />} />
-                      </Routes>
-                    </ProtectedRoute>
-                  } 
-                />
+              {/* Administración */}
+              <Route 
+                path="/branches" 
+                element={
+                  <ProtectedRoute requireRole="admin">
+                    <BranchManagementPage />
+                  </ProtectedRoute>
+                } 
+              />
 
-                <Route 
-                  path="/settings/*" 
-                  element={
-                    <ProtectedRoute requirePermission="settings">
-                      <Routes>
-                        <Route path="/" element={<SettingsPage />} />
-                        <Route path="/:section" element={<SettingsPage />} />
-                      </Routes>
-                    </ProtectedRoute>
-                  } 
-                />
+              {/* Configuración */}
+              <Route 
+                path="/settings" 
+                element={
+                  <ProtectedRoute requirePermission="settings">
+                    <Settings />
+                  </ProtectedRoute>
+                } 
+              />
 
-                {/* Catch all - redirect to dashboard */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </DashboardLayout>
-          </ProtectedRoute>
+              {/* Fallback */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </DashboardLayout>
         } 
       />
     </Routes>
@@ -171,4 +151,3 @@ const AppRoutes = () => {
 };
 
 export default AppRoutes;
-

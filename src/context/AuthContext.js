@@ -1,15 +1,35 @@
-// src/context/AuthContext.js - VERSIÓN CON SUPABASE AUTH REAL
+// src/context/AuthContext.js - VERSIÓN CORREGIDA CON MEJORES PRÁCTICAS
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { db, supabase } from '../lib/supabase';
 
 const AuthContext = createContext();
 
+// Action types for better maintainability
+const AUTH_ACTIONS = {
+  LOGIN_START: 'LOGIN_START',
+  LOGIN_SUCCESS: 'LOGIN_SUCCESS',
+  SET_BRANCH: 'SET_BRANCH',
+  REQUIRE_BRANCH_SELECTION: 'REQUIRE_BRANCH_SELECTION',
+  BRANCH_SWITCHING_START: 'BRANCH_SWITCHING_START',
+  BRANCH_SWITCHING_SUCCESS: 'BRANCH_SWITCHING_SUCCESS',
+  BRANCH_SWITCHING_ERROR: 'BRANCH_SWITCHING_ERROR',
+  LOGIN_FAILURE: 'LOGIN_FAILURE',
+  LOGOUT: 'LOGOUT',
+  CLEAR_ERROR: 'CLEAR_ERROR',
+  SET_LOADING: 'SET_LOADING'
+};
+
+// Auth reducer with better error handling
 const authReducer = (state, action) => {
   switch (action.type) {
-    case 'LOGIN_START':
-      return { ...state, loading: true, error: null };
+    case AUTH_ACTIONS.LOGIN_START:
+      return { 
+        ...state, 
+        loading: true, 
+        error: null 
+      };
     
-    case 'LOGIN_SUCCESS':
+    case AUTH_ACTIONS.LOGIN_SUCCESS:
       return {
         ...state,
         loading: false,
@@ -21,7 +41,7 @@ const authReducer = (state, action) => {
         error: null
       };
     
-    case 'SET_BRANCH':
+    case AUTH_ACTIONS.SET_BRANCH:
       return {
         ...state,
         selectedBranch: action.payload,
@@ -29,21 +49,21 @@ const authReducer = (state, action) => {
         loading: false
       };
     
-    case 'REQUIRE_BRANCH_SELECTION':
+    case AUTH_ACTIONS.REQUIRE_BRANCH_SELECTION:
       return {
         ...state,
         needsBranchSelection: true,
         loading: false
       };
     
-    case 'BRANCH_SWITCHING_START':
+    case AUTH_ACTIONS.BRANCH_SWITCHING_START:
       return {
         ...state,
         loading: true,
         error: null
       };
     
-    case 'BRANCH_SWITCHING_SUCCESS':
+    case AUTH_ACTIONS.BRANCH_SWITCHING_SUCCESS:
       return {
         ...state,
         loading: false,
@@ -52,14 +72,14 @@ const authReducer = (state, action) => {
         error: null
       };
     
-    case 'BRANCH_SWITCHING_ERROR':
+    case AUTH_ACTIONS.BRANCH_SWITCHING_ERROR:
       return {
         ...state,
         loading: false,
         error: action.payload
       };
     
-    case 'LOGIN_FAILURE':
+    case AUTH_ACTIONS.LOGIN_FAILURE:
       return {
         ...state,
         loading: false,
@@ -71,7 +91,7 @@ const authReducer = (state, action) => {
         error: action.payload
       };
     
-    case 'LOGOUT':
+    case AUTH_ACTIONS.LOGOUT:
       return {
         ...state,
         isAuthenticated: false,
@@ -83,13 +103,14 @@ const authReducer = (state, action) => {
         loading: false
       };
     
-    case 'CLEAR_ERROR':
+    case AUTH_ACTIONS.CLEAR_ERROR:
       return { ...state, error: null };
     
-    case 'SET_LOADING':
+    case AUTH_ACTIONS.SET_LOADING:
       return { ...state, loading: action.payload };
     
     default:
+      console.warn(`Unhandled action type: ${action.type}`);
       return state;
   }
 };
@@ -104,7 +125,7 @@ const initialState = {
   error: null
 };
 
-// Permisos por rol
+// Role permissions configuration - moved outside component for better performance
 const ROLE_PERMISSIONS = {
   admin: {
     dashboard: { read: true, write: true },
@@ -128,21 +149,58 @@ const ROLE_PERMISSIONS = {
   }
 };
 
+// Custom hook for localStorage operations
+const useSecureStorage = () => {
+  const setItem = useCallback((key, value) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.warn('Failed to save to localStorage:', error);
+    }
+  }, []);
+
+  const getItem = useCallback((key) => {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch (error) {
+      console.warn('Failed to read from localStorage:', error);
+      return null;
+    }
+  }, []);
+
+  const removeItem = useCallback((key) => {
+    try {
+      localStorage.removeItem(key);
+    } catch (error) {
+      console.warn('Failed to remove from localStorage:', error);
+    }
+  }, []);
+
+  return { setItem, getItem, removeItem };
+};
+
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  const { setItem, getItem, removeItem } = useSecureStorage();
   
-  // Referencias para evitar operaciones duplicadas
+  // Refs to prevent duplicate operations
   const branchSelectionRef = useRef(false);
   const initializingRef = useRef(false);
+  const authStateChangeRef = useRef(null);
 
-  // Verificar sesión de Supabase al cargar
+  // Check Supabase session on mount
   useEffect(() => {
     if (initializingRef.current) return;
     checkSupabaseSession();
   }, []);
 
-  // Listener para cambios de auth
+  // Auth state change listener
   useEffect(() => {
+    if (authStateChangeRef.current) {
+      authStateChangeRef.current.unsubscribe();
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('🔔 Auth state change:', event, session?.user?.email);
@@ -155,7 +213,13 @@ export const AuthProvider = ({ children }) => {
       }
     );
 
-    return () => subscription.unsubscribe();
+    authStateChangeRef.current = subscription;
+
+    return () => {
+      if (authStateChangeRef.current) {
+        authStateChangeRef.current.unsubscribe();
+      }
+    };
   }, []);
 
   const checkSupabaseSession = useCallback(async () => {
@@ -167,28 +231,31 @@ export const AuthProvider = ({ children }) => {
       
       const { data: { session }, error } = await supabase.auth.getSession();
       
-      if (error) throw error;
+      if (error) {
+        console.error('Session check error:', error);
+        throw error;
+      }
       
       if (session?.user) {
         console.log('👤 Found active session for:', session.user.email);
         await handleAuthUser(session.user);
       } else {
         console.log('📭 No active session found');
-        dispatch({ type: 'SET_LOADING', payload: false });
+        dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
       }
     } catch (error) {
       console.error('Error checking session:', error);
-      dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
     } finally {
       initializingRef.current = false;
     }
   }, []);
 
-  const handleAuthUser = async (authUser) => {
+  const handleAuthUser = useCallback(async (authUser) => {
     try {
       console.log('🔄 Processing authenticated user:', authUser.email);
       
-      // Obtener perfil de usuario de la tabla users
+      // Fetch user profile
       const { data: userProfile, error: profileError } = await supabase
         .from('users')
         .select('*')
@@ -202,38 +269,37 @@ export const AuthProvider = ({ children }) => {
       
       console.log('👤 User profile loaded:', userProfile.name, userProfile.role);
       
-      // Obtener permisos basados en el rol
+      // Get permissions based on role
       const permissions = ROLE_PERMISSIONS[userProfile.role] || {};
       
-      // Verificar sucursal guardada
+      // Check for saved branch
       let selectedBranch = null;
-      const savedBranch = localStorage.getItem('hotel_selected_branch');
+      const savedBranch = getItem('hotel_selected_branch');
       
       if (savedBranch) {
         try {
-          const branchData = JSON.parse(savedBranch);
-          // Verificar que la sucursal aún existe
-          const { data: validBranch } = await db.getBranchById(branchData.id);
+          // Verify branch still exists
+          const { data: validBranch } = await db.getBranchById(savedBranch.id);
           if (validBranch) {
             selectedBranch = validBranch;
             console.log('✅ Restored saved branch:', selectedBranch.name);
           } else {
-            localStorage.removeItem('hotel_selected_branch');
+            removeItem('hotel_selected_branch');
           }
         } catch (error) {
           console.warn('Error restoring saved branch:', error);
-          localStorage.removeItem('hotel_selected_branch');
+          removeItem('hotel_selected_branch');
         }
       }
       
-      // Para administradores, cargar sucursal por defecto si no hay una guardada
+      // For admins, load default branch if none saved
       if (userProfile.role === 'admin' && !selectedBranch) {
         try {
           const { data: userBranches } = await db.getUserBranches(authUser.id);
           const defaultBranch = userBranches?.find(b => b.isDefault) || userBranches?.[0];
           if (defaultBranch) {
             selectedBranch = defaultBranch;
-            localStorage.setItem('hotel_selected_branch', JSON.stringify(defaultBranch));
+            setItem('hotel_selected_branch', defaultBranch);
             console.log('🏢 Set default branch for admin:', defaultBranch.name);
           }
         } catch (error) {
@@ -241,14 +307,14 @@ export const AuthProvider = ({ children }) => {
         }
       }
       
-      // Para recepción, cargar sucursal asignada
+      // For reception, load assigned branch
       if (userProfile.role === 'reception' && !selectedBranch) {
         try {
           const { data: userBranches } = await db.getUserBranches(authUser.id);
           const assignedBranch = userBranches?.[0];
           if (assignedBranch) {
             selectedBranch = assignedBranch;
-            localStorage.setItem('hotel_selected_branch', JSON.stringify(assignedBranch));
+            setItem('hotel_selected_branch', assignedBranch);
             console.log('🏢 Set assigned branch for reception:', assignedBranch.name);
           }
         } catch (error) {
@@ -258,14 +324,14 @@ export const AuthProvider = ({ children }) => {
       
       const needsBranchSelection = userProfile.role === 'admin' && !selectedBranch;
       
-      // Actualizar last_login
+      // Update last login
       await supabase
         .from('users')
         .update({ last_login: new Date().toISOString() })
         .eq('id', authUser.id);
       
       dispatch({
-        type: 'LOGIN_SUCCESS',
+        type: AUTH_ACTIONS.LOGIN_SUCCESS,
         payload: {
           user: {
             id: authUser.id,
@@ -283,24 +349,32 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Error handling auth user:', error);
       dispatch({
-        type: 'LOGIN_FAILURE',
+        type: AUTH_ACTIONS.LOGIN_FAILURE,
         payload: error.message
       });
     }
-  };
+  }, [getItem, setItem, removeItem]);
 
   const login = useCallback(async (email, password) => {
-    dispatch({ type: 'LOGIN_START' });
+    dispatch({ type: AUTH_ACTIONS.LOGIN_START });
 
     try {
       console.log('🔐 Attempting Supabase login for:', email);
       
+      // Validate input
+      if (!email || !password) {
+        throw new Error('Email y contraseña son requeridos');
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Login error:', error);
+        throw error;
+      }
       
       if (!data.user) {
         throw new Error('No se recibieron datos del usuario');
@@ -308,13 +382,13 @@ export const AuthProvider = ({ children }) => {
 
       console.log('✅ Supabase login successful for:', data.user.email);
       
-      // handleAuthUser se llamará automáticamente por el listener
+      // handleAuthUser will be called automatically by the listener
       return { success: true };
       
     } catch (error) {
       console.error('❌ Login failed:', error.message);
       dispatch({
-        type: 'LOGIN_FAILURE',
+        type: AUTH_ACTIONS.LOGIN_FAILURE,
         payload: error.message
       });
       return { success: false, error: error.message };
@@ -322,93 +396,84 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const selectBranch = useCallback(async (branch) => {
-  console.log('🏢 AuthContext.selectBranch called for:', branch.name);
-  
-  // Validación simple
-  if (!branch || !branch.id) {
-    console.error('❌ Invalid branch data');
-    return { success: false, error: 'Datos de sucursal inválidos' };
-  }
-
-  // Si ya está seleccionada la misma sucursal, no hacer nada
-  if (state.selectedBranch?.id === branch.id) {
-    console.log('✅ Branch already selected, skipping...');
-    return { success: true };
-  }
-
-  console.log(`🔄 Switching from ${state.selectedBranch?.name || 'none'} to ${branch.name}`);
-  
-  try {
-    dispatch({ type: 'BRANCH_SWITCHING_START' });
+    console.log('🏢 AuthContext.selectBranch called for:', branch.name);
     
-    // Validar que la sucursal existe en la base de datos
-    const { data: validBranch, error } = await db.getBranchById(branch.id);
-    if (error || !validBranch) {
-      throw new Error('Sucursal no válida o no encontrada');
+    // Validation
+    if (!branch || !branch.id) {
+      console.error('❌ Invalid branch data');
+      return { success: false, error: 'Datos de sucursal inválidos' };
     }
 
-    console.log('✅ Branch validated:', validBranch.name);
+    // If same branch already selected, skip
+    if (state.selectedBranch?.id === branch.id) {
+      console.log('✅ Branch already selected, skipping...');
+      return { success: true };
+    }
+
+    console.log(`🔄 Switching from ${state.selectedBranch?.name || 'none'} to ${branch.name}`);
     
-    // Preparar datos de la sucursal
-    const branchToSave = {
-      ...validBranch,
-      selectedAt: new Date().toISOString()
-    };
-    
-    // Guardar en localStorage (con manejo de errores)
     try {
-      localStorage.setItem('hotel_selected_branch', JSON.stringify(branchToSave));
+      dispatch({ type: AUTH_ACTIONS.BRANCH_SWITCHING_START });
+      
+      // Validate branch exists
+      const { data: validBranch, error } = await db.getBranchById(branch.id);
+      if (error || !validBranch) {
+        throw new Error('Sucursal no válida o no encontrada');
+      }
+
+      console.log('✅ Branch validated:', validBranch.name);
+      
+      // Prepare branch data
+      const branchToSave = {
+        ...validBranch,
+        selectedAt: new Date().toISOString()
+      };
+      
+      // Save to localStorage
+      setItem('hotel_selected_branch', branchToSave);
       console.log('💾 Branch saved to localStorage');
-    } catch (storageError) {
-      console.warn('Warning: Could not save to localStorage:', storageError);
-      // Continuar sin localStorage
+      
+      // Update context state
+      dispatch({
+        type: AUTH_ACTIONS.BRANCH_SWITCHING_SUCCESS,
+        payload: branchToSave
+      });
+
+      console.log('🎉 Branch selection completed successfully:', branchToSave.name);
+      
+      return { success: true };
+      
+    } catch (error) {
+      console.error('❌ Branch selection failed:', error.message);
+      dispatch({ 
+        type: AUTH_ACTIONS.BRANCH_SWITCHING_ERROR, 
+        payload: error.message 
+      });
+      return { success: false, error: error.message };
     }
-    
-    // Actualizar estado del contexto
-    dispatch({
-      type: 'BRANCH_SWITCHING_SUCCESS',
-      payload: branchToSave
-    });
+  }, [state.selectedBranch, setItem]);
 
-    console.log('🎉 Branch selection completed successfully:', branchToSave.name);
-    
-    return { success: true };
-    
-  } catch (error) {
-    console.error('❌ Branch selection failed:', error.message);
-    dispatch({ 
-      type: 'BRANCH_SWITCHING_ERROR', 
-      payload: error.message 
-    });
-    return { success: false, error: error.message };
-  }
-}, [state.selectedBranch]);
+  const changeBranch = useCallback(async (branchId) => {
+    try {
+      console.log('🔄 AuthContext.changeBranch called with ID:', branchId);
+      
+      const { data: branch, error } = await db.getBranchById(branchId);
+      if (error || !branch) {
+        return { success: false, error: 'Sucursal no encontrada' };
+      }
 
-  // FUNCIÓN changeBranch SIMPLIFICADA
-const changeBranch = useCallback(async (branchId) => {
-  try {
-    console.log('🔄 AuthContext.changeBranch called with ID:', branchId);
-    
-    const { data: branch, error } = await db.getBranchById(branchId);
-    if (error || !branch) {
-      return { success: false, error: 'Sucursal no encontrada' };
+      return await selectBranch(branch);
+      
+    } catch (error) {
+      console.error('❌ changeBranch error:', error.message);
+      return { success: false, error: error.message };
     }
-
-    // Llamar selectBranch con el objeto completo
-    const result = await selectBranch(branch);
-    return result;
-    
-  } catch (error) {
-    console.error('❌ changeBranch error:', error.message);
-    return { success: false, error: error.message };
-  }
-}, [selectBranch]);
+  }, [selectBranch]);
 
   const logout = useCallback(async () => {
     console.log('👋 Logging out user');
     
     try {
-      // Logout de Supabase
       await supabase.auth.signOut();
     } catch (error) {
       console.warn('Error during Supabase logout:', error);
@@ -417,23 +482,19 @@ const changeBranch = useCallback(async (branchId) => {
     handleLogout();
   }, []);
 
-  const handleLogout = () => {
-    // Limpiar localStorage
-    try {
-      localStorage.removeItem('hotel_selected_branch');
-    } catch (error) {
-      console.warn('Error clearing localStorage:', error);
-    }
+  const handleLogout = useCallback(() => {
+    // Clear localStorage
+    removeItem('hotel_selected_branch');
     
-    // Limpiar referencias
+    // Reset refs
     branchSelectionRef.current = false;
     initializingRef.current = false;
     
-    dispatch({ type: 'LOGOUT' });
-  };
+    dispatch({ type: AUTH_ACTIONS.LOGOUT });
+  }, [removeItem]);
 
   const clearError = useCallback(() => {
-    dispatch({ type: 'CLEAR_ERROR' });
+    dispatch({ type: AUTH_ACTIONS.CLEAR_ERROR });
   }, []);
 
   const hasPermission = useCallback((module, action = 'read') => {
@@ -491,7 +552,8 @@ const changeBranch = useCallback(async (branchId) => {
     return state.user?.role === 'admin';
   }, [state.user?.role]);
 
-  const value = {
+  // Memoized context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
     // Estado principal
     isAuthenticated: state.isAuthenticated,
     user: state.user,
@@ -517,10 +579,23 @@ const changeBranch = useCallback(async (branchId) => {
     hasRole,
     getAllowedRoutes,
     isReady
-  };
+  }), [
+    state,
+    login,
+    logout,
+    clearError,
+    selectBranch,
+    changeBranch,
+    getAvailableBranches,
+    canChangeBranch,
+    hasPermission,
+    hasRole,
+    getAllowedRoutes,
+    isReady
+  ]);
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
