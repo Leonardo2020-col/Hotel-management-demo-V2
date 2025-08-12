@@ -1,9 +1,9 @@
-// src/components/rooms/RoomFilters.jsx - SIN FILTRO DE TIPO
+// src/components/rooms/RoomFilters.jsx - ADAPTADO A TU SISTEMA DE 3 ESTADOS
 import React from 'react';
 import { Search, Filter, X, Grid, List } from 'lucide-react';
 import Button from '../common/Button';
 
-// ESTADOS SIMPLIFICADOS - Solo 3 estados
+// TUS 3 ESTADOS SIMPLIFICADOS
 const ROOM_STATUS = {
   AVAILABLE: 'available',
   OCCUPIED: 'occupied',
@@ -13,7 +13,7 @@ const ROOM_STATUS = {
 const RoomFilters = ({ 
   filters = {}, 
   onFiltersChange, 
-  rooms = [], // Para generar opciones de piso dinámicamente
+  rooms = [], 
   viewMode = 'grid', 
   onViewModeChange, 
   loading = false
@@ -42,7 +42,7 @@ const RoomFilters = ({
     return value !== 'all';
   });
 
-  // OPCIONES DE ESTADO SIMPLIFICADAS
+  // TUS 3 OPCIONES DE ESTADO SIMPLIFICADAS
   const statusOptions = [
     { value: 'all', label: 'Todos los estados', icon: '🏨' },
     { value: ROOM_STATUS.AVAILABLE, label: 'Disponibles', icon: '✅' },

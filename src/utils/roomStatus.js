@@ -1,170 +1,145 @@
-// ============================================
-// src/utils/roomStatus.js - UTILIDADES PARA HABITACIONES
-// ============================================
+// src/utils/roomStatus.js - UTILIDADES PARA ESTADOS DE HABITACIONES
 
-/**
- * Constantes para los 3 estados simplificados
- */
+// =============================================
+// CONSTANTES DE ESTADO
+// =============================================
+
 export const ROOM_STATUS = {
-  AVAILABLE: 'available',      // Verde - Limpio y disponible
-  OCCUPIED: 'occupied',        // Rojo - Ocupado con huésped  
-  NEEDS_CLEANING: 'needs_cleaning'  // Amarillo - Necesita limpieza
+  AVAILABLE: 'available',
+  OCCUPIED: 'occupied',
+  NEEDS_CLEANING: 'needs_cleaning',
+  CLEANING: 'cleaning',
+  MAINTENANCE: 'maintenance',
+  OUT_OF_ORDER: 'out_of_order'
 };
 
+export const CLEANING_STATUS = {
+  CLEAN: 'clean',
+  DIRTY: 'dirty',
+  IN_PROGRESS: 'in_progress',
+  INSPECTED: 'inspected'
+};
+
+// =============================================
+// FUNCIONES DE UTILIDAD
+// =============================================
+
 /**
- * Determina el estado de display simplificado basado en status y cleaning_status
- * @param {Object} room - Objeto de habitación
- * @returns {string} - Estado simplificado ('available', 'occupied', 'needs_cleaning')
+ * Determina el estado visual de una habitación basado en su estado y estado de limpieza
  */
 export const getRoomDisplayStatus = (room) => {
-  if (!room) return ROOM_STATUS.AVAILABLE;
+  if (!room) return 'available';
   
-  // Si está ocupada, siempre mostrar ocupada
-  if (room.status === 'occupied') {
-    return ROOM_STATUS.OCCUPIED;
+  // Prioridad: estado de la habitación primero
+  if (room.status === 'occupied') return 'occupied';
+  if (room.status === 'maintenance') return 'maintenance';
+  if (room.status === 'out_of_order') return 'out_of_order';
+  
+  // Luego verificar limpieza
+  if (room.cleaning_status === 'dirty' || room.status === 'needs_cleaning') {
+    return 'needs_cleaning';
+  }
+  if (room.cleaning_status === 'in_progress' || room.status === 'cleaning') {
+    return 'cleaning';
   }
   
-  // Si necesita limpieza (por cualquier motivo)
-  if (room.cleaning_status === 'dirty' || 
-      room.status === 'cleaning' || 
-      room.status === 'maintenance') {
-    return ROOM_STATUS.NEEDS_CLEANING;
-  }
-  
-  // En cualquier otro caso, está disponible
-  return ROOM_STATUS.AVAILABLE;
+  // Por defecto disponible
+  return 'available';
 };
 
 /**
- * Obtiene las clases de colores para un estado
- * @param {string} displayStatus - Estado simplificado
- * @returns {Object} - Objeto con clases de Tailwind
+ * Obtiene la configuración de colores y estilos para cada estado
  */
-export const getStatusColors = (displayStatus) => {
-  switch (displayStatus) {
-    case ROOM_STATUS.AVAILABLE:
-      return {
-        bg: 'bg-green-500',
-        hover: 'hover:bg-green-600',
-        text: 'text-white',
-        light: 'bg-green-100 text-green-800',
-        border: 'border-green-200',
-        ring: 'ring-green-300'
-      };
-    case ROOM_STATUS.OCCUPIED:
-      return {
-        bg: 'bg-red-500',
-        hover: 'hover:bg-red-600', 
-        text: 'text-white',
-        light: 'bg-red-100 text-red-800',
-        border: 'border-red-200',
-        ring: 'ring-red-300'
-      };
-    case ROOM_STATUS.NEEDS_CLEANING:
-      return {
-        bg: 'bg-yellow-500',
-        hover: 'hover:bg-yellow-600',
-        text: 'text-white', 
-        light: 'bg-yellow-100 text-yellow-800',
-        border: 'border-yellow-200',
-        ring: 'ring-yellow-300'
-      };
-    default:
-      return {
-        bg: 'bg-gray-500',
-        hover: 'hover:bg-gray-600',
-        text: 'text-white',
-        light: 'bg-gray-100 text-gray-800',
-        border: 'border-gray-200',
-        ring: 'ring-gray-300'
-      };
-  }
-};
-
-/**
- * Obtiene el texto descriptivo para un estado
- * @param {string} displayStatus - Estado simplificado
- * @returns {string} - Texto descriptivo
- */
-export const getStatusText = (displayStatus) => {
-  switch (displayStatus) {
-    case ROOM_STATUS.AVAILABLE:
-      return 'Disponible';
-    case ROOM_STATUS.OCCUPIED:
-      return 'Ocupada';
-    case ROOM_STATUS.NEEDS_CLEANING:
-      return 'Necesita Limpieza';
-    default:
-      return 'Desconocido';
-  }
-};
-
-/**
- * Obtiene el icono para un estado
- * @param {string} displayStatus - Estado simplificado
- * @returns {string} - Emoji o icono
- */
-export const getStatusIcon = (displayStatus) => {
-  switch (displayStatus) {
-    case ROOM_STATUS.AVAILABLE:
-      return '✅';
-    case ROOM_STATUS.OCCUPIED:
-      return '👥';
-    case ROOM_STATUS.NEEDS_CLEANING:
-      return '🧹';
-    default:
-      return '❓';
-  }
-};
-
-/**
- * Determina si una habitación es clickeable según el modo y estado
- * @param {Object} room - Objeto de habitación
- * @param {string} mode - Modo actual ('checkin', 'checkout', 'cleaning')
- * @returns {boolean} - Si la habitación es clickeable
- */
-export const isRoomClickable = (room, mode = 'checkin') => {
-  const displayStatus = getRoomDisplayStatus(room);
+export const getStatusColors = (status) => {
+  const configs = {
+    available: {
+      bg: 'bg-green-50',
+      border: 'border-green-200',
+      text: 'text-green-700',
+      hover: 'hover:bg-green-100 hover:border-green-300 hover:shadow-md',
+      label: 'Disponible',
+      priority: 1
+    },
+    occupied: {
+      bg: 'bg-blue-50',
+      border: 'border-blue-200',
+      text: 'text-blue-700',
+      hover: 'hover:bg-blue-100 hover:border-blue-300 hover:shadow-md',
+      label: 'Ocupada',
+      priority: 5
+    },
+    needs_cleaning: {
+      bg: 'bg-orange-50',
+      border: 'border-orange-200',
+      text: 'text-orange-700',
+      hover: 'hover:bg-orange-100 hover:border-orange-300 hover:shadow-lg cursor-pointer transform hover:scale-105',
+      label: '🧹 Click para limpiar',
+      clickable: true,
+      priority: 4
+    },
+    cleaning: {
+      bg: 'bg-yellow-50',
+      border: 'border-yellow-200',
+      text: 'text-yellow-700',
+      hover: 'hover:bg-yellow-100 hover:border-yellow-300 hover:shadow-md',
+      label: 'En limpieza',
+      priority: 3
+    },
+    maintenance: {
+      bg: 'bg-red-50',
+      border: 'border-red-200',
+      text: 'text-red-700',
+      hover: 'hover:bg-red-100 hover:border-red-300 hover:shadow-md',
+      label: 'Mantenimiento',
+      priority: 6
+    },
+    out_of_order: {
+      bg: 'bg-gray-50',
+      border: 'border-gray-200',
+      text: 'text-gray-700',
+      hover: 'hover:bg-gray-100 hover:border-gray-300',
+      label: 'Fuera de servicio',
+      priority: 7
+    }
+  };
   
-  switch (mode) {
-    case 'checkin':
-      return displayStatus === ROOM_STATUS.AVAILABLE || displayStatus === ROOM_STATUS.NEEDS_CLEANING;
-    case 'checkout':
-      return displayStatus === ROOM_STATUS.OCCUPIED;
-    case 'cleaning':
-      return displayStatus === ROOM_STATUS.NEEDS_CLEANING;
-    default:
-      return true;
-  }
+  return configs[status] || configs.available;
 };
 
 /**
- * Filtra habitaciones por estado de display
- * @param {Array} rooms - Array de habitaciones
- * @param {string} statusFilter - Estado a filtrar ('all', 'available', 'occupied', 'needs_cleaning')
- * @returns {Array} - Habitaciones filtradas
+ * Obtiene el ícono correspondiente para cada estado
  */
-export const filterRoomsByStatus = (rooms, statusFilter = 'all') => {
-  if (!rooms || !Array.isArray(rooms)) return [];
+export const getStatusIcon = (status) => {
+  const icons = {
+    available: 'CheckCircle',
+    occupied: 'Users',
+    needs_cleaning: 'AlertTriangle',
+    cleaning: 'Clock',
+    maintenance: 'Wrench',
+    out_of_order: 'XCircle'
+  };
   
-  if (statusFilter === 'all') return rooms;
-  
-  return rooms.filter(room => getRoomDisplayStatus(room) === statusFilter);
+  return icons[status] || 'CheckCircle';
 };
 
 /**
- * Obtiene estadísticas de habitaciones por estado
- * @param {Array} rooms - Array de habitaciones
- * @returns {Object} - Estadísticas por estado
+ * Calcula estadísticas de habitaciones
  */
-export const getRoomStatsByStatus = (rooms) => {
-  if (!rooms || !Array.isArray(rooms)) {
+export const calculateRoomStats = (rooms) => {
+  if (!rooms || rooms.length === 0) {
     return {
       total: 0,
       available: 0,
       occupied: 0,
       needsCleaning: 0,
-      occupancyRate: 0
+      cleaning: 0,
+      maintenance: 0,
+      occupancyRate: 0,
+      revenue: {
+        today: 0,
+        thisMonth: 0,
+        average: 0
+      }
     };
   }
 
@@ -172,20 +147,28 @@ export const getRoomStatsByStatus = (rooms) => {
     total: rooms.length,
     available: 0,
     occupied: 0,
-    needsCleaning: 0
+    needsCleaning: 0,
+    cleaning: 0,
+    maintenance: 0
   };
 
   rooms.forEach(room => {
-    const status = getRoomDisplayStatus(room);
-    switch (status) {
-      case ROOM_STATUS.AVAILABLE:
+    const displayStatus = getRoomDisplayStatus(room);
+    switch (displayStatus) {
+      case 'available':
         stats.available++;
         break;
-      case ROOM_STATUS.OCCUPIED:
+      case 'occupied':
         stats.occupied++;
         break;
-      case ROOM_STATUS.NEEDS_CLEANING:
+      case 'needs_cleaning':
         stats.needsCleaning++;
+        break;
+      case 'cleaning':
+        stats.cleaning++;
+        break;
+      case 'maintenance':
+        stats.maintenance++;
         break;
     }
   });
@@ -195,233 +178,195 @@ export const getRoomStatsByStatus = (rooms) => {
     ? Math.round((stats.occupied / stats.total) * 100) 
     : 0;
 
+  // Revenue - esto se calculará con datos reales de reservas
+  stats.revenue = {
+    today: 0,
+    thisMonth: 0,
+    average: stats.total > 0 
+      ? rooms.reduce((sum, room) => sum + (room.base_rate || 0), 0) / stats.total 
+      : 0
+  };
+
   return stats;
 };
 
 /**
- * Agrupa habitaciones por piso
- * @param {Array} rooms - Array de habitaciones
- * @returns {Object} - Habitaciones agrupadas por piso
+ * Filtra habitaciones por estado
  */
-export const groupRoomsByFloor = (rooms) => {
-  if (!rooms || !Array.isArray(rooms)) return {};
+export const filterRoomsByStatus = (rooms, status) => {
+  if (!rooms) return [];
+  if (status === 'all') return rooms;
   
-  return rooms.reduce((acc, room) => {
-    const floor = room.floor || Math.floor(parseInt(room.number) / 100) || 1;
-    if (!acc[floor]) {
-      acc[floor] = [];
-    }
-    acc[floor].push(room);
-    return acc;
-  }, {});
-};
-
-/**
- * Ordena habitaciones por número
- * @param {Array} rooms - Array de habitaciones
- * @returns {Array} - Habitaciones ordenadas
- */
-export const sortRoomsByNumber = (rooms) => {
-  if (!rooms || !Array.isArray(rooms)) return [];
-  
-  return [...rooms].sort((a, b) => {
-    const numA = parseInt(a.number) || 0;
-    const numB = parseInt(b.number) || 0;
-    return numA - numB;
+  return rooms.filter(room => {
+    const displayStatus = getRoomDisplayStatus(room);
+    return displayStatus === status;
   });
 };
 
 /**
- * Obtiene el siguiente número de habitación disponible
- * @param {Array} rooms - Array de habitaciones existentes
- * @param {number} floor - Piso deseado
- * @returns {string} - Número de habitación sugerido
+ * Agrupa habitaciones por piso
  */
-export const getNextRoomNumber = (rooms, floor) => {
-  if (!rooms || !Array.isArray(rooms) || !floor) return `${floor}01`;
+export const groupRoomsByFloor = (rooms) => {
+  if (!rooms) return {};
   
-  const floorRooms = rooms.filter(room => room.floor === floor);
-  const floorNumbers = floorRooms
-    .map(room => parseInt(room.number) || 0)
-    .filter(num => Math.floor(num / 100) === floor)
-    .sort((a, b) => a - b);
-  
-  if (floorNumbers.length === 0) {
-    return `${floor}01`;
-  }
-  
-  // Buscar el primer hueco o siguiente número
-  for (let i = 1; i <= 99; i++) {
-    const expectedNumber = floor * 100 + i;
-    if (!floorNumbers.includes(expectedNumber)) {
-      return expectedNumber.toString().padStart(3, '0');
+  return rooms.reduce((grouped, room) => {
+    const floor = room.floor;
+    if (!grouped[floor]) {
+      grouped[floor] = [];
     }
-  }
-  
-  return `${floor}01`; // Fallback
+    grouped[floor].push(room);
+    return grouped;
+  }, {});
 };
 
 /**
- * Valida si un número de habitación es válido
- * @param {string} roomNumber - Número de habitación
- * @param {Array} existingRooms - Habitaciones existentes
- * @returns {Object} - Resultado de validación
+ * Obtiene habitaciones que necesitan atención (limpieza o mantenimiento)
  */
-export const validateRoomNumber = (roomNumber, existingRooms = []) => {
-  const errors = [];
+export const getRoomsNeedingAttention = (rooms) => {
+  if (!rooms) return [];
   
-  if (!roomNumber || roomNumber.trim() === '') {
-    errors.push('El número de habitación es obligatorio');
-  }
+  return rooms.filter(room => {
+    const status = getRoomDisplayStatus(room);
+    return status === 'needs_cleaning' || status === 'maintenance';
+  });
+};
+
+/**
+ * Verifica si una habitación puede ser limpiada con un click
+ */
+export const canCleanRoom = (room) => {
+  if (!room) return false;
+  const status = getRoomDisplayStatus(room);
+  return status === 'needs_cleaning';
+};
+
+/**
+ * Obtiene el siguiente estado después de limpiar una habitación
+ */
+export const getNextCleaningStatus = (room) => {
+  if (!room) return null;
   
-  if (roomNumber && !/^[A-Za-z0-9\-]+$/.test(roomNumber)) {
-    errors.push('El número solo puede contener letras, números y guiones');
-  }
+  const currentStatus = getRoomDisplayStatus(room);
   
-  if (existingRooms.some(room => room.number === roomNumber)) {
-    errors.push('Ya existe una habitación con este número');
+  switch (currentStatus) {
+    case 'needs_cleaning':
+      return {
+        status: 'available',
+        cleaning_status: 'clean'
+      };
+    case 'cleaning':
+      return {
+        status: 'available',
+        cleaning_status: 'clean'
+      };
+    default:
+      return null;
   }
+};
+
+/**
+ * Valida si se puede cambiar el estado de una habitación
+ */
+export const canChangeRoomStatus = (room, newStatus) => {
+  if (!room || !newStatus) return false;
+  
+  const currentStatus = getRoomDisplayStatus(room);
+  
+  // Reglas de negocio para cambios de estado
+  const allowedTransitions = {
+    available: ['occupied', 'needs_cleaning', 'maintenance'],
+    occupied: ['needs_cleaning'], // Solo se puede marcar como sucia al check-out
+    needs_cleaning: ['available', 'cleaning'], // Se puede limpiar o marcar en proceso
+    cleaning: ['available'], // Solo se puede completar la limpieza
+    maintenance: ['available'] // Solo se puede completar el mantenimiento
+  };
+  
+  return allowedTransitions[currentStatus]?.includes(newStatus) || false;
+};
+
+/**
+ * Formatea la información de estado para mostrar al usuario
+ */
+export const formatRoomStatusInfo = (room) => {
+  if (!room) return null;
+  
+  const status = getRoomDisplayStatus(room);
+  const config = getStatusColors(status);
   
   return {
-    isValid: errors.length === 0,
-    errors
+    status,
+    label: config.label,
+    canClick: config.clickable || false,
+    priority: config.priority || 0,
+    lastCleaned: room.last_cleaned,
+    currentGuest: room.currentGuest,
+    nextReservation: room.nextReservation
   };
 };
 
 /**
- * Formatea información de huésped para display
- * @param {Object} guest - Objeto de huésped
- * @returns {string} - Nombre formateado
+ * Genera un reporte de estado de habitaciones
  */
-export const formatGuestName = (guest) => {
-  if (!guest) return '';
+export const generateRoomStatusReport = (rooms) => {
+  if (!rooms) return null;
   
-  if (guest.full_name) return guest.full_name;
-  if (guest.name) return guest.name;
-  
-  const firstName = guest.first_name || guest.firstName || '';
-  const lastName = guest.last_name || guest.lastName || '';
-  
-  return `${firstName} ${lastName}`.trim() || 'Huésped';
-};
-
-/**
- * Calcula el precio total por noches
- * @param {number} rate - Tarifa por noche
- * @param {number} nights - Número de noches
- * @param {Array} snacks - Array de snacks opcionales
- * @returns {number} - Total calculado
- */
-export const calculateTotalPrice = (rate, nights, snacks = []) => {
-  const roomTotal = (rate || 0) * (nights || 1);
-  const snacksTotal = snacks.reduce((total, snack) => {
-    return total + ((snack.price || 0) * (snack.quantity || 1));
-  }, 0);
-  
-  return roomTotal + snacksTotal;
-};
-
-/**
- * Obtiene el color del piso para UI
- * @param {number} floor - Número de piso
- * @returns {string} - Clase de color
- */
-export const getFloorColor = (floor) => {
-  const colors = [
-    'bg-blue-500',    // Piso 1
-    'bg-green-500',   // Piso 2  
-    'bg-purple-500',  // Piso 3
-    'bg-orange-500',  // Piso 4
-    'bg-pink-500',    // Piso 5
-    'bg-indigo-500',  // Piso 6
-    'bg-red-500',     // Piso 7
-    'bg-yellow-500'   // Piso 8+
-  ];
-  
-  return colors[(floor - 1) % colors.length] || 'bg-gray-500';
-};
-
-/**
- * Hook personalizado para manejo de habitaciones (para usar en componentes)
- */
-export const useRoomUtils = () => {
-  const getRoomsNeedingCleaning = (rooms) => {
-    return filterRoomsByStatus(rooms, ROOM_STATUS.NEEDS_CLEANING);
-  };
-  
-  const getAvailableRooms = (rooms) => {
-    return filterRoomsByStatus(rooms, ROOM_STATUS.AVAILABLE);
-  };
-  
-  const getOccupiedRooms = (rooms) => {
-    return filterRoomsByStatus(rooms, ROOM_STATUS.OCCUPIED);
-  };
-  
-  const getRoomsByFloor = (rooms, floor) => {
-    return rooms.filter(room => room.floor === floor);
-  };
+  const stats = calculateRoomStats(rooms);
+  const needingAttention = getRoomsNeedingAttention(rooms);
+  const byFloor = groupRoomsByFloor(rooms);
   
   return {
-    getRoomsNeedingCleaning,
-    getAvailableRooms,
-    getOccupiedRooms,
-    getRoomsByFloor,
-    getRoomDisplayStatus,
-    getStatusColors,
-    getStatusText,
-    getStatusIcon,
-    isRoomClickable,
-    getRoomStatsByStatus,
-    groupRoomsByFloor,
-    sortRoomsByNumber
+    summary: stats,
+    needingAttention: needingAttention.length,
+    floorBreakdown: Object.keys(byFloor).map(floor => ({
+      floor: parseInt(floor),
+      count: byFloor[floor].length,
+      stats: calculateRoomStats(byFloor[floor])
+    })),
+    recommendations: generateRecommendations(stats, needingAttention)
   };
 };
 
 /**
- * Constantes para mensajes de toast
+ * Genera recomendaciones basadas en el estado actual
  */
-export const TOAST_MESSAGES = {
-  ROOM_CLEANED: (roomNumber) => `✨ Habitación ${roomNumber} limpiada y disponible`,
-  ROOM_OCCUPIED: 'Esta habitación ya está ocupada',
-  ROOM_NOT_DIRTY: 'Esta habitación no necesita limpieza',
-  ROOM_NOT_FOUND: 'Habitación no encontrada',
-  CLEANING_ERROR: 'Error al limpiar la habitación',
-  MULTIPLE_ROOMS_CLEANED: (count) => `🎉 ${count} habitación${count > 1 ? 'es' : ''} limpiada${count > 1 ? 's' : ''}`,
-  NO_ROOMS_TO_CLEAN: 'No hay habitaciones que necesiten limpieza',
-  ALL_ROOMS_CLEAN: '¡Excelente! Todas las habitaciones están limpias'
-};
-
-/**
- * Configuración por defecto para habitaciones
- */
-export const DEFAULT_ROOM_CONFIG = {
-  capacity: 2,
-  size: 25,
-  rate: 100,
-  features: ['WiFi Gratis', 'TV Smart', 'Aire Acondicionado'],
-  beds: [{ type: 'Doble', count: 1 }],
-  status: 'available',
-  cleaning_status: 'clean'
-};
-
-// Exportación por defecto con todas las utilidades
-export default {
-  ROOM_STATUS,
-  getRoomDisplayStatus,
-  getStatusColors,
-  getStatusText,
-  getStatusIcon,
-  isRoomClickable,
-  filterRoomsByStatus,
-  getRoomStatsByStatus,
-  groupRoomsByFloor,
-  sortRoomsByNumber,
-  getNextRoomNumber,
-  validateRoomNumber,
-  formatGuestName,
-  calculateTotalPrice,
-  getFloorColor,
-  useRoomUtils,
-  TOAST_MESSAGES,
-  DEFAULT_ROOM_CONFIG
+export const generateRecommendations = (stats, needingAttention) => {
+  const recommendations = [];
+  
+  if (stats.needsCleaning > 0) {
+    recommendations.push({
+      type: 'cleaning',
+      priority: 'high',
+      message: `${stats.needsCleaning} habitación${stats.needsCleaning > 1 ? 'es' : ''} necesita${stats.needsCleaning === 1 ? '' : 'n'} limpieza`,
+      action: 'Hacer click en las habitaciones naranjas para limpiarlas'
+    });
+  }
+  
+  if (stats.maintenance > 0) {
+    recommendations.push({
+      type: 'maintenance',
+      priority: 'medium',
+      message: `${stats.maintenance} habitación${stats.maintenance > 1 ? 'es' : ''} en mantenimiento`,
+      action: 'Verificar el estado del mantenimiento'
+    });
+  }
+  
+  if (stats.occupancyRate < 30) {
+    recommendations.push({
+      type: 'marketing',
+      priority: 'low',
+      message: `Ocupación baja (${stats.occupancyRate}%)`,
+      action: 'Considerar estrategias de marketing'
+    });
+  }
+  
+  if (stats.occupancyRate > 90) {
+    recommendations.push({
+      type: 'capacity',
+      priority: 'medium',
+      message: `Ocupación muy alta (${stats.occupancyRate}%)`,
+      action: 'Prepararse para alta demanda'
+    });
+  }
+  
+  return recommendations;
 };
