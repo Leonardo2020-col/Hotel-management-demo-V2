@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN CORREGIDA PARA SOLUCIONAR BUILD ERROR
+// src/App.js - VERSIÓN CORREGIDA SIN DUPLICADOS
 import React, { Suspense } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -12,12 +12,11 @@ import AppRoutes from './routes/AppRoutes';
 
 // Components
 import ErrorFallback from './components/common/ErrorFallback';
-import LoadingSpinner from './components/common/LoadingSpinner';
 
 // Estilos
 import './index.css';
 
-// Loading Spinner Component
+// Componente LoadingSpinner inline para evitar conflictos
 const LoadingSpinner = () => (
   <div className="min-h-screen bg-gray-50 flex items-center justify-center">
     <div className="text-center">
@@ -27,21 +26,13 @@ const LoadingSpinner = () => (
   </div>
 );
 
-// Error Handler Global
-const handleError = (error, errorInfo) => {
-  console.error('Global Error Boundary:', error, errorInfo);
-  
-  // En producción, aquí podrías enviar el error a un servicio como Sentry
-  if (process.env.NODE_ENV === 'production') {
-    // Ejemplo: Sentry.captureException(error);
-  }
-};
-
 function App() {
   return (
     <ErrorBoundary
       FallbackComponent={ErrorFallback}
-      onError={handleError}
+      onError={(error, errorInfo) => {
+        console.error('Global Error:', error, errorInfo);
+      }}
       onReset={() => window.location.reload()}
     >
       <BrowserRouter>
