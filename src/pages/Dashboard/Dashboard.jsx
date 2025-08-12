@@ -23,8 +23,8 @@ import {
   TrendingUp,
   Calendar,
   MapPin,
-  CheckIn,
-  CheckOut,
+  LogIn,
+  LogOut,
   DollarSign,
   AlertTriangle
 } from 'lucide-react';
@@ -220,13 +220,13 @@ const Dashboard = () => {
         <MetricCard
           title="Check-ins hoy"
           value={metrics.todayCheckIns}
-          icon={CheckIn}
+          icon={LogIn}
           color="green"
         />
         <MetricCard
           title="Check-outs hoy"
           value={metrics.todayCheckOuts}
-          icon={CheckOut}
+          icon={LogOut}
           color="orange"
         />
         <MetricCard
