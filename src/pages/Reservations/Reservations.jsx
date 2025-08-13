@@ -1,6 +1,6 @@
 // src/pages/Reservations/Reservations.jsx - VERSIÓN COMPLETAMENTE INTEGRADA
 import React, { useState, useEffect } from 'react';
-import { Plus, Calendar, Filter, Download, Upload, Lock, AlertCircle, RefreshCw, Eye, FileText } from 'lucide-react';
+import { Plus, Calendar, Filter, Download, Upload, Lock, AlertCircle, RefreshCw, Eye, FileText, X, User, Edit, Clock, DollarSign } from 'lucide-react';
 import { useReservations } from '../../hooks/useReservations';
 // import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/common/Button';
