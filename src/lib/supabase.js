@@ -409,178 +409,189 @@ export const db = {
   // =============================================
 
   async getRooms(filters = {}) {
-    try {
-      console.log('Loading rooms with enhanced structure...', filters)
-      
-      const options = {
-        orderBy: 'floor:asc,number:asc',
-        ...filters
-      }
-
-      if (filters.branchId) {
-        options.where = { branch_id: filters.branchId }
-      }
-      if (filters.status && filters.status !== 'all') {
-        options.where = { ...options.where, status: filters.status }
-      }
-      if (filters.floor && filters.floor !== 'all') {
-        options.where = { ...options.where, floor: filters.floor }
-      }
-
-      const { data: rooms, error } = await this.findMany('rooms', options)
-      
-      if (error) return { data: [], error }
-
-      // Get active reservations to enrich room data
-      const { data: reservations } = await this.findMany('reservations', {
-        select: `
-          *,
-          guest:guests(
-            id,
-            full_name,
-            email,
-            phone,
-            document_number
-          )
-        `,
-        in: { status: ['checked_in', 'confirmed'] }
-      })
-
-      // Enrich rooms with reservation data
-      const enrichedRooms = rooms.map(room => {
-        const activeReservation = reservations?.find(
-          res => res.room_id === room.id && res.status === 'checked_in'
-        )
-        
-        const nextReservation = reservations?.find(
-          res => res.room_id === room.id && res.status === 'confirmed'
-        )
-
-        return {
-          ...room,
-          rate: room.base_rate,
-          
-          currentGuest: activeReservation ? {
-            id: activeReservation.guest?.id,
-            name: activeReservation.guest?.full_name,
-            email: activeReservation.guest?.email,
-            phone: activeReservation.guest?.phone,
-            checkIn: activeReservation.check_in,
-            checkOut: activeReservation.check_out,
-            confirmationCode: activeReservation.confirmation_code
-          } : null,
-
-          nextReservation: nextReservation ? {
-            id: nextReservation.id,
-            guest: nextReservation.guest?.full_name,
-            checkIn: nextReservation.check_in,
-            confirmationCode: nextReservation.confirmation_code
-          } : null,
-
-          activeReservation: activeReservation || null
-        }
-      })
-
-      return { data: enrichedRooms, error: null }
-
-    } catch (error) {
-      return handleSupabaseError(error, 'getRooms')
+  try {
+    console.log('Loading rooms with current table structure...', filters)
+    
+    const options = {
+      orderBy: 'floor:asc,number:asc',
+      ...filters
     }
-  },
+
+    if (filters.branchId) {
+      options.where = { branch_id: filters.branchId }
+    }
+    if (filters.status && filters.status !== 'all') {
+      options.where = { ...options.where, status: filters.status }
+    }
+    if (filters.floor && filters.floor !== 'all') {
+      options.where = { ...options.where, floor: filters.floor }
+    }
+
+    const { data: rooms, error } = await this.findMany('rooms', options)
+    
+    if (error) return { data: [], error }
+
+    // Transformar habitaciones para compatibilidad con el frontend
+    // AGREGAR CAMPOS MOCK para que funcione con los componentes
+    const transformedRooms = (rooms || []).map(room => ({
+      ...room,
+      // Campos calculados/mock para compatibilidad
+      rate: room.base_rate || 100,
+      capacity: 2, // Mock fijo ya que no existe en tu tabla
+      features: ['WiFi Gratis'], // Mock fijo ya que no existe en tu tabla
+      beds: [{ type: 'Doble', count: 1 }], // Mock fijo ya que no existe en tu tabla
+      bed_options: ['Doble'], // Mock fijo para compatibilidad
+      room_type: 'Estándar' // Mock fijo para compatibilidad
+    }))
+
+    return { data: transformedRooms, error: null }
+
+  } catch (error) {
+    return handleSupabaseError(error, 'getRooms')
+  }
+},
 
   async createRoom(roomData) {
-    try {
-      if (!roomData.number || !roomData.floor) {
-        return { 
-          data: null, 
-          error: { message: 'Número de habitación y piso son obligatorios' }
-        }
+  try {
+    if (!roomData.number || !roomData.floor) {
+      return { 
+        data: null, 
+        error: { message: 'Número de habitación y piso son obligatorios' }
       }
-
-      const data = {
-        number: roomData.number.toString(),
-        floor: parseInt(roomData.floor),
-        base_rate: parseFloat(roomData.base_rate || roomData.rate || 100),
-        capacity: parseInt(roomData.capacity || 2),
-        branch_id: roomData.branch_id || 1,
-        status: 'available',
-        cleaning_status: 'clean',
-        beds: roomData.beds || [{ type: 'Doble', count: 1 }],
-        size: parseInt(roomData.size || 25),
-        features: roomData.features || ['WiFi Gratis']
-      }
-
-      // Check for duplicates
-      const { data: existingRoom } = await supabase
-        .from('rooms')
-        .select('id')
-        .eq('number', data.number)
-        .eq('branch_id', data.branch_id)
-        .single()
-
-      if (existingRoom) {
-        return { 
-          data: null, 
-          error: { message: `Ya existe una habitación con el número ${roomData.number}` }
-        }
-      }
-
-      return this.create('rooms', data)
-
-    } catch (error) {
-      return handleSupabaseError(error, 'createRoom')
     }
-  },
+
+    // DATOS ADAPTADOS A TU TABLA ACTUAL
+    const data = {
+      number: roomData.number.toString(),
+      floor: parseInt(roomData.floor),
+      base_rate: parseFloat(roomData.base_rate || 100),
+      branch_id: roomData.branch_id || 1,
+      status: 'available',
+      cleaning_status: 'clean',
+      size: parseInt(roomData.size || 25),
+      maintenance_notes: roomData.description || null
+      // NO incluimos capacity, features, bed_options ya que no existen en tu tabla
+    }
+
+    // Check for duplicates
+    const { data: existingRoom } = await supabase
+      .from('rooms')
+      .select('id')
+      .eq('number', data.number)
+      .eq('branch_id', data.branch_id)
+      .single()
+
+    if (existingRoom) {
+      return { 
+        data: null, 
+        error: { message: `Ya existe una habitación con el número ${roomData.number}` }
+      }
+    }
+
+    return this.create('rooms', data)
+
+  } catch (error) {
+    return handleSupabaseError(error, 'createRoom')
+  }
+},
 
   async updateRoom(roomId, updates) {
-    return this.update('rooms', roomId, updates)
-  },
+  try {
+    // SOLO CAMPOS QUE EXISTEN EN TU TABLA
+    const allowedUpdates = {}
+    
+    if (updates.number !== undefined) allowedUpdates.number = updates.number.toString()
+    if (updates.floor !== undefined) allowedUpdates.floor = parseInt(updates.floor)
+    if (updates.base_rate !== undefined) allowedUpdates.base_rate = parseFloat(updates.base_rate)
+    if (updates.size !== undefined) allowedUpdates.size = parseInt(updates.size)
+    if (updates.status !== undefined) allowedUpdates.status = updates.status
+    if (updates.cleaning_status !== undefined) allowedUpdates.cleaning_status = updates.cleaning_status
+    if (updates.maintenance_notes !== undefined) allowedUpdates.maintenance_notes = updates.maintenance_notes
+    if (updates.assigned_cleaner !== undefined) allowedUpdates.assigned_cleaner = updates.assigned_cleaner
+    if (updates.current_guest !== undefined) allowedUpdates.current_guest = updates.current_guest
+    if (updates.last_guest !== undefined) allowedUpdates.last_guest = updates.last_guest
+    
+    return this.update('rooms', roomId, allowedUpdates)
+  } catch (error) {
+    return handleSupabaseError(error, 'updateRoom')
+  }
+},
 
   async deleteRoom(roomId) {
+  try {
+    // Verificar si hay reservas activas primero
+    const { data: activeReservations } = await this.findMany('reservations', {
+      where: { room_id: roomId },
+      in: { status: ['confirmed', 'checked_in', 'pending'] }
+    })
+    
+    if (activeReservations && activeReservations.length > 0) {
+      return {
+        data: null,
+        error: { 
+          message: `No se puede eliminar la habitación. Tiene ${activeReservations.length} reserva(s) activa(s). Cancela las reservas primero.`
+        }
+      }
+    }
+    
     return this.delete('rooms', roomId)
-  },
+  } catch (error) {
+    return handleSupabaseError(error, 'deleteRoom')
+  }
+},
 
   async updateRoomStatus(roomId, newStatus, cleaningStatus = null) {
-    try {
-      const updateData = { 
-        status: newStatus,
-        updated_at: new Date().toISOString()
-      }
-      
-      if (cleaningStatus) {
-        updateData.cleaning_status = cleaningStatus
-      }
-
-      if (cleaningStatus === 'clean') {
-        updateData.last_cleaned = new Date().toISOString()
-        updateData.cleaned_by = 'Reception Staff'
-      }
-
-      return this.update('rooms', roomId, updateData)
-
-    } catch (error) {
-      return handleSupabaseError(error, 'updateRoomStatus')
+  try {
+    const updateData = { 
+      status: newStatus,
+      updated_at: new Date().toISOString()
     }
-  },
+    
+    if (cleaningStatus) {
+      updateData.cleaning_status = cleaningStatus
+    }
+
+    // Si se marca como limpio, agregar información de limpieza
+    if (cleaningStatus === 'clean') {
+      updateData.last_cleaned = new Date().toISOString()
+      updateData.cleaned_by = 'Reception Staff'
+    }
+
+    // Si se inicia limpieza, agregar timestamp
+    if (newStatus === 'cleaning') {
+      updateData.cleaning_start_time = new Date().toISOString()
+    }
+
+    return this.update('rooms', roomId, updateData)
+
+  } catch (error) {
+    return handleSupabaseError(error, 'updateRoomStatus')
+  }
+},
 
   async getRoomsNeedingCleaning(branchId = null) {
+  try {
     const options = {
       where: branchId ? { branch_id: branchId } : {},
       orderBy: 'floor:asc,number:asc'
     }
 
-    // Add condition for rooms needing cleaning
-    // This would need to be handled in the query or post-processed
     const { data: rooms, error } = await this.findMany('rooms', options)
     
     if (error) return { data: [], error }
 
+    // Filtrar habitaciones que necesitan limpieza
     const roomsNeedingCleaning = rooms.filter(room => 
-      room.cleaning_status === 'dirty' || room.status === 'cleaning'
+      room.cleaning_status === 'dirty' || 
+      room.status === 'cleaning' ||
+      (room.status === 'available' && room.cleaning_status === 'dirty')
     )
 
     return { data: roomsNeedingCleaning, error: null }
-  },
+  } catch (error) {
+    return handleSupabaseError(error, 'getRoomsNeedingCleaning')
+  }
+},
 
   // =============================================
   // GUESTS MANAGEMENT
@@ -1242,54 +1253,122 @@ export const db = {
   // =============================================
 
   async cleanRoomWithClick(roomId) {
-    try {
-      console.log(`🧹 Cleaning room with ID: ${roomId}`)
-      
-      const updateData = {
-        status: 'available',
-        cleaning_status: 'clean',
-        last_cleaned: new Date().toISOString(),
-        cleaned_by: 'Reception Staff'
-      }
-      
-      return this.update('rooms', roomId, updateData)
-      
-    } catch (error) {
-      return handleSupabaseError(error, 'cleanRoomWithClick')
+  try {
+    console.log(`🧹 Quick cleaning room with ID: ${roomId}`)
+    
+    const updateData = {
+      status: 'available',
+      cleaning_status: 'clean',
+      last_cleaned: new Date().toISOString(),
+      cleaned_by: 'Reception Staff',
+      cleaning_start_time: null, // Limpiar timestamp de inicio
+      assigned_cleaner: null // Limpiar asignación
     }
-  },
+    
+    return this.update('rooms', roomId, updateData)
+    
+  } catch (error) {
+    return handleSupabaseError(error, 'cleanRoomWithClick')
+  }
+},
 
   async getCleaningStaff() {
-    try {
-      const { data } = await this.findMany('cleaning_staff', {
-        where: { is_active: true },
-        orderBy: 'name:asc'
-      })
-      
-      // If table doesn't exist, return mock data
-      if (!data) {
-        return {
-          data: [
-            { id: 1, name: 'María González', shift: 'morning', phone: '+51 987-654-321' },
-            { id: 2, name: 'Ana López', shift: 'afternoon', phone: '+51 987-654-322' },
-            { id: 3, name: 'Pedro Martín', shift: 'morning', phone: '+51 987-654-323' },
-            { id: 4, name: 'Carmen Torres', shift: 'night', phone: '+51 987-654-324' }
-          ],
-          error: null
-        }
-      }
-      
-      return { data, error: null }
-    } catch (error) {
-      // Return mock data as fallback
-      return {
-        data: [
-          { id: 1, name: 'Personal de Limpieza', shift: 'morning' }
-        ],
-        error: null
-      }
+  try {
+    // Como probablemente no tienes tabla de personal, usar datos mock
+    return {
+      data: [
+        { id: 1, name: 'María González', shift: 'morning', phone: '+51 987-654-321' },
+        { id: 2, name: 'Ana López', shift: 'afternoon', phone: '+51 987-654-322' },
+        { id: 3, name: 'Pedro Martín', shift: 'morning', phone: '+51 987-654-323' },
+        { id: 4, name: 'Carmen Torres', shift: 'night', phone: '+51 987-654-324' }
+      ],
+      error: null
     }
-  },
+  } catch (error) {
+    return {
+      data: [
+        { id: 1, name: 'Personal de Limpieza', shift: 'morning' }
+      ],
+      error: null
+    }
+  }
+},
+
+// =============================================
+// ROOM ASSIGNMENTS (USANDO CAMPOS EXISTENTES)
+// =============================================
+async assignRoomCleaning(roomIds, staffId, notes = '') {
+  try {
+    console.log(`👥 Assigning cleaning for rooms ${roomIds} to staff ${staffId}`)
+    
+    // Buscar el nombre del personal
+    const { data: staff } = await this.getCleaningStaff()
+    const staffMember = staff.find(s => s.id === parseInt(staffId))
+    const staffName = staffMember ? staffMember.name : 'Personal de Limpieza'
+    
+    const updates = roomIds.map(roomId => 
+      this.update('rooms', roomId, {
+        assigned_cleaner: staffName, // Usar string en lugar de ID
+        cleaning_start_time: new Date().toISOString(),
+        status: 'cleaning',
+        cleaning_status: 'in_progress',
+        maintenance_notes: notes || null
+      })
+    )
+    
+    const results = await Promise.all(updates)
+    
+    // Verificar si alguna actualización falló
+    const errors = results.filter(result => result.error)
+    if (errors.length > 0) {
+      return { data: null, error: errors[0].error }
+    }
+    
+    return { data: results.map(r => r.data), error: null }
+    
+  } catch (error) {
+    return handleSupabaseError(error, 'assignRoomCleaning')
+  }
+},
+
+// =============================================
+// ROOM AVAILABILITY FOR RESERVATIONS
+// =============================================
+async getRoomAvailabilityStatus(roomId) {
+  try {
+    // Obtener habitación
+    const { data: room } = await this.findById('rooms', roomId)
+    if (!room) {
+      return { data: null, error: { message: 'Habitación no encontrada' } }
+    }
+    
+    // Obtener reservas activas para esta habitación
+    const { data: activeReservations } = await this.findMany('reservations', {
+      where: { room_id: roomId },
+      in: { status: ['checked_in', 'confirmed'] }
+    })
+    
+    const hasActiveReservation = activeReservations && activeReservations.length > 0
+    const currentReservation = activeReservations?.find(r => r.status === 'checked_in')
+    const nextReservation = activeReservations?.find(r => r.status === 'confirmed')
+    
+    return {
+      data: {
+        room,
+        isOccupied: !!currentReservation,
+        hasUpcomingReservation: !!nextReservation,
+        currentReservation,
+        nextReservation,
+        canClean: !hasActiveReservation && room.cleaning_status === 'dirty'
+      },
+      error: null
+    }
+    
+  } catch (error) {
+    return handleSupabaseError(error, 'getRoomAvailabilityStatus')
+  }
+},
+
 
   // =============================================
   // QUICK CHECK-INS (for walk-in guests)

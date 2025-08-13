@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Calendar, FileText, Search, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, User, Calendar, FileText, Search, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import Button from '../common/Button';
-import { db } from '../../lib/supabase';
+import { useReservations } from '../../hooks/useReservations';
 import toast from 'react-hot-toast';
 
 const schema = yup.object().shape({
-  // Guest Information - Simplificado
+  // Guest Information
   guestName: yup.string().required('El nombre es obligatorio'),
   guestEmail: yup.string().email('Email inválido').nullable(),
   guestPhone: yup.string().nullable(),
@@ -34,6 +34,14 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [searchTimeout, setSearchTimeout] = useState(null);
 
+  // Usar el hook para funciones auxiliares
+  const { 
+    searchGuests, 
+    getAvailableRoomsForDates,
+    checkRoomAvailability,
+    operationLoading 
+  } = useReservations();
+
   const {
     register,
     handleSubmit,
@@ -53,7 +61,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
   const watchedValues = watch();
 
   // Buscar huéspedes existentes con debounce
-  const searchGuests = async (searchTerm) => {
+  const handleSearchGuests = async (searchTerm) => {
     if (searchTerm.length < 2) {
       setExistingGuests([]);
       return;
@@ -68,14 +76,11 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
     const timeoutId = setTimeout(async () => {
       setSearchingGuest(true);
       try {
-        const { data, error } = await db.searchGuests(searchTerm);
-        if (error) {
-          console.error('Error searching guests:', error);
-          return;
-        }
-        setExistingGuests(data || []);
+        const guests = await searchGuests(searchTerm);
+        setExistingGuests(guests);
       } catch (error) {
         console.error('Error searching guests:', error);
+        toast.error('Error al buscar huéspedes');
       } finally {
         setSearchingGuest(false);
       }
@@ -96,7 +101,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
     toast.success('Huésped seleccionado');
   };
 
-  // FUNCIÓN MEJORADA: Buscar habitaciones disponibles
+  // Buscar habitaciones disponibles
   const searchAvailableRooms = async () => {
     if (!watchedValues.checkIn || !watchedValues.checkOut) {
       console.log('❌ Missing check-in or check-out dates');
@@ -120,61 +125,10 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
 
     setLoadingRooms(true);
     try {
-      // Intentar usar la función específica de disponibilidad
-      let { data: rooms, error } = await db.getAvailableRooms(
+      const rooms = await getAvailableRoomsForDates(
         watchedValues.checkIn,
         watchedValues.checkOut
       );
-
-      // Método alternativo si no funciona la función principal
-      if (error || !rooms || rooms.length === 0) {
-        console.log('🔄 Using fallback method for room search');
-        
-        // Obtener todas las habitaciones disponibles
-        const { data: allRooms, error: roomsError } = await db.getRooms({
-          where: { status: 'available' }
-        });
-        
-        if (roomsError) {
-          throw new Error('Error al obtener habitaciones: ' + roomsError.message);
-        }
-
-        if (!allRooms || allRooms.length === 0) {
-          console.log('❌ No rooms found in database');
-          setAvailableRooms([]);
-          toast.info('No hay habitaciones disponibles en el sistema');
-          return;
-        }
-
-        // Obtener reservas que podrían conflictar
-        const { data: conflictingReservations, error: reservationsError } = await db.getReservations({
-          in: { status: ['confirmed', 'checked_in', 'pending'] }
-        });
-
-        if (reservationsError) {
-          console.warn('Could not check for conflicts:', reservationsError);
-        }
-
-        // Filtrar habitaciones disponibles
-        const availableRoomsList = allRooms.filter(room => {
-          // Verificar conflictos con reservas existentes
-          const hasConflict = (conflictingReservations || []).some(reservation => {
-            if (reservation.room_id !== room.id) return false;
-            
-            const reservationCheckIn = new Date(reservation.check_in);
-            const reservationCheckOut = new Date(reservation.check_out);
-            
-            // Verificar solapamiento de fechas
-            return (
-              (checkInDate < reservationCheckOut && checkOutDate > reservationCheckIn)
-            );
-          });
-
-          return !hasConflict;
-        });
-
-        rooms = availableRoomsList;
-      }
 
       console.log(`✅ Found ${rooms?.length || 0} available rooms`);
       setAvailableRooms(rooms || []);
@@ -182,12 +136,12 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
       if (!rooms || rooms.length === 0) {
         toast.info('No hay habitaciones disponibles para las fechas seleccionadas');
       } else {
-        toast.success(`${rooms.length} habitacion${rooms.length > 1 ? 'es' : ''} disponible${rooms.length > 1 ? 's' : ''}`);
+        toast.success(`${rooms.length} habitación${rooms.length > 1 ? 'es' : ''} disponible${rooms.length > 1 ? 's' : ''}`);
       }
 
     } catch (error) {
       console.error('Error loading available rooms:', error);
-      toast.error('Error al buscar habitaciones: ' + error.message);
+      toast.error('Error al buscar habitaciones: ' + (error.message || 'Error desconocido'));
       setAvailableRooms([]);
     } finally {
       setLoadingRooms(false);
@@ -250,7 +204,13 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
       const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
       // Preparar datos del huésped
-      const guestData = selectedGuest || {
+      const guestData = selectedGuest ? {
+        id: selectedGuest.id,
+        name: selectedGuest.full_name || selectedGuest.name,
+        email: selectedGuest.email || '',
+        phone: selectedGuest.phone || '',
+        document: selectedGuest.document_number || selectedGuest.document || ''
+      } : {
         name: data.guestName.trim(),
         email: data.guestEmail?.trim() || null,
         phone: data.guestPhone?.trim() || null,
@@ -267,7 +227,8 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
         children: data.children || 0,
         specialRequests: data.specialRequests || '',
         source: 'direct',
-        status: 'pending'
+        status: 'pending',
+        nights: nights
       };
 
       console.log('📋 Final reservation data:', reservationData);
@@ -275,7 +236,6 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
       // Llamar callback del padre
       await onSubmit(reservationData);
       
-      toast.success('Reserva creada exitosamente');
       handleClose();
       
     } catch (error) {
@@ -407,12 +367,12 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                       type="text"
                       placeholder="Buscar por nombre, email o documento..."
                       className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      onChange={(e) => searchGuests(e.target.value)}
+                      onChange={(e) => handleSearchGuests(e.target.value)}
                     />
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                     {searchingGuest && (
                       <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                        <Loader2 className="animate-spin h-4 w-4 text-blue-600" />
                       </div>
                     )}
                   </div>
@@ -613,7 +573,12 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Habitación * 
-                      {loadingRooms && <span className="text-blue-500 ml-2">Buscando...</span>}
+                      {loadingRooms && (
+                        <span className="text-blue-500 ml-2 flex items-center">
+                          <Loader2 className="animate-spin w-4 h-4 mr-1" />
+                          Buscando...
+                        </span>
+                      )}
                     </label>
                     <select
                       {...register('roomId')}
@@ -632,7 +597,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                       </option>
                       {availableRooms.map(room => (
                         <option key={room.id} value={room.id}>
-                          Habitación {room.number} - {room.room_type || 'Estándar'} - S/ {room.base_rate || room.rate}/noche
+                          Habitación {room.number} - {room.room_type || 'Estándar'} - S/ {(room.base_rate || room.rate || 0).toFixed(2)}/noche
                           {room.capacity && ` (${room.capacity} personas)`}
                         </option>
                       ))}
@@ -748,6 +713,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                   type="button"
                   variant="outline"
                   onClick={prevStep}
+                  disabled={isSubmitting || operationLoading}
                 >
                   Anterior
                 </Button>
@@ -759,6 +725,7 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                 type="button"
                 variant="outline"
                 onClick={handleClose}
+                disabled={isSubmitting || operationLoading}
               >
                 Cancelar
               </Button>
@@ -770,7 +737,8 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                   onClick={nextStep}
                   disabled={
                     (currentStep === 1 && !canProceedToStep2()) ||
-                    (currentStep === 2 && !canProceedToStep3())
+                    (currentStep === 2 && !canProceedToStep3()) ||
+                    isSubmitting || operationLoading
                   }
                 >
                   Siguiente
@@ -779,10 +747,11 @@ const CreateReservationModal = ({ isOpen, onClose, onSubmit }) => {
                 <Button
                   type="submit"
                   variant="primary"
-                  loading={isSubmitting}
-                  disabled={!selectedRoom || isSubmitting}
+                  loading={isSubmitting || operationLoading}
+                  disabled={!selectedRoom || isSubmitting || operationLoading}
+                  icon={isSubmitting || operationLoading ? Loader2 : null}
                 >
-                  {isSubmitting ? 'Creando...' : 'Crear Reserva'}
+                  {isSubmitting || operationLoading ? 'Creando...' : 'Crear Reserva'}
                 </Button>
               )}
             </div>

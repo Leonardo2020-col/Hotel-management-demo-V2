@@ -9,20 +9,13 @@ import {
   User,
   Edit,
   Clock,
-  DollarSign
+  DollarSign,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 import Button from '../common/Button';
+import { RESERVATION_STATUS } from '../../hooks/useReservations';
 import classNames from 'classnames';
-
-// Usar constantes directas
-const RESERVATION_STATUS = {
-  PENDING: 'pending',
-  CONFIRMED: 'confirmed',
-  CHECKED_IN: 'checked_in',
-  CHECKED_OUT: 'checked_out',
-  CANCELLED: 'cancelled',
-  NO_SHOW: 'no_show'
-};
 
 // Función auxiliar para formatear fechas
 const formatDate = (dateString) => {
@@ -53,7 +46,9 @@ const ReservationList = ({
   onStatusChange,
   onEdit,
   onDelete,
-  readOnly = false
+  onView,
+  readOnly = false,
+  operationLoading = false
 }) => {
 
   const getStatusColor = (status) => {
@@ -106,13 +101,15 @@ const ReservationList = ({
             label: 'Confirmar', 
             action: () => onStatusChange?.(reservation.id, RESERVATION_STATUS.CONFIRMED),
             icon: CheckCircle,
-            color: 'success'
+            variant: 'success',
+            loading: operationLoading
           },
           { 
             label: 'Cancelar', 
             action: () => onStatusChange?.(reservation.id, RESERVATION_STATUS.CANCELLED),
             icon: XCircle,
-            color: 'danger'
+            variant: 'danger',
+            loading: operationLoading
           }
         );
         break;
@@ -122,7 +119,8 @@ const ReservationList = ({
             label: 'Check-in', 
             action: () => onStatusChange?.(reservation.id, RESERVATION_STATUS.CHECKED_IN),
             icon: CheckCircle,
-            color: 'primary'
+            variant: 'primary',
+            loading: operationLoading
           }
         );
         break;
@@ -132,7 +130,8 @@ const ReservationList = ({
             label: 'Check-out', 
             action: () => onStatusChange?.(reservation.id, RESERVATION_STATUS.CHECKED_OUT),
             icon: CheckCircle,
-            color: 'success'
+            variant: 'success',
+            loading: operationLoading
           }
         );
         break;
@@ -146,9 +145,11 @@ const ReservationList = ({
           <Button
             key={index}
             size="sm"
-            variant={action.color}
+            variant={action.variant}
             onClick={action.action}
-            icon={action.icon}
+            icon={action.loading ? Loader2 : action.icon}
+            loading={action.loading}
+            disabled={operationLoading}
             className="text-xs px-3 py-1"
           >
             {action.label}
@@ -161,6 +162,7 @@ const ReservationList = ({
   const PaymentStatus = ({ reservation }) => {
     const isFullyPaid = reservation.paidAmount >= reservation.totalAmount;
     const hasPartialPayment = reservation.paidAmount > 0 && reservation.paidAmount < reservation.totalAmount;
+    const hasPendingPayment = reservation.paidAmount === 0;
 
     return (
       <div className="flex items-center space-x-2">
@@ -178,6 +180,198 @@ const ReservationList = ({
         )}>
           {isFullyPaid ? 'Pagado' : hasPartialPayment ? 'Parcial' : 'Pendiente'}
         </span>
+      </div>
+    );
+  };
+
+  const ReservationCard = ({ reservation }) => {
+    const isOverdue = new Date(reservation.checkOut) < new Date() && 
+                     reservation.status === RESERVATION_STATUS.CHECKED_IN;
+    
+    const isCheckInToday = new Date(reservation.checkIn).toDateString() === new Date().toDateString();
+    const isCheckOutToday = new Date(reservation.checkOut).toDateString() === new Date().toDateString();
+
+    return (
+      <div className={classNames(
+        "p-6 hover:bg-gray-50 transition-colors border-l-4",
+        isOverdue ? "border-red-500 bg-red-50" : "border-transparent"
+      )}>
+        <div className="flex items-start space-x-4">
+          {/* Guest Avatar */}
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
+            {reservation.guest?.name ? 
+              reservation.guest.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() :
+              'GU'
+            }
+          </div>
+
+          {/* Main Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                {/* Guest Info & Status */}
+                <div className="flex flex-wrap items-center gap-3 mb-3">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {reservation.guest?.name || 'Huésped sin nombre'}
+                  </h3>
+                  <span className={classNames(
+                    'px-3 py-1 rounded-full text-xs font-semibold border',
+                    getStatusColor(reservation.status)
+                  )}>
+                    {getStatusLabel(reservation.status)}
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    #{reservation.confirmationCode || reservation.id}
+                  </span>
+                  {isOverdue && (
+                    <span className="flex items-center space-x-1 text-xs text-red-600 bg-red-100 px-2 py-1 rounded-full">
+                      <AlertTriangle size={12} />
+                      <span>Vencida</span>
+                    </span>
+                  )}
+                  {isCheckInToday && reservation.status === RESERVATION_STATUS.CONFIRMED && (
+                    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                      Check-in hoy
+                    </span>
+                  )}
+                  {isCheckOutToday && reservation.status === RESERVATION_STATUS.CHECKED_IN && (
+                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                      Check-out hoy
+                    </span>
+                  )}
+                </div>
+
+                {/* Contact Info */}
+                {(reservation.guest?.email || reservation.guest?.phone) && (
+                  <div className="flex flex-wrap gap-4 mb-3 text-sm text-gray-600">
+                    {reservation.guest.email && (
+                      <span className="flex items-center space-x-1">
+                        <span>📧</span>
+                        <span>{reservation.guest.email}</span>
+                      </span>
+                    )}
+                    {reservation.guest.phone && (
+                      <span className="flex items-center space-x-1">
+                        <span>📱</span>
+                        <span>{reservation.guest.phone}</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Reservation Details */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <MapPin size={16} />
+                    <span>Habitación {reservation.room?.number || 'N/A'}</span>
+                    {reservation.room?.type && (
+                      <span className="text-gray-400">• {reservation.room.type}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <Calendar size={16} />
+                    <span>
+                      {formatDate(reservation.checkIn)} - {formatDate(reservation.checkOut)}
+                    </span>
+                    <span className="text-gray-400">• {reservation.nights} noche{reservation.nights !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <User size={16} />
+                    <span>
+                      {reservation.adults || 1} adulto{(reservation.adults || 1) > 1 ? 's' : ''}
+                      {reservation.children > 0 && `, ${reservation.children} niño${reservation.children > 1 ? 's' : ''}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Payment Info */}
+                <div className="mb-4">
+                  <PaymentStatus reservation={reservation} />
+                </div>
+
+                {/* Special Requests */}
+                {reservation.specialRequests && (
+                  <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>Solicitudes especiales:</strong> {reservation.specialRequests}
+                    </p>
+                  </div>
+                )}
+
+                {/* Status Actions */}
+                <StatusActions reservation={reservation} />
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-2 ml-4">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  icon={Eye}
+                  onClick={() => onView?.(reservation)}
+                  className="whitespace-nowrap"
+                  disabled={operationLoading}
+                >
+                  Ver
+                </Button>
+                {!readOnly && onEdit && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={Edit}
+                    onClick={() => onEdit(reservation)}
+                    className="whitespace-nowrap"
+                    disabled={operationLoading}
+                  >
+                    Editar
+                  </Button>
+                )}
+                {!readOnly && onDelete && reservation.status !== RESERVATION_STATUS.CHECKED_OUT && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    icon={Trash2}
+                    onClick={() => onDelete(reservation.id)}
+                    className="whitespace-nowrap"
+                    disabled={operationLoading}
+                  >
+                    Cancelar
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Timestamps */}
+        {(reservation.checkedInAt || reservation.checkedOutAt) && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center space-x-4 text-xs text-gray-500">
+              {reservation.checkedInAt && (
+                <div className="flex items-center space-x-1">
+                  <Clock size={12} />
+                  <span>Check-in: {formatDate(reservation.checkedInAt)}</span>
+                </div>
+              )}
+              {reservation.checkedOutAt && (
+                <div className="flex items-center space-x-1">
+                  <Clock size={12} />
+                  <span>Check-out: {formatDate(reservation.checkedOutAt)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Operation Loading Overlay */}
+        {operationLoading && (
+          <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+            <div className="flex items-center space-x-2 text-blue-600">
+              <Loader2 className="animate-spin w-5 h-5" />
+              <span className="text-sm font-medium">Procesando...</span>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -218,7 +412,7 @@ const ReservationList = ({
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-100">
+    <div className="bg-white rounded-xl shadow-lg border border-gray-100 relative">
       {/* Header */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center justify-between">
@@ -234,150 +428,10 @@ const ReservationList = ({
       </div>
 
       {/* Reservations List */}
-      <div className="divide-y divide-gray-200">
+      <div className="divide-y divide-gray-200 relative">
         {reservations.map((reservation) => (
-          <div key={reservation.id} className="p-6 hover:bg-gray-50 transition-colors">
-            <div className="flex items-start space-x-4">
-              {/* Guest Avatar */}
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
-                {reservation.guest?.name ? 
-                  reservation.guest.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() :
-                  'GU'
-                }
-              </div>
-
-              {/* Main Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    {/* Guest Info & Status */}
-                    <div className="flex flex-wrap items-center gap-3 mb-3">
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {reservation.guest?.name || 'Huésped sin nombre'}
-                      </h3>
-                      <span className={classNames(
-                        'px-3 py-1 rounded-full text-xs font-semibold border',
-                        getStatusColor(reservation.status)
-                      )}>
-                        {getStatusLabel(reservation.status)}
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        #{reservation.confirmationCode || reservation.id}
-                      </span>
-                    </div>
-
-                    {/* Contact Info */}
-                    {(reservation.guest?.email || reservation.guest?.phone) && (
-                      <div className="flex flex-wrap gap-4 mb-3 text-sm text-gray-600">
-                        {reservation.guest.email && (
-                          <span>📧 {reservation.guest.email}</span>
-                        )}
-                        {reservation.guest.phone && (
-                          <span>📱 {reservation.guest.phone}</span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Reservation Details */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                      <div className="flex items-center space-x-2 text-sm text-gray-600">
-                        <MapPin size={16} />
-                        <span>Habitación {reservation.room?.number || 'N/A'}</span>
-                        {reservation.room?.type && (
-                          <span className="text-gray-400">• {reservation.room.type}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center space-x-2 text-sm text-gray-600">
-                        <Calendar size={16} />
-                        <span>
-                          {formatDate(reservation.checkIn)} - {formatDate(reservation.checkOut)}
-                        </span>
-                        <span className="text-gray-400">• {reservation.nights} noche{reservation.nights !== 1 ? 's' : ''}</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-sm text-gray-600">
-                        <User size={16} />
-                        <span>
-                          {reservation.adults || 1} adulto{(reservation.adults || 1) > 1 ? 's' : ''}
-                          {reservation.children > 0 && `, ${reservation.children} niño${reservation.children > 1 ? 's' : ''}`}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Payment Info */}
-                    <div className="mb-4">
-                      <PaymentStatus reservation={reservation} />
-                    </div>
-
-                    {/* Special Requests */}
-                    {reservation.specialRequests && (
-                      <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                        <p className="text-sm text-blue-800">
-                          <strong>Solicitudes especiales:</strong> {reservation.specialRequests}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Status Actions */}
-                    <StatusActions reservation={reservation} />
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex flex-col gap-2 ml-4">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      icon={Eye}
-                      onClick={() => console.log('View reservation', reservation.id)}
-                      className="whitespace-nowrap"
-                    >
-                      Ver
-                    </Button>
-                    {!readOnly && onEdit && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        icon={Edit}
-                        onClick={() => onEdit(reservation)}
-                        className="whitespace-nowrap"
-                      >
-                        Editar
-                      </Button>
-                    )}
-                    {!readOnly && onDelete && reservation.status !== RESERVATION_STATUS.CHECKED_OUT && (
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        icon={Trash2}
-                        onClick={() => onDelete(reservation.id)}
-                        className="whitespace-nowrap"
-                      >
-                        Cancelar
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Timestamps */}
-            {(reservation.checkedInAt || reservation.checkedOutAt) && (
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <div className="flex items-center space-x-4 text-xs text-gray-500">
-                  {reservation.checkedInAt && (
-                    <div className="flex items-center space-x-1">
-                      <Clock size={12} />
-                      <span>Check-in: {formatDate(reservation.checkedInAt)}</span>
-                    </div>
-                  )}
-                  {reservation.checkedOutAt && (
-                    <div className="flex items-center space-x-1">
-                      <Clock size={12} />
-                      <span>Check-out: {formatDate(reservation.checkedOutAt)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+          <div key={reservation.id} className="relative">
+            <ReservationCard reservation={reservation} />
           </div>
         ))}
       </div>
@@ -395,12 +449,12 @@ const ReservationList = ({
                 size="sm"
                 variant="outline"
                 onClick={() => onPaginationChange(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                disabled={pagination.page <= 1}
+                disabled={pagination.page <= 1 || operationLoading}
               >
                 Anterior
               </Button>
               
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-500 px-3">
                 Página {pagination.page}
               </span>
               
@@ -408,11 +462,21 @@ const ReservationList = ({
                 size="sm"
                 variant="outline"
                 onClick={() => onPaginationChange(prev => ({ ...prev, page: prev.page + 1 }))}
-                disabled={reservations.length < pagination.limit}
+                disabled={reservations.length < pagination.limit || operationLoading}
               >
                 Siguiente
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Loading Overlay */}
+      {operationLoading && (
+        <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-xl z-10">
+          <div className="flex flex-col items-center space-y-3">
+            <Loader2 className="animate-spin w-8 h-8 text-blue-600" />
+            <span className="text-sm font-medium text-gray-700">Procesando operación...</span>
           </div>
         </div>
       )}

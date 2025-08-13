@@ -1,4 +1,4 @@
-// src/hooks/useReservations.js - VERSIÓN COMPLETA CORREGIDA
+// src/hooks/useReservations.js - VERSIÓN MEJORADA Y COMPLETA
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db, subscriptions } from '../lib/supabase';
 import toast from 'react-hot-toast';
@@ -13,11 +13,14 @@ export const RESERVATION_STATUS = {
 };
 
 export const useReservations = (initialFilters = {}) => {
+  // Estados principales
   const [reservations, setReservations] = useState([]);
-  const [filteredReservations, setFilteredReservations] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [operationLoading, setOperationLoading] = useState(false);
+
+  // Filtros y paginación
   const [filters, setFilters] = useState({
     status: '',
     dateRange: '',
@@ -26,7 +29,6 @@ export const useReservations = (initialFilters = {}) => {
     ...initialFilters
   });
   
-  // Agregar estado de paginación que faltaba
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -34,16 +36,18 @@ export const useReservations = (initialFilters = {}) => {
   });
 
   // =============================================
-  // FUNCIÓN PARA TRANSFORMAR RESERVA (UNIFICADA)
+  // TRANSFORMACIÓN DE DATOS
   // =============================================
   const transformReservationForFrontend = useCallback((reservation) => {
+    if (!reservation) return null;
+
     const guest = reservation.guest || {};
     const room = reservation.room || {};
     
     // Calcular noches
     const checkIn = new Date(reservation.check_in);
     const checkOut = new Date(reservation.check_out);
-    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+    const nights = Math.max(1, Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24)));
     
     return {
       id: reservation.id,
@@ -65,14 +69,15 @@ export const useReservations = (initialFilters = {}) => {
       checkedInAt: reservation.checked_in_at,
       checkedOutAt: reservation.checked_out_at,
       createdAt: reservation.created_at,
+      updatedAt: reservation.updated_at,
       
-      // Guest info simplificada
+      // Guest info
       guest: {
         id: guest.id,
-        name: guest.full_name || 'Huésped sin nombre',
+        name: guest.full_name || guest.name || 'Huésped sin nombre',
         email: guest.email || '',
         phone: guest.phone || '',
-        document: guest.document_number || '',
+        document: guest.document_number || guest.document || '',
         documentType: guest.document_type || 'DNI',
         status: guest.status || 'active'
       },
@@ -84,24 +89,44 @@ export const useReservations = (initialFilters = {}) => {
         floor: room.floor || 1,
         capacity: room.capacity || 2,
         baseRate: parseFloat(room.base_rate || 100),
-        type: room.room_type || 'Estándar'
+        rate: parseFloat(room.base_rate || 100),
+        type: room.room_type || 'Estándar',
+        features: room.features || []
       }
     };
   }, []);
 
+  const transformRoomForFrontend = useCallback((room) => {
+    if (!room) return null;
+
+    return {
+      id: room.id,
+      number: room.number,
+      floor: room.floor,
+      capacity: room.capacity || 2,
+      baseRate: parseFloat(room.base_rate || 100),
+      rate: parseFloat(room.base_rate || 100),
+      status: room.status,
+      cleaningStatus: room.cleaning_status,
+      features: room.features || [],
+      size: room.size,
+      beds: room.beds || [],
+      room_type: room.room_type || 'Estándar'
+    };
+  }, []);
+
   // =============================================
-  // CARGAR RESERVAS DESDE SUPABASE
+  // CARGAR DATOS
   // =============================================
   const loadReservations = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
       setError(null);
       
-      console.log('🔄 Loading reservations from Supabase...');
+      console.log('🔄 Loading reservations...');
       
-      // Obtener reservas con información completa
       const { data, error: dbError } = await db.getReservations({
-        limit: pagination.limit * pagination.page, // Cargar hasta la página actual
+        limit: pagination.limit * pagination.page,
         orderBy: 'created_at:desc'
       });
 
@@ -111,12 +136,9 @@ export const useReservations = (initialFilters = {}) => {
 
       console.log(`✅ Loaded ${data?.length || 0} reservations`);
 
-      // Transformar datos para el frontend
-      const transformedReservations = (data || []).map(transformReservationForFrontend);
-
+      const transformedReservations = (data || []).map(transformReservationForFrontend).filter(Boolean);
       setReservations(transformedReservations);
       
-      // Actualizar total de paginación
       setPagination(prev => ({
         ...prev,
         total: transformedReservations.length
@@ -131,9 +153,6 @@ export const useReservations = (initialFilters = {}) => {
     }
   }, [pagination.limit, pagination.page, transformReservationForFrontend]);
 
-  // =============================================
-  // CARGAR HABITACIONES DISPONIBLES
-  // =============================================
   const loadAvailableRooms = useCallback(async () => {
     try {
       console.log('🏨 Loading available rooms...');
@@ -145,37 +164,25 @@ export const useReservations = (initialFilters = {}) => {
         return;
       }
 
-      // Transformar habitaciones para frontend
-      const transformedRooms = (data || []).map(room => ({
-        id: room.id,
-        number: room.number,
-        floor: room.floor,
-        capacity: room.capacity || 2,
-        baseRate: parseFloat(room.base_rate || 100),
-        rate: parseFloat(room.base_rate || 100),
-        status: room.status,
-        features: room.features || [],
-        room_type: room.room_type || 'Estándar'
-      }));
-
-      console.log('✅ Available rooms loaded:', transformedRooms.length);
+      const transformedRooms = (data || []).map(transformRoomForFrontend).filter(Boolean);
       setAvailableRooms(transformedRooms);
+      
+      console.log('✅ Available rooms loaded:', transformedRooms.length);
       
     } catch (error) {
       console.error('Error loading available rooms:', error);
     }
-  }, []);
+  }, [transformRoomForFrontend]);
 
   // =============================================
-  // CREAR RESERVA
+  // OPERACIONES CRUD
   // =============================================
   const createReservation = useCallback(async (reservationData) => {
+    setOperationLoading(true);
     try {
-      setLoading(true);
-      
       console.log('➕ Creating reservation:', reservationData);
 
-      // Validaciones básicas
+      // Validaciones
       if (!reservationData.guest || !reservationData.room) {
         throw new Error('Faltan datos del huésped o habitación');
       }
@@ -191,12 +198,12 @@ export const useReservations = (initialFilters = {}) => {
         throw new Error('La fecha de check-out debe ser posterior al check-in');
       }
 
-      // Calcular noches y total
+      // Calcular valores
       const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
       const rate = reservationData.room.baseRate || reservationData.room.rate || 100;
       const totalAmount = nights * rate;
 
-      // Verificar disponibilidad
+      // Verificar disponibilidad de la habitación específica
       const availability = await db.checkSpecificRoomAvailability(
         reservationData.room.id,
         reservationData.checkIn,
@@ -277,7 +284,7 @@ export const useReservations = (initialFilters = {}) => {
       toast.success(`Reserva creada exitosamente (${reservation.confirmation_code || reservation.id})`);
       
       // Recargar reservas
-      await loadReservations();
+      await loadReservations(false);
       
       return reservation;
 
@@ -286,14 +293,12 @@ export const useReservations = (initialFilters = {}) => {
       toast.error(error.message || 'Error al crear la reserva');
       throw error;
     } finally {
-      setLoading(false);
+      setOperationLoading(false);
     }
   }, [loadReservations]);
 
-  // =============================================
-  // ACTUALIZAR RESERVA
-  // =============================================
   const updateReservation = useCallback(async (id, updates) => {
+    setOperationLoading(true);
     try {
       console.log('🔄 Updating reservation:', id, updates);
 
@@ -323,7 +328,8 @@ export const useReservations = (initialFilters = {}) => {
       setReservations(prev => prev.map(reservation => 
         reservation.id === id ? { 
           ...reservation, 
-          ...updates
+          ...updates,
+          updatedAt: new Date().toISOString()
         } : reservation
       ));
       
@@ -332,13 +338,13 @@ export const useReservations = (initialFilters = {}) => {
       console.error('Error updating reservation:', error);
       toast.error(error.message || 'Error al actualizar la reserva');
       throw error;
+    } finally {
+      setOperationLoading(false);
     }
   }, []);
 
-  // =============================================
-  // CAMBIAR ESTADO DE RESERVA
-  // =============================================
   const changeReservationStatus = useCallback(async (id, newStatus) => {
+    setOperationLoading(true);
     try {
       console.log(`🔄 Changing reservation ${id} status to ${newStatus}`);
       
@@ -372,12 +378,11 @@ export const useReservations = (initialFilters = {}) => {
       console.error('Error changing reservation status:', error);
       toast.error('Error al cambiar el estado de la reserva');
       throw error;
+    } finally {
+      setOperationLoading(false);
     }
   }, [updateReservation, reservations]);
 
-  // =============================================
-  // ELIMINAR RESERVA
-  // =============================================
   const deleteReservation = useCallback(async (id) => {
     try {
       await changeReservationStatus(id, RESERVATION_STATUS.CANCELLED);
@@ -390,9 +395,10 @@ export const useReservations = (initialFilters = {}) => {
   }, [changeReservationStatus]);
 
   // =============================================
-  // PROCESAR CHECK-IN
+  // OPERACIONES ESPECÍFICAS
   // =============================================
   const processCheckIn = useCallback(async (reservationId) => {
+    setOperationLoading(true);
     try {
       console.log(`🏨 Processing check-in for reservation ${reservationId}`);
       
@@ -409,13 +415,13 @@ export const useReservations = (initialFilters = {}) => {
       console.error('Error in check-in:', error);
       toast.error(error.message || 'Error en el check-in');
       throw error;
+    } finally {
+      setOperationLoading(false);
     }
   }, [changeReservationStatus]);
 
-  // =============================================
-  // PROCESAR CHECK-OUT
-  // =============================================
   const processCheckOut = useCallback(async (reservationId, paymentMethod = 'cash') => {
+    setOperationLoading(true);
     try {
       console.log(`🏨 Processing check-out for reservation ${reservationId}`);
       
@@ -432,11 +438,13 @@ export const useReservations = (initialFilters = {}) => {
       console.error('Error in check-out:', error);
       toast.error(error.message || 'Error en el check-out');
       throw error;
+    } finally {
+      setOperationLoading(false);
     }
   }, [changeReservationStatus]);
 
   // =============================================
-  // OBTENER HABITACIONES DISPONIBLES PARA FECHAS
+  // FUNCIONES DE BÚSQUEDA Y UTILIDADES
   // =============================================
   const getAvailableRoomsForDates = useCallback(async (checkIn, checkOut) => {
     try {
@@ -463,9 +471,6 @@ export const useReservations = (initialFilters = {}) => {
     }
   }, []);
 
-  // =============================================
-  // BUSCAR HUÉSPEDES
-  // =============================================
   const searchGuests = useCallback(async (searchTerm) => {
     try {
       if (!searchTerm || searchTerm.trim() === '') {
@@ -484,9 +489,11 @@ export const useReservations = (initialFilters = {}) => {
       return (data || []).map(guest => ({
         id: guest.id,
         name: guest.full_name,
+        full_name: guest.full_name,
         email: guest.email || '',
         phone: guest.phone || '',
         document: guest.document_number || '',
+        document_number: guest.document_number || '',
         status: guest.status || 'active'
       }));
     } catch (error) {
@@ -495,16 +502,20 @@ export const useReservations = (initialFilters = {}) => {
     }
   }, []);
 
-  // Cargar datos iniciales
-  useEffect(() => {
-    loadReservations();
-    loadAvailableRooms();
-  }, [loadReservations, loadAvailableRooms]);
+  const checkRoomAvailability = useCallback(async (roomId, checkIn, checkOut) => {
+    try {
+      const { available, conflicts } = await db.checkSpecificRoomAvailability(roomId, checkIn, checkOut);
+      return { available, conflicts };
+    } catch (error) {
+      console.error('Error checking room availability:', error);
+      return { available: false, conflicts: [] };
+    }
+  }, []);
 
   // =============================================
   // FILTRAR RESERVAS
   // =============================================
-  useEffect(() => {
+  const filteredReservations = useMemo(() => {
     let filtered = [...reservations];
 
     // Filtro por estado
@@ -568,7 +579,7 @@ export const useReservations = (initialFilters = {}) => {
       }
     }
 
-    setFilteredReservations(filtered);
+    return filtered;
   }, [reservations, filters]);
 
   // =============================================
@@ -583,7 +594,7 @@ export const useReservations = (initialFilters = {}) => {
     const cancelled = filteredReservations.filter(r => r.status === RESERVATION_STATUS.CANCELLED).length;
     const totalRevenue = filteredReservations
       .filter(r => [RESERVATION_STATUS.CHECKED_IN, RESERVATION_STATUS.CHECKED_OUT].includes(r.status))
-      .reduce((sum, r) => sum + r.totalAmount, 0);
+      .reduce((sum, r) => sum + (r.totalAmount || 0), 0);
 
     return { 
       total, 
@@ -603,19 +614,24 @@ export const useReservations = (initialFilters = {}) => {
     return reservations.find(reservation => reservation.id === parseInt(id));
   }, [reservations]);
 
-  const checkRoomAvailability = useCallback(async (roomId, checkIn, checkOut) => {
-    try {
-      const { available, conflicts } = await db.checkSpecificRoomAvailability(roomId, checkIn, checkOut);
-      return { available, conflicts };
-    } catch (error) {
-      console.error('Error checking room availability:', error);
-      return { available: false, conflicts: [] };
-    }
-  }, []);
+  const refresh = useCallback(async () => {
+    await Promise.all([
+      loadReservations(),
+      loadAvailableRooms()
+    ]);
+  }, [loadReservations, loadAvailableRooms]);
 
   // =============================================
-  // SUSCRIPCIONES EN TIEMPO REAL
+  // EFECTOS
   // =============================================
+  
+  // Cargar datos iniciales
+  useEffect(() => {
+    loadReservations();
+    loadAvailableRooms();
+  }, [loadReservations, loadAvailableRooms]);
+
+  // Suscripciones en tiempo real
   useEffect(() => {
     console.log('🔔 Setting up real-time subscription for reservations');
     
@@ -627,13 +643,15 @@ export const useReservations = (initialFilters = {}) => {
       setReservations(prevReservations => {
         switch (eventType) {
           case 'INSERT':
-            return [...prevReservations, transformReservationForFrontend(newReservation)];
+            const insertedReservation = transformReservationForFrontend(newReservation);
+            return insertedReservation ? [...prevReservations, insertedReservation] : prevReservations;
             
           case 'UPDATE':
+            const updatedReservation = transformReservationForFrontend(newReservation);
+            if (!updatedReservation) return prevReservations;
+            
             return prevReservations.map(reservation => 
-              reservation.id === newReservation.id 
-                ? transformReservationForFrontend(newReservation) 
-                : reservation
+              reservation.id === updatedReservation.id ? updatedReservation : reservation
             );
             
           case 'DELETE':
@@ -658,6 +676,7 @@ export const useReservations = (initialFilters = {}) => {
     availableRooms,
     loading,
     error,
+    operationLoading,
     
     // Filtros y paginación
     filters,
@@ -686,6 +705,6 @@ export const useReservations = (initialFilters = {}) => {
     RESERVATION_STATUS,
     
     // Función para recargar datos
-    refresh: loadReservations
+    refresh
   };
 };
