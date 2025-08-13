@@ -723,7 +723,6 @@ export const db = {
             id,
             number,
             floor,
-            capacity,
             base_rate
           )
         `,
@@ -937,17 +936,17 @@ export const db = {
 
       // Transform for frontend compatibility
       const transformedRooms = availableRooms.map(room => ({
-        id: room.id,
-        number: room.number,
-        floor: room.floor,
-        base_rate: parseFloat(room.base_rate || 100),
-        rate: parseFloat(room.base_rate || 100),
-        capacity: room.capacity || 2,
-        status: room.status,
-        features: room.features || [],
-        size: room.size,
-        beds: room.beds
-      }))
+  id: room.id,
+  number: room.number,
+  floor: room.floor,
+  base_rate: parseFloat(room.base_rate || 100),
+  rate: parseFloat(room.base_rate || 100),
+  capacity: 2,     // ← VALOR FIJO EN LUGAR DE room.capacity
+  status: room.status,
+  features: room.features || [],
+  size: room.size,
+  beds: room.beds
+}))
 
       return { data: transformedRooms, error: null }
 

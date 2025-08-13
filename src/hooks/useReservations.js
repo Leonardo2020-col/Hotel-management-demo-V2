@@ -87,10 +87,11 @@ export const useReservations = (initialFilters = {}) => {
         id: room.id,
         number: room.number || '',
         floor: room.floor || 1,
-        capacity: room.capacity || 2,
+        // Asignar capacidad por defecto basada en el tipo de habitación
+        capacity: room.room_type === 'suite' ? 4 : room.room_type === 'deluxe' ? 3 : 2,
         baseRate: parseFloat(room.base_rate || 100),
         rate: parseFloat(room.base_rate || 100),
-        type: room.room_type || 'Estándar',
+        type: room.room_type || 'standard',
         features: room.features || []
       }
     };
@@ -103,7 +104,8 @@ export const useReservations = (initialFilters = {}) => {
       id: room.id,
       number: room.number,
       floor: room.floor,
-      capacity: room.capacity || 2,
+      // Asignar capacidad por defecto basada en el tipo de habitación
+      capacity: room.room_type === 'suite' ? 4 : room.room_type === 'deluxe' ? 3 : 2,
       baseRate: parseFloat(room.base_rate || 100),
       rate: parseFloat(room.base_rate || 100),
       status: room.status,
@@ -111,7 +113,7 @@ export const useReservations = (initialFilters = {}) => {
       features: room.features || [],
       size: room.size,
       beds: room.beds || [],
-      room_type: room.room_type || 'Estándar'
+      room_type: room.room_type || 'standard'
     };
   }, []);
 
