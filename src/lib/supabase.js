@@ -1457,6 +1457,554 @@ async getRoomAvailabilityStatus(roomId) {
 }
 
 // =============================================
+// FUNCIONES ACTUALIZADAS - TABLA COMPLETAMENTE LIMPIA
+// =============================================
+
+const finalCleanRoomAvailabilityMethods = {
+
+  async getRoomAvailability(filters = {}) {
+    try {
+      console.log('Loading room availability (estructura completamente limpia):', filters)
+      
+      let query = supabase
+        .from('room_availability')
+        .select(`
+          id,
+          room_id,
+          date,
+          is_available,
+          rate,
+          min_stay,
+          max_stay,
+          notes,
+          created_at,
+          updated_at,
+          room:rooms!inner(
+            id,
+            number,
+            floor,
+            base_rate,
+            status,
+            cleaning_status,
+            size,
+            branch_id,
+            current_guest,
+            last_cleaned,
+            cleaned_by
+          )
+        `)
+      
+      // Filtros por fecha
+      if (filters.startDate) {
+        query = query.gte('date', filters.startDate)
+      }
+      if (filters.endDate) {
+        query = query.lte('date', filters.endDate)
+      }
+      
+      // Filtros por habitación
+      if (filters.roomId) {
+        query = query.eq('room_id', filters.roomId)
+      }
+      if (filters.roomIds && filters.roomIds.length > 0) {
+        query = query.in('room_id', filters.roomIds)
+      }
+      
+      // Filtros por disponibilidad
+      if (filters.isAvailable !== undefined) {
+        query = query.eq('is_available', filters.isAvailable)
+      }
+      
+      // Filtro por sucursal (usando JOIN con rooms)
+      if (filters.branchId) {
+        query = query.eq('room.branch_id', filters.branchId)
+      }
+      
+      // Ordenamiento
+      query = query.order('date', { ascending: true })
+                   .order('room_id', { ascending: true })
+      
+      // Límite
+      if (filters.limit) {
+        query = query.limit(filters.limit)
+      }
+      
+      const { data, error } = await query
+      
+      if (error) {
+        return handleSupabaseError(error, 'getRoomAvailability')
+      }
+      
+      // Transformar datos para mantener compatibilidad
+      const transformedData = (data || []).map(item => ({
+        ...item,
+        // Acceso directo a datos de habitación
+        number: item.room?.number,
+        floor: item.room?.floor,
+        base_rate: item.room?.base_rate,
+        room_status: item.room?.status,
+        cleaning_status: item.room?.cleaning_status,
+        size: item.room?.size,
+        branch_id: item.room?.branch_id // branch_id viene de rooms
+      }))
+      
+      return { data: transformedData, error: null }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'getRoomAvailability')
+    }
+  },
+
+  async createRoomAvailability(availabilityData) {
+    try {
+      console.log('Creating room availability (sin branch_id):', availabilityData)
+      
+      // Validar campos requeridos
+      if (!availabilityData.room_id || !availabilityData.date) {
+        return {
+          data: null,
+          error: { message: 'room_id y date son requeridos' }
+        }
+      }
+      
+      // SOLO campos específicos de disponibilidad (sin branch_id)
+      const data = {
+        room_id: availabilityData.room_id,
+        date: availabilityData.date,
+        is_available: availabilityData.is_available ?? true,
+        rate: availabilityData.rate ? parseFloat(availabilityData.rate) : null,
+        min_stay: availabilityData.min_stay || 1,
+        max_stay: availabilityData.max_stay || 30,
+        notes: availabilityData.notes || null
+        // NO más branch_id - viene de rooms via JOIN
+      }
+      
+      const { data: result, error } = await supabase
+        .from('room_availability')
+        .upsert([data], { 
+          onConflict: 'room_id,date',
+          returning: 'representation'
+        })
+        .select(`
+          *,
+          room:rooms(number, floor, base_rate, status, branch_id)
+        `)
+        .single()
+      
+      if (error) {
+        return handleSupabaseError(error, 'createRoomAvailability')
+      }
+      
+      return { data: result, error: null }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'createRoomAvailability')
+    }
+  },
+
+  async bulkCreateRoomAvailability(roomId, startDate, endDate, availabilityData = {}) {
+    try {
+      console.log('Bulk creating availability (sin branch_id)', roomId, startDate, endDate)
+      
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      const records = []
+      
+      // Generar registros SOLO con campos de disponibilidad
+      for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+        const dateStr = date.toISOString().split('T')[0]
+        
+        records.push({
+          room_id: roomId,
+          date: dateStr,
+          is_available: availabilityData.is_available ?? true,
+          rate: availabilityData.rate ? parseFloat(availabilityData.rate) : null,
+          min_stay: availabilityData.min_stay || 1,
+          max_stay: availabilityData.max_stay || 30,
+          notes: availabilityData.notes || null
+          // Sin branch_id
+        })
+      }
+      
+      const { data, error } = await supabase
+        .from('room_availability')
+        .upsert(records, { 
+          onConflict: 'room_id,date',
+          returning: 'representation'
+        })
+        .select(`
+          *,
+          room:rooms(number, floor, branch_id)
+        `)
+      
+      if (error) {
+        return handleSupabaseError(error, 'bulkCreateRoomAvailability')
+      }
+      
+      console.log(`✅ Created/updated ${records.length} availability records`)
+      return { data, error: null }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'bulkCreateRoomAvailability')
+    }
+  },
+
+  async getAvailabilityByBranch(branchId, startDate = null, endDate = null) {
+    try {
+      console.log('Getting availability by branch (usando JOIN):', branchId)
+      
+      // Usar fechas por defecto si no se proporcionan
+      const start = startDate || new Date().toISOString().split('T')[0]
+      const end = endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      
+      const { data, error } = await supabase
+        .from('room_availability')
+        .select(`
+          id,
+          room_id,
+          date,
+          is_available,
+          rate,
+          min_stay,
+          max_stay,
+          notes,
+          room:rooms!inner(
+            number,
+            floor,
+            base_rate,
+            status,
+            branch_id
+          )
+        `)
+        .eq('room.branch_id', branchId)
+        .gte('date', start)
+        .lte('date', end)
+        .order('date')
+        .order('room.number')
+      
+      if (error) {
+        return handleSupabaseError(error, 'getAvailabilityByBranch')
+      }
+      
+      return { data: data || [], error: null }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'getAvailabilityByBranch')
+    }
+  },
+
+  async getAvailabilityStatsForBranch(branchId, startDate = null, endDate = null) {
+    try {
+      console.log('Getting availability stats for branch (optimized):', branchId)
+      
+      const start = startDate || new Date().toISOString().split('T')[0]
+      const end = endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      
+      // Query optimizado para estadísticas por sucursal
+      const { data, error } = await supabase
+        .from('room_availability')
+        .select(`
+          is_available,
+          rate,
+          room:rooms!inner(base_rate, branch_id)
+        `)
+        .eq('room.branch_id', branchId)
+        .gte('date', start)
+        .lte('date', end)
+      
+      if (error) return { data: null, error }
+      
+      const stats = {
+        branchId,
+        totalDays: data.length,
+        availableDays: data.filter(item => item.is_available).length,
+        blockedDays: data.filter(item => !item.is_available).length,
+        averageRate: 0,
+        minRate: null,
+        maxRate: null,
+        ratesSet: data.filter(item => item.rate !== null).length
+      }
+      
+      // Calcular estadísticas de tarifas
+      const ratesWithValues = data.filter(item => item.rate !== null && item.rate > 0)
+      
+      if (ratesWithValues.length > 0) {
+        const rates = ratesWithValues.map(item => parseFloat(item.rate))
+        stats.averageRate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length
+        stats.minRate = Math.min(...rates)
+        stats.maxRate = Math.max(...rates)
+      }
+      
+      // Calcular tasa de ocupación
+      stats.occupancyRate = stats.totalDays > 0 
+        ? Math.round(((stats.totalDays - stats.availableDays) / stats.totalDays) * 100)
+        : 0
+      
+      return { data: stats, error: null }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'getAvailabilityStatsForBranch')
+    }
+  },
+
+  async getRoomAvailabilityCalendar(roomId, year, month) {
+    try {
+      console.log('Getting calendar (sin branch_id) for room', roomId, year, month)
+      
+      // Calcular rango de fechas
+      const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0]
+      const endDate = new Date(year, month, 0).toISOString().split('T')[0]
+      
+      // Query optimizado sin branch_id
+      const { data: availabilityData, error } = await supabase
+        .from('room_availability')
+        .select(`
+          date,
+          is_available,
+          rate,
+          notes,
+          room:rooms!inner(number, floor, base_rate, branch_id)
+        `)
+        .eq('room_id', roomId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date')
+      
+      if (error) return { data: null, error }
+      
+      // Obtener reservaciones para el período
+      const { data: reservations } = await supabase
+        .from('reservations')
+        .select('check_in, check_out, status, guest:guests(full_name)')
+        .eq('room_id', roomId)
+        .in('status', ['confirmed', 'checked_in'])
+        .gte('check_in', startDate)
+        .lte('check_out', endDate)
+      
+      // Construir calendario
+      const calendar = []
+      const daysInMonth = new Date(year, month, 0).getDate()
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month - 1, day).toISOString().split('T')[0]
+        const availability = availabilityData?.find(av => av.date === date)
+        const reservation = reservations?.find(res => 
+          date >= res.check_in && date < res.check_out
+        )
+        
+        calendar.push({
+          date,
+          day,
+          isAvailable: availability?.is_available ?? true,
+          rate: availability?.rate || availability?.room?.base_rate,
+          notes: availability?.notes,
+          isReserved: !!reservation,
+          reservation: reservation ? {
+            status: reservation.status,
+            guestName: reservation.guest?.full_name,
+            checkIn: reservation.check_in,
+            checkOut: reservation.check_out
+          } : null,
+          // branch_id disponible via room data
+          branchId: availability?.room?.branch_id
+        })
+      }
+      
+      return { data: calendar, error: null }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'getRoomAvailabilityCalendar')
+    }
+  },
+
+  async getAvailableRoomsForDates(startDate, endDate, filters = {}) {
+    try {
+      console.log('Getting available rooms (JOIN optimizado sin branch_id):', startDate, 'to', endDate)
+      
+      // 1. Construir filtros para habitaciones
+      let roomQuery = supabase
+        .from('rooms')
+        .select('*')
+        .eq('status', 'available')
+      
+      if (filters.branchId) {
+        roomQuery = roomQuery.eq('branch_id', filters.branchId)
+      }
+      if (filters.floor) {
+        roomQuery = roomQuery.eq('floor', filters.floor)
+      }
+      
+      const { data: allRooms, error: roomsError } = await roomQuery.order('number')
+      
+      if (roomsError) return { data: [], error: roomsError }
+      if (!allRooms || allRooms.length === 0) {
+        return { data: [], error: null }
+      }
+      
+      // 2. Verificar conflictos en reservaciones
+      const { data: conflictingReservations } = await supabase
+        .from('reservations')
+        .select('id, room_id, check_in, check_out, status')
+        .in('status', ['confirmed', 'checked_in', 'pending'])
+        .or(`and(check_in.lte.${endDate},check_out.gte.${startDate})`)
+      
+      // 3. Verificar disponibilidad usando la estructura limpia
+      const { data: availabilityData } = await this.getRoomAvailability({
+        startDate,
+        endDate,
+        roomIds: allRooms.map(r => r.id)
+      })
+      
+      // 4. Filtrar habitaciones realmente disponibles
+      const availableRooms = []
+      
+      for (const room of allRooms) {
+        // Verificar conflictos de reservaciones
+        const hasReservationConflict = conflictingReservations?.some(reservation => {
+          if (reservation.room_id !== room.id) return false
+          
+          const reservationCheckIn = new Date(reservation.check_in)
+          const reservationCheckOut = new Date(reservation.check_out)
+          const requestStart = new Date(startDate)
+          const requestEnd = new Date(endDate)
+          
+          return (requestStart < reservationCheckOut && requestEnd > reservationCheckIn)
+        })
+        
+        if (hasReservationConflict) continue
+        
+        // Verificar disponibilidad en room_availability
+        const roomAvailabilityCheck = await this.checkRoomAvailabilityForDates(
+          room.id, 
+          startDate, 
+          endDate
+        )
+        
+        if (!roomAvailabilityCheck.available) continue
+        
+        // Obtener tarifa específica para las fechas
+        const dateAvailability = availabilityData?.find(av => 
+          av.room_id === room.id && av.date === startDate
+        )
+        
+        availableRooms.push({
+          ...room,
+          currentRate: dateAvailability?.rate || room.base_rate,
+          minStay: dateAvailability?.min_stay || 1,
+          maxStay: dateAvailability?.max_stay || 30,
+          availabilityNotes: dateAvailability?.notes,
+          // Compatibilidad con frontend existente
+          rate: dateAvailability?.rate || room.base_rate,
+          capacity: room.capacity || 2,
+          features: room.features || ['WiFi Gratis'],
+          beds: room.beds || [{ type: 'Doble', count: 1 }]
+        })
+      }
+      
+      return { data: availableRooms, error: null }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'getAvailableRoomsForDates')
+    }
+  }
+}
+
+// =============================================
+// HOOK ACTUALIZADO SIN branch_id
+// =============================================
+
+// src/hooks/useRoomAvailability.js - Actualización
+export const useRoomAvailabilityClean = () => {
+  const [availability, setAvailability] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Cargar disponibilidad sin usar branch_id directamente
+  const loadAvailability = async (startDate = null, endDate = null, branchId = null) => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const start = startDate || new Date().toISOString().split('T')[0]
+      const end = endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+      console.log('Loading availability (estructura limpia):', { start, end, branchId })
+
+      // Usar filtro por branchId que internamente hace JOIN
+      const filters = { startDate: start, endDate: end }
+      if (branchId) {
+        filters.branchId = branchId
+      }
+
+      const { data, error } = await db.getRoomAvailability(filters)
+
+      if (error) {
+        throw error
+      }
+
+      setAvailability(data || [])
+      
+    } catch (err) {
+      console.error('Error loading availability:', err)
+      setError(err.message)
+      toast.error('Error al cargar disponibilidad')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Resto de métodos actualizados sin branch_id...
+  const createAvailability = async (roomId, startDate, endDate, availabilityData) => {
+    try {
+      // No pasar branch_id ya que no existe en la tabla
+      const cleanData = { ...availabilityData }
+      delete cleanData.branch_id // Eliminar si viene en los datos
+      
+      const { data, error } = await db.bulkCreateRoomAvailability(
+        roomId, 
+        startDate, 
+        endDate, 
+        cleanData
+      )
+      
+      if (error) {
+        throw error
+      }
+
+      toast.success(`Disponibilidad actualizada`)
+      await loadAvailability()
+      
+      return { data, error: null }
+
+    } catch (error) {
+      console.error('Error creating availability:', error)
+      toast.error('Error al crear disponibilidad')
+      return { data: null, error }
+    }
+  }
+
+  // Cargar datos al montar
+  useEffect(() => {
+    loadAvailability()
+  }, [])
+
+
+  return {
+    availability,
+    loading,
+    error,
+    loadAvailability,
+    createAvailability,
+    // ... resto de métodos
+  }
+}
+
+// Extender el objeto db existente
+Object.assign(db, finalCleanRoomAvailabilityMethods)
+
+export { finalCleanRoomAvailabilityMethods }
+
+// =============================================
 // SUBSCRIPTIONS FOR REAL-TIME UPDATES
 // =============================================
 
