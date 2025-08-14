@@ -15,6 +15,7 @@ import ErrorFallback from './components/common/ErrorFallback.jsx'
 import LoginPage from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
+import CheckIn from './pages/CheckIn.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 
@@ -105,16 +106,13 @@ function App() {
                 }
               />
               
-              {/* Páginas del hotel - Placeholders simples sin ProtectedRoute por ahora */}
+              {/* Páginas del hotel */}
               <Route
                 path="/checkin"
                 element={
-                  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                    <div className="text-center">
-                      <h1 className="text-2xl font-bold text-gray-900 mb-4">Check-in Rápido</h1>
-                      <p className="text-gray-600">Página en desarrollo</p>
-                    </div>
-                  </div>
+                  <ProtectedRoute requireReception>
+                    <CheckIn />
+                  </ProtectedRoute>
                 }
               />
               
