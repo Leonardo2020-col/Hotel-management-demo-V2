@@ -1142,6 +1142,505 @@ export const db = {
   },
 
   // =============================================
+// CATEGORÍAS DE SUMINISTROS
+// =============================================
+async getAllCategories() {
+  try {
+    const { data, error } = await supabase
+      .from('supply_categories')
+      .select('id, name, description, color, is_active')
+      .eq('is_active', true)
+      .order('name')
+
+    if (error) {
+      return handleSupabaseError(error, 'getAllCategories')
+    }
+
+    // Retornar solo los nombres para compatibilidad
+    const categoryNames = (data || []).map(cat => cat.name)
+    
+    return { data: categoryNames, error: null }
+  } catch (error) {
+    return handleSupabaseError(error, 'getAllCategories')
+  }
+},
+
+async createSupplyCategory(categoryData) {
+  try {
+    const data = {
+      name: categoryData.name?.trim(),
+      description: categoryData.description?.trim() || null,
+      color: categoryData.color || '#6B7280',
+      is_active: true
+    }
+
+    return this.create('supply_categories', data)
+  } catch (error) {
+    return handleSupabaseError(error, 'createSupplyCategory')
+  }
+},
+
+// =============================================
+// PROVEEDORES
+// =============================================
+async getAllSupplierNames() {
+  try {
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('id, name')
+      .eq('is_active', true)
+      .order('name')
+
+    if (error) {
+      return handleSupabaseError(error, 'getAllSupplierNames')
+    }
+
+    // Retornar solo los nombres para compatibilidad
+    const supplierNames = (data || []).map(supplier => supplier.name)
+    
+    return { data: supplierNames, error: null }
+  } catch (error) {
+    return handleSupabaseError(error, 'getAllSupplierNames')
+  }
+},
+
+async createSupplier(supplierData) {
+  try {
+    const data = {
+      name: supplierData.name?.trim(),
+      contact_person: supplierData.contact_person?.trim() || null,
+      email: supplierData.email?.trim() || null,
+      phone: supplierData.phone?.trim() || null,
+      address: supplierData.address?.trim() || null,
+      tax_id: supplierData.tax_id?.trim() || null,
+      payment_terms: supplierData.payment_terms?.trim() || null,
+      is_active: true
+    }
+
+    return this.create('suppliers', data)
+  } catch (error) {
+    return handleSupabaseError(error, 'createSupplier')
+  }
+},
+
+// =============================================
+// GESTIÓN DE INVENTARIO UNIFICADO
+// =============================================
+async getAllInventoryItems() {
+  try {
+    console.log('Loading unified inventory (supplies + snacks)...')
+    
+    // 1. Cargar supplies con sus relaciones
+    const { data: supplies } = await supabase
+      .from('supplies')
+      .select(`
+        id,
+        name,
+        description,
+        sku,
+        unit,
+        unit_price,
+        current_stock,
+        min_stock,
+        max_stock,
+        location,
+        notes,
+        is_active,
+        branch_id,
+        created_at,
+        updated_at,
+        category:supply_categories(name),
+        supplier:suppliers(name)
+      `)
+      .eq('is_active', true)
+      .order('name')
+
+    // 2. Cargar snacks con sus relaciones
+    const { data: snacks } = await supabase
+      .from('snack_items')
+      .select(`
+        id,
+        name,
+        description,
+        price,
+        is_available,
+        branch_id,
+        created_at,
+        updated_at,
+        category:snack_categories(name)
+      `)
+      .eq('is_available', true)
+      .order('name')
+
+    // 3. Transformar supplies a formato uniforme
+    const formattedSupplies = (supplies || []).map(supply => ({
+      id: supply.id,
+      name: supply.name,
+      description: supply.description,
+      sku: supply.sku,
+      category: supply.category?.name || 'Sin categoría',
+      supplier: supply.supplier?.name || 'Sin proveedor',
+      unit: supply.unit,
+      unitPrice: parseFloat(supply.unit_price),
+      currentStock: parseFloat(supply.current_stock || 0),
+      minStock: parseFloat(supply.min_stock),
+      maxStock: parseFloat(supply.max_stock),
+      location: supply.location || 'Almacén',
+      is_active: supply.is_active,
+      item_type: 'supply',
+      branch_id: supply.branch_id,
+      lastUpdated: supply.updated_at,
+      createdAt: supply.created_at,
+      notes: supply.notes
+    }))
+
+    // 4. Transformar snacks a formato uniforme
+    const formattedSnacks = (snacks || []).map(snack => ({
+      id: `snack_${snack.id}`, // Prefijo para evitar conflictos
+      name: snack.name,
+      description: snack.description,
+      sku: `SNACK-${snack.id}`,
+      category: snack.category?.name || 'SNACKS',
+      supplier: 'Proveedor de Snacks',
+      unit: 'unidad',
+      unitPrice: parseFloat(snack.price),
+      currentStock: 100, // Stock mock para snacks
+      minStock: 10,
+      maxStock: 500,
+      location: 'Minibar',
+      is_active: snack.is_available,
+      item_type: 'snack',
+      branch_id: snack.branch_id,
+      lastUpdated: snack.updated_at,
+      createdAt: snack.created_at,
+      notes: null
+    }))
+
+    // 5. Combinar y retornar
+    const allItems = [...formattedSupplies, ...formattedSnacks]
+    
+    console.log(`✅ Loaded ${formattedSupplies.length} supplies + ${formattedSnacks.length} snacks = ${allItems.length} total items`)
+    
+    return { data: allItems, error: null }
+    
+  } catch (error) {
+    return handleSupabaseError(error, 'getAllInventoryItems')
+  }
+},
+
+// =============================================
+// GESTIÓN DE SUPPLIES (tabla supplies)
+// =============================================
+async createSupply(supplyData) {
+  try {
+    // Buscar o crear categoría
+    let categoryId = null
+    if (supplyData.category) {
+      const { data: existingCategory } = await supabase
+        .from('supply_categories')
+        .select('id')
+        .eq('name', supplyData.category)
+        .single()
+
+      if (existingCategory) {
+        categoryId = existingCategory.id
+      } else {
+        // Crear nueva categoría
+        const { data: newCategory } = await supabase
+          .from('supply_categories')
+          .insert([{ name: supplyData.category, description: `Categoría: ${supplyData.category}` }])
+          .select('id')
+          .single()
+        
+        categoryId = newCategory?.id
+      }
+    }
+
+    // Buscar o crear proveedor
+    let supplierId = null
+    if (supplyData.supplier) {
+      const { data: existingSupplier } = await supabase
+        .from('suppliers')
+        .select('id')
+        .eq('name', supplyData.supplier)
+        .single()
+
+      if (existingSupplier) {
+        supplierId = existingSupplier.id
+      } else {
+        // Crear nuevo proveedor
+        const { data: newSupplier } = await supabase
+          .from('suppliers')
+          .insert([{ name: supplyData.supplier }])
+          .select('id')
+          .single()
+        
+        supplierId = newSupplier?.id
+      }
+    }
+
+    const data = {
+      name: supplyData.name.trim(),
+      description: supplyData.description?.trim() || null,
+      sku: supplyData.sku || `SUP-${Date.now()}`,
+      category_id: categoryId,
+      supplier_id: supplierId,
+      unit: supplyData.unit,
+      unit_price: parseFloat(supplyData.unitPrice),
+      current_stock: parseFloat(supplyData.currentStock || 0),
+      min_stock: parseFloat(supplyData.minStock),
+      max_stock: parseFloat(supplyData.maxStock),
+      location: supplyData.location || 'Almacén',
+      notes: supplyData.notes || null,
+      is_active: true,
+      branch_id: supplyData.branch_id || 1
+    }
+
+    return this.create('supplies', data)
+
+  } catch (error) {
+    return handleSupabaseError(error, 'createSupply')
+  }
+},
+
+async updateSupply(supplyId, updateData) {
+  try {
+    // Buscar categoría si se actualiza
+    let categoryId = undefined
+    if (updateData.category) {
+      const { data: existingCategory } = await supabase
+        .from('supply_categories')
+        .select('id')
+        .eq('name', updateData.category)
+        .single()
+
+      categoryId = existingCategory?.id
+    }
+
+    // Buscar proveedor si se actualiza
+    let supplierId = undefined
+    if (updateData.supplier) {
+      const { data: existingSupplier } = await supabase
+        .from('suppliers')
+        .select('id')
+        .eq('name', updateData.supplier)
+        .single()
+
+      supplierId = existingSupplier?.id
+    }
+
+    const validUpdates = {}
+    
+    if (updateData.name !== undefined) validUpdates.name = updateData.name.trim()
+    if (updateData.description !== undefined) validUpdates.description = updateData.description?.trim() || null
+    if (updateData.sku !== undefined) validUpdates.sku = updateData.sku
+    if (updateData.unit !== undefined) validUpdates.unit = updateData.unit
+    if (updateData.unitPrice !== undefined) validUpdates.unit_price = parseFloat(updateData.unitPrice)
+    if (updateData.currentStock !== undefined) validUpdates.current_stock = parseFloat(updateData.currentStock)
+    if (updateData.minStock !== undefined) validUpdates.min_stock = parseFloat(updateData.minStock)
+    if (updateData.maxStock !== undefined) validUpdates.max_stock = parseFloat(updateData.maxStock)
+    if (updateData.location !== undefined) validUpdates.location = updateData.location
+    if (updateData.notes !== undefined) validUpdates.notes = updateData.notes
+    if (categoryId !== undefined) validUpdates.category_id = categoryId
+    if (supplierId !== undefined) validUpdates.supplier_id = supplierId
+    
+    return this.update('supplies', supplyId, validUpdates)
+  } catch (error) {
+    return handleSupabaseError(error, 'updateSupply')
+  }
+},
+
+async deleteSupply(supplyId) {
+  try {
+    // Soft delete - marcar como inactivo
+    return this.update('supplies', supplyId, { is_active: false })
+  } catch (error) {
+    return handleSupabaseError(error, 'deleteSupply')
+  }
+},
+
+// =============================================
+// GESTIÓN DE SNACKS (tabla snack_items)
+// =============================================
+async createSnackItem(snackData) {
+  try {
+    // Buscar o crear categoría de snack
+    let categoryId = null
+    if (snackData.category) {
+      const { data: existingCategory } = await supabase
+        .from('snack_categories')
+        .select('id')
+        .eq('name', snackData.category)
+        .single()
+
+      if (existingCategory) {
+        categoryId = existingCategory.id
+      } else {
+        // Crear nueva categoría de snack
+        const { data: newCategory } = await supabase
+          .from('snack_categories')
+          .insert([{ 
+            name: snackData.category, 
+            description: `Categoría de snack: ${snackData.category}`,
+            display_order: 0
+          }])
+          .select('id')
+          .single()
+        
+        categoryId = newCategory?.id
+      }
+    }
+
+    const data = {
+      name: snackData.name.trim(),
+      description: snackData.description?.trim() || null,
+      price: parseFloat(snackData.unitPrice),
+      category_id: categoryId,
+      is_available: true,
+      branch_id: snackData.branch_id || 1
+    }
+
+    return this.create('snack_items', data)
+
+  } catch (error) {
+    return handleSupabaseError(error, 'createSnackItem')
+  }
+},
+
+async updateSnackItem(snackId, updateData) {
+  try {
+    // Extraer ID real del snack (remover prefijo si existe)
+    const realSnackId = snackId.toString().replace('snack_', '')
+
+    // Buscar categoría si se actualiza
+    let categoryId = undefined
+    if (updateData.category) {
+      const { data: existingCategory } = await supabase
+        .from('snack_categories')
+        .select('id')
+        .eq('name', updateData.category)
+        .single()
+
+      categoryId = existingCategory?.id
+    }
+
+    const validUpdates = {}
+    
+    if (updateData.name !== undefined) validUpdates.name = updateData.name.trim()
+    if (updateData.description !== undefined) validUpdates.description = updateData.description?.trim() || null
+    if (updateData.unitPrice !== undefined) validUpdates.price = parseFloat(updateData.unitPrice)
+    if (categoryId !== undefined) validUpdates.category_id = categoryId
+    
+    return this.update('snack_items', realSnackId, validUpdates)
+  } catch (error) {
+    return handleSupabaseError(error, 'updateSnackItem')
+  }
+},
+
+async deleteSnackItem(snackId) {
+  try {
+    // Extraer ID real del snack (remover prefijo si existe)
+    const realSnackId = snackId.toString().replace('snack_', '')
+    
+    // Soft delete - marcar como no disponible
+    return this.update('snack_items', realSnackId, { is_available: false })
+  } catch (error) {
+    return handleSupabaseError(error, 'deleteSnackItem')
+  }
+},
+
+// =============================================
+// MOVIMIENTOS DE STOCK (para supplies)
+// =============================================
+async recordSupplyConsumption(consumptionData) {
+  try {
+    // Crear registro de movimiento
+    const movementData = {
+      supply_id: consumptionData.supplyId,
+      movement_type: 'consumption',
+      quantity: consumptionData.quantity,
+      reason: consumptionData.reason || 'Consumo registrado',
+      department: consumptionData.department || 'General',
+      created_at: new Date().toISOString()
+    }
+
+    // Si tienes tabla de movimientos, úsala. Si no, simplemente actualiza el stock
+    const { data, error } = await supabase
+      .from('supply_movements')
+      .insert([movementData])
+      .select()
+      .single()
+
+    if (error && error.code !== '42P01') { // 42P01 = tabla no existe
+      console.warn('Error recording movement:', error)
+    }
+
+    // Actualizar stock del supply
+    const { data: supplyData } = await supabase
+      .from('supplies')
+      .select('current_stock')
+      .eq('id', consumptionData.supplyId)
+      .single()
+
+    if (supplyData) {
+      const newStock = Math.max(0, parseFloat(supplyData.current_stock) - consumptionData.quantity)
+      
+      await supabase
+        .from('supplies')
+        .update({ current_stock: newStock })
+        .eq('id', consumptionData.supplyId)
+    }
+
+    return { data: movementData, error: null }
+    
+  } catch (error) {
+    return handleSupabaseError(error, 'recordSupplyConsumption')
+  }
+},
+
+async getConsumptionHistory(filters = {}) {
+  try {
+    // Si tienes tabla de movimientos
+    const { data, error } = await supabase
+      .from('supply_movements')
+      .select(`
+        *,
+        supply:supplies(name, unit)
+      `)
+      .eq('movement_type', 'consumption')
+      .order('created_at', { ascending: false })
+      .limit(filters.limit || 100)
+
+    if (error && error.code === '42P01') {
+      // Tabla no existe, retornar array vacío
+      return { data: [], error: null }
+    }
+
+    if (error) {
+      return handleSupabaseError(error, 'getConsumptionHistory')
+    }
+
+    // Transformar para compatibilidad
+    const transformedData = (data || []).map(movement => ({
+      id: movement.id,
+      supplyId: movement.supply_id,
+      supplyName: movement.supply?.name || 'Item eliminado',
+      quantity: movement.quantity,
+      unit: movement.supply?.unit || 'unidad',
+      reason: movement.reason,
+      department: movement.department,
+      timestamp: movement.created_at,
+      type: movement.movement_type
+    }))
+
+    return { data: transformedData, error: null }
+    
+  } catch (error) {
+    return handleSupabaseError(error, 'getConsumptionHistory')
+  }
+},
+
+  // =============================================
   // DASHBOARD STATS
   // =============================================
 
@@ -1588,6 +2087,33 @@ export const generateUniqueCode = (prefix = 'HTP', length = 6) => {
   const random = Math.random().toString(36).substring(2, length).toUpperCase()
   return `${prefix}-${new Date().getFullYear()}-${timestamp}${random}`
 }
+
+Object.assign(db, {
+  // Categorías
+  getAllCategories,
+  createSupplyCategory,
+  
+  // Proveedores  
+  getAllSupplierNames,
+  createSupplier,
+  
+  // Inventario unificado
+  getAllInventoryItems,
+  
+  // Supplies
+  createSupply,
+  updateSupply, 
+  deleteSupply,
+  
+  // Snacks
+  createSnackItem,
+  updateSnackItem,
+  deleteSnackItem,
+  
+  // Movimientos
+  recordSupplyConsumption,
+  getConsumptionHistory
+});
 
 // Export default (mantener el existente)
 export default {
