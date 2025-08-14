@@ -1,4 +1,4 @@
-// src/lib/supabase.js - VERSIÓN CORREGIDA CON MEJORES PRÁCTICAS
+// src/lib/supabase.js - VERSIÓN CORREGIDA SIN FUNCIONES INDEFINIDAS
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -409,189 +409,189 @@ export const db = {
   // =============================================
 
   async getRooms(filters = {}) {
-  try {
-    console.log('Loading rooms with current table structure...', filters)
-    
-    const options = {
-      orderBy: 'floor:asc,number:asc',
-      ...filters
+    try {
+      console.log('Loading rooms with current table structure...', filters)
+      
+      const options = {
+        orderBy: 'floor:asc,number:asc',
+        ...filters
+      }
+
+      if (filters.branchId) {
+        options.where = { branch_id: filters.branchId }
+      }
+      if (filters.status && filters.status !== 'all') {
+        options.where = { ...options.where, status: filters.status }
+      }
+      if (filters.floor && filters.floor !== 'all') {
+        options.where = { ...options.where, floor: filters.floor }
+      }
+
+      const { data: rooms, error } = await this.findMany('rooms', options)
+      
+      if (error) return { data: [], error }
+
+      // Transformar habitaciones para compatibilidad con el frontend
+      // AGREGAR CAMPOS MOCK para que funcione con los componentes
+      const transformedRooms = (rooms || []).map(room => ({
+        ...room,
+        // Campos calculados/mock para compatibilidad
+        rate: room.base_rate || 100,
+        capacity: 2, // Mock fijo ya que no existe en tu tabla
+        features: ['WiFi Gratis'], // Mock fijo ya que no existe en tu tabla
+        beds: [{ type: 'Doble', count: 1 }], // Mock fijo ya que no existe en tu tabla
+        bed_options: ['Doble'], // Mock fijo para compatibilidad
+        room_type: 'Estándar' // Mock fijo para compatibilidad
+      }))
+
+      return { data: transformedRooms, error: null }
+
+    } catch (error) {
+      return handleSupabaseError(error, 'getRooms')
     }
-
-    if (filters.branchId) {
-      options.where = { branch_id: filters.branchId }
-    }
-    if (filters.status && filters.status !== 'all') {
-      options.where = { ...options.where, status: filters.status }
-    }
-    if (filters.floor && filters.floor !== 'all') {
-      options.where = { ...options.where, floor: filters.floor }
-    }
-
-    const { data: rooms, error } = await this.findMany('rooms', options)
-    
-    if (error) return { data: [], error }
-
-    // Transformar habitaciones para compatibilidad con el frontend
-    // AGREGAR CAMPOS MOCK para que funcione con los componentes
-    const transformedRooms = (rooms || []).map(room => ({
-      ...room,
-      // Campos calculados/mock para compatibilidad
-      rate: room.base_rate || 100,
-      capacity: 2, // Mock fijo ya que no existe en tu tabla
-      features: ['WiFi Gratis'], // Mock fijo ya que no existe en tu tabla
-      beds: [{ type: 'Doble', count: 1 }], // Mock fijo ya que no existe en tu tabla
-      bed_options: ['Doble'], // Mock fijo para compatibilidad
-      room_type: 'Estándar' // Mock fijo para compatibilidad
-    }))
-
-    return { data: transformedRooms, error: null }
-
-  } catch (error) {
-    return handleSupabaseError(error, 'getRooms')
-  }
-},
+  },
 
   async createRoom(roomData) {
-  try {
-    if (!roomData.number || !roomData.floor) {
-      return { 
-        data: null, 
-        error: { message: 'Número de habitación y piso son obligatorios' }
-      }
-    }
-
-    // DATOS ADAPTADOS A TU TABLA ACTUAL
-    const data = {
-      number: roomData.number.toString(),
-      floor: parseInt(roomData.floor),
-      base_rate: parseFloat(roomData.base_rate || 100),
-      branch_id: roomData.branch_id || 1,
-      status: 'available',
-      cleaning_status: 'clean',
-      size: parseInt(roomData.size || 25),
-      maintenance_notes: roomData.description || null
-      // NO incluimos capacity, features, bed_options ya que no existen en tu tabla
-    }
-
-    // Check for duplicates
-    const { data: existingRoom } = await supabase
-      .from('rooms')
-      .select('id')
-      .eq('number', data.number)
-      .eq('branch_id', data.branch_id)
-      .single()
-
-    if (existingRoom) {
-      return { 
-        data: null, 
-        error: { message: `Ya existe una habitación con el número ${roomData.number}` }
-      }
-    }
-
-    return this.create('rooms', data)
-
-  } catch (error) {
-    return handleSupabaseError(error, 'createRoom')
-  }
-},
-
-  async updateRoom(roomId, updates) {
-  try {
-    // SOLO CAMPOS QUE EXISTEN EN TU TABLA
-    const allowedUpdates = {}
-    
-    if (updates.number !== undefined) allowedUpdates.number = updates.number.toString()
-    if (updates.floor !== undefined) allowedUpdates.floor = parseInt(updates.floor)
-    if (updates.base_rate !== undefined) allowedUpdates.base_rate = parseFloat(updates.base_rate)
-    if (updates.size !== undefined) allowedUpdates.size = parseInt(updates.size)
-    if (updates.status !== undefined) allowedUpdates.status = updates.status
-    if (updates.cleaning_status !== undefined) allowedUpdates.cleaning_status = updates.cleaning_status
-    if (updates.maintenance_notes !== undefined) allowedUpdates.maintenance_notes = updates.maintenance_notes
-    if (updates.assigned_cleaner !== undefined) allowedUpdates.assigned_cleaner = updates.assigned_cleaner
-    if (updates.current_guest !== undefined) allowedUpdates.current_guest = updates.current_guest
-    if (updates.last_guest !== undefined) allowedUpdates.last_guest = updates.last_guest
-    
-    return this.update('rooms', roomId, allowedUpdates)
-  } catch (error) {
-    return handleSupabaseError(error, 'updateRoom')
-  }
-},
-
-  async deleteRoom(roomId) {
-  try {
-    // Verificar si hay reservas activas primero
-    const { data: activeReservations } = await this.findMany('reservations', {
-      where: { room_id: roomId },
-      in: { status: ['confirmed', 'checked_in', 'pending'] }
-    })
-    
-    if (activeReservations && activeReservations.length > 0) {
-      return {
-        data: null,
-        error: { 
-          message: `No se puede eliminar la habitación. Tiene ${activeReservations.length} reserva(s) activa(s). Cancela las reservas primero.`
+    try {
+      if (!roomData.number || !roomData.floor) {
+        return { 
+          data: null, 
+          error: { message: 'Número de habitación y piso son obligatorios' }
         }
       }
+
+      // DATOS ADAPTADOS A TU TABLA ACTUAL
+      const data = {
+        number: roomData.number.toString(),
+        floor: parseInt(roomData.floor),
+        base_rate: parseFloat(roomData.base_rate || 100),
+        branch_id: roomData.branch_id || 1,
+        status: 'available',
+        cleaning_status: 'clean',
+        size: parseInt(roomData.size || 25),
+        maintenance_notes: roomData.description || null
+        // NO incluimos capacity, features, bed_options ya que no existen en tu tabla
+      }
+
+      // Check for duplicates
+      const { data: existingRoom } = await supabase
+        .from('rooms')
+        .select('id')
+        .eq('number', data.number)
+        .eq('branch_id', data.branch_id)
+        .single()
+
+      if (existingRoom) {
+        return { 
+          data: null, 
+          error: { message: `Ya existe una habitación con el número ${roomData.number}` }
+        }
+      }
+
+      return this.create('rooms', data)
+
+    } catch (error) {
+      return handleSupabaseError(error, 'createRoom')
     }
-    
-    return this.delete('rooms', roomId)
-  } catch (error) {
-    return handleSupabaseError(error, 'deleteRoom')
-  }
-},
+  },
+
+  async updateRoom(roomId, updates) {
+    try {
+      // SOLO CAMPOS QUE EXISTEN EN TU TABLA
+      const allowedUpdates = {}
+      
+      if (updates.number !== undefined) allowedUpdates.number = updates.number.toString()
+      if (updates.floor !== undefined) allowedUpdates.floor = parseInt(updates.floor)
+      if (updates.base_rate !== undefined) allowedUpdates.base_rate = parseFloat(updates.base_rate)
+      if (updates.size !== undefined) allowedUpdates.size = parseInt(updates.size)
+      if (updates.status !== undefined) allowedUpdates.status = updates.status
+      if (updates.cleaning_status !== undefined) allowedUpdates.cleaning_status = updates.cleaning_status
+      if (updates.maintenance_notes !== undefined) allowedUpdates.maintenance_notes = updates.maintenance_notes
+      if (updates.assigned_cleaner !== undefined) allowedUpdates.assigned_cleaner = updates.assigned_cleaner
+      if (updates.current_guest !== undefined) allowedUpdates.current_guest = updates.current_guest
+      if (updates.last_guest !== undefined) allowedUpdates.last_guest = updates.last_guest
+      
+      return this.update('rooms', roomId, allowedUpdates)
+    } catch (error) {
+      return handleSupabaseError(error, 'updateRoom')
+    }
+  },
+
+  async deleteRoom(roomId) {
+    try {
+      // Verificar si hay reservas activas primero
+      const { data: activeReservations } = await this.findMany('reservations', {
+        where: { room_id: roomId },
+        in: { status: ['confirmed', 'checked_in', 'pending'] }
+      })
+      
+      if (activeReservations && activeReservations.length > 0) {
+        return {
+          data: null,
+          error: { 
+            message: `No se puede eliminar la habitación. Tiene ${activeReservations.length} reserva(s) activa(s). Cancela las reservas primero.`
+          }
+        }
+      }
+      
+      return this.delete('rooms', roomId)
+    } catch (error) {
+      return handleSupabaseError(error, 'deleteRoom')
+    }
+  },
 
   async updateRoomStatus(roomId, newStatus, cleaningStatus = null) {
-  try {
-    const updateData = { 
-      status: newStatus,
-      updated_at: new Date().toISOString()
-    }
-    
-    if (cleaningStatus) {
-      updateData.cleaning_status = cleaningStatus
-    }
+    try {
+      const updateData = { 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      }
+      
+      if (cleaningStatus) {
+        updateData.cleaning_status = cleaningStatus
+      }
 
-    // Si se marca como limpio, agregar información de limpieza
-    if (cleaningStatus === 'clean') {
-      updateData.last_cleaned = new Date().toISOString()
-      updateData.cleaned_by = 'Reception Staff'
+      // Si se marca como limpio, agregar información de limpieza
+      if (cleaningStatus === 'clean') {
+        updateData.last_cleaned = new Date().toISOString()
+        updateData.cleaned_by = 'Reception Staff'
+      }
+
+      // Si se inicia limpieza, agregar timestamp
+      if (newStatus === 'cleaning') {
+        updateData.cleaning_start_time = new Date().toISOString()
+      }
+
+      return this.update('rooms', roomId, updateData)
+
+    } catch (error) {
+      return handleSupabaseError(error, 'updateRoomStatus')
     }
-
-    // Si se inicia limpieza, agregar timestamp
-    if (newStatus === 'cleaning') {
-      updateData.cleaning_start_time = new Date().toISOString()
-    }
-
-    return this.update('rooms', roomId, updateData)
-
-  } catch (error) {
-    return handleSupabaseError(error, 'updateRoomStatus')
-  }
-},
+  },
 
   async getRoomsNeedingCleaning(branchId = null) {
-  try {
-    const options = {
-      where: branchId ? { branch_id: branchId } : {},
-      orderBy: 'floor:asc,number:asc'
+    try {
+      const options = {
+        where: branchId ? { branch_id: branchId } : {},
+        orderBy: 'floor:asc,number:asc'
+      }
+
+      const { data: rooms, error } = await this.findMany('rooms', options)
+      
+      if (error) return { data: [], error }
+
+      // Filtrar habitaciones que necesitan limpieza
+      const roomsNeedingCleaning = rooms.filter(room => 
+        room.cleaning_status === 'dirty' || 
+        room.status === 'cleaning' ||
+        (room.status === 'available' && room.cleaning_status === 'dirty')
+      )
+
+      return { data: roomsNeedingCleaning, error: null }
+    } catch (error) {
+      return handleSupabaseError(error, 'getRoomsNeedingCleaning')
     }
-
-    const { data: rooms, error } = await this.findMany('rooms', options)
-    
-    if (error) return { data: [], error }
-
-    // Filtrar habitaciones que necesitan limpieza
-    const roomsNeedingCleaning = rooms.filter(room => 
-      room.cleaning_status === 'dirty' || 
-      room.status === 'cleaning' ||
-      (room.status === 'available' && room.cleaning_status === 'dirty')
-    )
-
-    return { data: roomsNeedingCleaning, error: null }
-  } catch (error) {
-    return handleSupabaseError(error, 'getRoomsNeedingCleaning')
-  }
-},
+  },
 
   // =============================================
   // GUESTS MANAGEMENT
@@ -936,17 +936,17 @@ export const db = {
 
       // Transform for frontend compatibility
       const transformedRooms = availableRooms.map(room => ({
-  id: room.id,
-  number: room.number,
-  floor: room.floor,
-  base_rate: parseFloat(room.base_rate || 100),
-  rate: parseFloat(room.base_rate || 100),
-  capacity: 2,     // ← VALOR FIJO EN LUGAR DE room.capacity
-  status: room.status,
-  features: room.features || [],
-  size: room.size,
-  beds: room.beds
-}))
+        id: room.id,
+        number: room.number,
+        floor: room.floor,
+        base_rate: parseFloat(room.base_rate || 100),
+        rate: parseFloat(room.base_rate || 100),
+        capacity: 2,     // ← VALOR FIJO EN LUGAR DE room.capacity
+        status: room.status,
+        features: room.features || [],
+        size: room.size,
+        beds: room.beds
+      }))
 
       return { data: transformedRooms, error: null }
 
@@ -1252,122 +1252,121 @@ export const db = {
   // =============================================
 
   async cleanRoomWithClick(roomId) {
-  try {
-    console.log(`🧹 Quick cleaning room with ID: ${roomId}`)
-    
-    const updateData = {
-      status: 'available',
-      cleaning_status: 'clean',
-      last_cleaned: new Date().toISOString(),
-      cleaned_by: 'Reception Staff',
-      cleaning_start_time: null, // Limpiar timestamp de inicio
-      assigned_cleaner: null // Limpiar asignación
+    try {
+      console.log(`🧹 Quick cleaning room with ID: ${roomId}`)
+      
+      const updateData = {
+        status: 'available',
+        cleaning_status: 'clean',
+        last_cleaned: new Date().toISOString(),
+        cleaned_by: 'Reception Staff',
+        cleaning_start_time: null, // Limpiar timestamp de inicio
+        assigned_cleaner: null // Limpiar asignación
+      }
+      
+      return this.update('rooms', roomId, updateData)
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'cleanRoomWithClick')
     }
-    
-    return this.update('rooms', roomId, updateData)
-    
-  } catch (error) {
-    return handleSupabaseError(error, 'cleanRoomWithClick')
-  }
-},
+  },
 
   async getCleaningStaff() {
-  try {
-    // Como probablemente no tienes tabla de personal, usar datos mock
-    return {
-      data: [
-        { id: 1, name: 'María González', shift: 'morning', phone: '+51 987-654-321' },
-        { id: 2, name: 'Ana López', shift: 'afternoon', phone: '+51 987-654-322' },
-        { id: 3, name: 'Pedro Martín', shift: 'morning', phone: '+51 987-654-323' },
-        { id: 4, name: 'Carmen Torres', shift: 'night', phone: '+51 987-654-324' }
-      ],
-      error: null
+    try {
+      // Como probablemente no tienes tabla de personal, usar datos mock
+      return {
+        data: [
+          { id: 1, name: 'María González', shift: 'morning', phone: '+51 987-654-321' },
+          { id: 2, name: 'Ana López', shift: 'afternoon', phone: '+51 987-654-322' },
+          { id: 3, name: 'Pedro Martín', shift: 'morning', phone: '+51 987-654-323' },
+          { id: 4, name: 'Carmen Torres', shift: 'night', phone: '+51 987-654-324' }
+        ],
+        error: null
+      }
+    } catch (error) {
+      return {
+        data: [
+          { id: 1, name: 'Personal de Limpieza', shift: 'morning' }
+        ],
+        error: null
+      }
     }
-  } catch (error) {
-    return {
-      data: [
-        { id: 1, name: 'Personal de Limpieza', shift: 'morning' }
-      ],
-      error: null
-    }
-  }
-},
+  },
 
-// =============================================
-// ROOM ASSIGNMENTS (USANDO CAMPOS EXISTENTES)
-// =============================================
-async assignRoomCleaning(roomIds, staffId, notes = '') {
-  try {
-    console.log(`👥 Assigning cleaning for rooms ${roomIds} to staff ${staffId}`)
-    
-    // Buscar el nombre del personal
-    const { data: staff } = await this.getCleaningStaff()
-    const staffMember = staff.find(s => s.id === parseInt(staffId))
-    const staffName = staffMember ? staffMember.name : 'Personal de Limpieza'
-    
-    const updates = roomIds.map(roomId => 
-      this.update('rooms', roomId, {
-        assigned_cleaner: staffName, // Usar string en lugar de ID
-        cleaning_start_time: new Date().toISOString(),
-        status: 'cleaning',
-        cleaning_status: 'in_progress',
-        maintenance_notes: notes || null
+  // =============================================
+  // ROOM ASSIGNMENTS (USANDO CAMPOS EXISTENTES)
+  // =============================================
+  async assignRoomCleaning(roomIds, staffId, notes = '') {
+    try {
+      console.log(`👥 Assigning cleaning for rooms ${roomIds} to staff ${staffId}`)
+      
+      // Buscar el nombre del personal
+      const { data: staff } = await this.getCleaningStaff()
+      const staffMember = staff.find(s => s.id === parseInt(staffId))
+      const staffName = staffMember ? staffMember.name : 'Personal de Limpieza'
+      
+      const updates = roomIds.map(roomId => 
+        this.update('rooms', roomId, {
+          assigned_cleaner: staffName, // Usar string en lugar de ID
+          cleaning_start_time: new Date().toISOString(),
+          status: 'cleaning',
+          cleaning_status: 'in_progress',
+          maintenance_notes: notes || null
+        })
+      )
+      
+      const results = await Promise.all(updates)
+      
+      // Verificar si alguna actualización falló
+      const errors = results.filter(result => result.error)
+      if (errors.length > 0) {
+        return { data: null, error: errors[0].error }
+      }
+      
+      return { data: results.map(r => r.data), error: null }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'assignRoomCleaning')
+    }
+  },
+
+  // =============================================
+  // ROOM AVAILABILITY FOR RESERVATIONS
+  // =============================================
+  async getRoomAvailabilityStatus(roomId) {
+    try {
+      // Obtener habitación
+      const { data: room } = await this.findById('rooms', roomId)
+      if (!room) {
+        return { data: null, error: { message: 'Habitación no encontrada' } }
+      }
+      
+      // Obtener reservas activas para esta habitación
+      const { data: activeReservations } = await this.findMany('reservations', {
+        where: { room_id: roomId },
+        in: { status: ['checked_in', 'confirmed'] }
       })
-    )
-    
-    const results = await Promise.all(updates)
-    
-    // Verificar si alguna actualización falló
-    const errors = results.filter(result => result.error)
-    if (errors.length > 0) {
-      return { data: null, error: errors[0].error }
+      
+      const hasActiveReservation = activeReservations && activeReservations.length > 0
+      const currentReservation = activeReservations?.find(r => r.status === 'checked_in')
+      const nextReservation = activeReservations?.find(r => r.status === 'confirmed')
+      
+      return {
+        data: {
+          room,
+          isOccupied: !!currentReservation,
+          hasUpcomingReservation: !!nextReservation,
+          currentReservation,
+          nextReservation,
+          canClean: !hasActiveReservation && room.cleaning_status === 'dirty'
+        },
+        error: null
+      }
+      
+    } catch (error) {
+      return handleSupabaseError(error, 'getRoomAvailabilityStatus')
     }
-    
-    return { data: results.map(r => r.data), error: null }
-    
-  } catch (error) {
-    return handleSupabaseError(error, 'assignRoomCleaning')
-  }
-},
-
-// =============================================
-// ROOM AVAILABILITY FOR RESERVATIONS
-// =============================================
-async getRoomAvailabilityStatus(roomId) {
-  try {
-    // Obtener habitación
-    const { data: room } = await this.findById('rooms', roomId)
-    if (!room) {
-      return { data: null, error: { message: 'Habitación no encontrada' } }
-    }
-    
-    // Obtener reservas activas para esta habitación
-    const { data: activeReservations } = await this.findMany('reservations', {
-      where: { room_id: roomId },
-      in: { status: ['checked_in', 'confirmed'] }
-    })
-    
-    const hasActiveReservation = activeReservations && activeReservations.length > 0
-    const currentReservation = activeReservations?.find(r => r.status === 'checked_in')
-    const nextReservation = activeReservations?.find(r => r.status === 'confirmed')
-    
-    return {
-      data: {
-        room,
-        isOccupied: !!currentReservation,
-        hasUpcomingReservation: !!nextReservation,
-        currentReservation,
-        nextReservation,
-        canClean: !hasActiveReservation && room.cleaning_status === 'dirty'
-      },
-      error: null
-    }
-    
-  } catch (error) {
-    return handleSupabaseError(error, 'getRoomAvailabilityStatus')
-  }
-},
-
+  },
 
   // =============================================
   // QUICK CHECK-INS (for walk-in guests)
@@ -1455,469 +1454,6 @@ async getRoomAvailabilityStatus(roomId) {
     }
   }
 }
-
-// =============================================
-// FUNCIONES ACTUALIZADAS - TABLA COMPLETAMENTE LIMPIA
-// =============================================
-
-const finalCleanRoomAvailabilityMethods = {
-
-  async getRoomAvailability(filters = {}) {
-    try {
-      console.log('Loading room availability (estructura completamente limpia):', filters)
-      
-      let query = supabase
-        .from('room_availability')
-        .select(`
-          id,
-          room_id,
-          date,
-          is_available,
-          rate,
-          min_stay,
-          max_stay,
-          notes,
-          created_at,
-          updated_at,
-          room:rooms!inner(
-            id,
-            number,
-            floor,
-            base_rate,
-            status,
-            cleaning_status,
-            size,
-            branch_id,
-            current_guest,
-            last_cleaned,
-            cleaned_by
-          )
-        `)
-      
-      // Filtros por fecha
-      if (filters.startDate) {
-        query = query.gte('date', filters.startDate)
-      }
-      if (filters.endDate) {
-        query = query.lte('date', filters.endDate)
-      }
-      
-      // Filtros por habitación
-      if (filters.roomId) {
-        query = query.eq('room_id', filters.roomId)
-      }
-      if (filters.roomIds && filters.roomIds.length > 0) {
-        query = query.in('room_id', filters.roomIds)
-      }
-      
-      // Filtros por disponibilidad
-      if (filters.isAvailable !== undefined) {
-        query = query.eq('is_available', filters.isAvailable)
-      }
-      
-      // Filtro por sucursal (usando JOIN con rooms)
-      if (filters.branchId) {
-        query = query.eq('room.branch_id', filters.branchId)
-      }
-      
-      // Ordenamiento
-      query = query.order('date', { ascending: true })
-                   .order('room_id', { ascending: true })
-      
-      // Límite
-      if (filters.limit) {
-        query = query.limit(filters.limit)
-      }
-      
-      const { data, error } = await query
-      
-      if (error) {
-        return handleSupabaseError(error, 'getRoomAvailability')
-      }
-      
-      // Transformar datos para mantener compatibilidad
-      const transformedData = (data || []).map(item => ({
-        ...item,
-        // Acceso directo a datos de habitación
-        number: item.room?.number,
-        floor: item.room?.floor,
-        base_rate: item.room?.base_rate,
-        room_status: item.room?.status,
-        cleaning_status: item.room?.cleaning_status,
-        size: item.room?.size,
-        branch_id: item.room?.branch_id // branch_id viene de rooms
-      }))
-      
-      return { data: transformedData, error: null }
-      
-    } catch (error) {
-      return handleSupabaseError(error, 'getRoomAvailability')
-    }
-  },
-
-  async createRoomAvailability(availabilityData) {
-    try {
-      console.log('Creating room availability (sin branch_id):', availabilityData)
-      
-      // Validar campos requeridos
-      if (!availabilityData.room_id || !availabilityData.date) {
-        return {
-          data: null,
-          error: { message: 'room_id y date son requeridos' }
-        }
-      }
-      
-      // SOLO campos específicos de disponibilidad (sin branch_id)
-      const data = {
-        room_id: availabilityData.room_id,
-        date: availabilityData.date,
-        is_available: availabilityData.is_available ?? true,
-        rate: availabilityData.rate ? parseFloat(availabilityData.rate) : null,
-        min_stay: availabilityData.min_stay || 1,
-        max_stay: availabilityData.max_stay || 30,
-        notes: availabilityData.notes || null
-        // NO más branch_id - viene de rooms via JOIN
-      }
-      
-      const { data: result, error } = await supabase
-        .from('room_availability')
-        .upsert([data], { 
-          onConflict: 'room_id,date',
-          returning: 'representation'
-        })
-        .select(`
-          *,
-          room:rooms(number, floor, base_rate, status, branch_id)
-        `)
-        .single()
-      
-      if (error) {
-        return handleSupabaseError(error, 'createRoomAvailability')
-      }
-      
-      return { data: result, error: null }
-      
-    } catch (error) {
-      return handleSupabaseError(error, 'createRoomAvailability')
-    }
-  },
-
-  async bulkCreateRoomAvailability(roomId, startDate, endDate, availabilityData = {}) {
-    try {
-      console.log('Bulk creating availability (sin branch_id)', roomId, startDate, endDate)
-      
-      const start = new Date(startDate)
-      const end = new Date(endDate)
-      const records = []
-      
-      // Generar registros SOLO con campos de disponibilidad
-      for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
-        const dateStr = date.toISOString().split('T')[0]
-        
-        records.push({
-          room_id: roomId,
-          date: dateStr,
-          is_available: availabilityData.is_available ?? true,
-          rate: availabilityData.rate ? parseFloat(availabilityData.rate) : null,
-          min_stay: availabilityData.min_stay || 1,
-          max_stay: availabilityData.max_stay || 30,
-          notes: availabilityData.notes || null
-          // Sin branch_id
-        })
-      }
-      
-      const { data, error } = await supabase
-        .from('room_availability')
-        .upsert(records, { 
-          onConflict: 'room_id,date',
-          returning: 'representation'
-        })
-        .select(`
-          *,
-          room:rooms(number, floor, branch_id)
-        `)
-      
-      if (error) {
-        return handleSupabaseError(error, 'bulkCreateRoomAvailability')
-      }
-      
-      console.log(`✅ Created/updated ${records.length} availability records`)
-      return { data, error: null }
-      
-    } catch (error) {
-      return handleSupabaseError(error, 'bulkCreateRoomAvailability')
-    }
-  },
-
-  async getAvailabilityByBranch(branchId, startDate = null, endDate = null) {
-    try {
-      console.log('Getting availability by branch (usando JOIN):', branchId)
-      
-      // Usar fechas por defecto si no se proporcionan
-      const start = startDate || new Date().toISOString().split('T')[0]
-      const end = endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      
-      const { data, error } = await supabase
-        .from('room_availability')
-        .select(`
-          id,
-          room_id,
-          date,
-          is_available,
-          rate,
-          min_stay,
-          max_stay,
-          notes,
-          room:rooms!inner(
-            number,
-            floor,
-            base_rate,
-            status,
-            branch_id
-          )
-        `)
-        .eq('room.branch_id', branchId)
-        .gte('date', start)
-        .lte('date', end)
-        .order('date')
-        .order('room.number')
-      
-      if (error) {
-        return handleSupabaseError(error, 'getAvailabilityByBranch')
-      }
-      
-      return { data: data || [], error: null }
-      
-    } catch (error) {
-      return handleSupabaseError(error, 'getAvailabilityByBranch')
-    }
-  },
-
-  async getAvailabilityStatsForBranch(branchId, startDate = null, endDate = null) {
-    try {
-      console.log('Getting availability stats for branch (optimized):', branchId)
-      
-      const start = startDate || new Date().toISOString().split('T')[0]
-      const end = endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      
-      // Query optimizado para estadísticas por sucursal
-      const { data, error } = await supabase
-        .from('room_availability')
-        .select(`
-          is_available,
-          rate,
-          room:rooms!inner(base_rate, branch_id)
-        `)
-        .eq('room.branch_id', branchId)
-        .gte('date', start)
-        .lte('date', end)
-      
-      if (error) return { data: null, error }
-      
-      const stats = {
-        branchId,
-        totalDays: data.length,
-        availableDays: data.filter(item => item.is_available).length,
-        blockedDays: data.filter(item => !item.is_available).length,
-        averageRate: 0,
-        minRate: null,
-        maxRate: null,
-        ratesSet: data.filter(item => item.rate !== null).length
-      }
-      
-      // Calcular estadísticas de tarifas
-      const ratesWithValues = data.filter(item => item.rate !== null && item.rate > 0)
-      
-      if (ratesWithValues.length > 0) {
-        const rates = ratesWithValues.map(item => parseFloat(item.rate))
-        stats.averageRate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length
-        stats.minRate = Math.min(...rates)
-        stats.maxRate = Math.max(...rates)
-      }
-      
-      // Calcular tasa de ocupación
-      stats.occupancyRate = stats.totalDays > 0 
-        ? Math.round(((stats.totalDays - stats.availableDays) / stats.totalDays) * 100)
-        : 0
-      
-      return { data: stats, error: null }
-      
-    } catch (error) {
-      return handleSupabaseError(error, 'getAvailabilityStatsForBranch')
-    }
-  },
-
-  async getRoomAvailabilityCalendar(roomId, year, month) {
-    try {
-      console.log('Getting calendar (sin branch_id) for room', roomId, year, month)
-      
-      // Calcular rango de fechas
-      const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0]
-      const endDate = new Date(year, month, 0).toISOString().split('T')[0]
-      
-      // Query optimizado sin branch_id
-      const { data: availabilityData, error } = await supabase
-        .from('room_availability')
-        .select(`
-          date,
-          is_available,
-          rate,
-          notes,
-          room:rooms!inner(number, floor, base_rate, branch_id)
-        `)
-        .eq('room_id', roomId)
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date')
-      
-      if (error) return { data: null, error }
-      
-      // Obtener reservaciones para el período
-      const { data: reservations } = await supabase
-        .from('reservations')
-        .select('check_in, check_out, status, guest:guests(full_name)')
-        .eq('room_id', roomId)
-        .in('status', ['confirmed', 'checked_in'])
-        .gte('check_in', startDate)
-        .lte('check_out', endDate)
-      
-      // Construir calendario
-      const calendar = []
-      const daysInMonth = new Date(year, month, 0).getDate()
-      
-      for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(year, month - 1, day).toISOString().split('T')[0]
-        const availability = availabilityData?.find(av => av.date === date)
-        const reservation = reservations?.find(res => 
-          date >= res.check_in && date < res.check_out
-        )
-        
-        calendar.push({
-          date,
-          day,
-          isAvailable: availability?.is_available ?? true,
-          rate: availability?.rate || availability?.room?.base_rate,
-          notes: availability?.notes,
-          isReserved: !!reservation,
-          reservation: reservation ? {
-            status: reservation.status,
-            guestName: reservation.guest?.full_name,
-            checkIn: reservation.check_in,
-            checkOut: reservation.check_out
-          } : null,
-          // branch_id disponible via room data
-          branchId: availability?.room?.branch_id
-        })
-      }
-      
-      return { data: calendar, error: null }
-      
-    } catch (error) {
-      return handleSupabaseError(error, 'getRoomAvailabilityCalendar')
-    }
-  },
-
-  async getAvailableRoomsForDates(startDate, endDate, filters = {}) {
-    try {
-      console.log('Getting available rooms (JOIN optimizado sin branch_id):', startDate, 'to', endDate)
-      
-      // 1. Construir filtros para habitaciones
-      let roomQuery = supabase
-        .from('rooms')
-        .select('*')
-        .eq('status', 'available')
-      
-      if (filters.branchId) {
-        roomQuery = roomQuery.eq('branch_id', filters.branchId)
-      }
-      if (filters.floor) {
-        roomQuery = roomQuery.eq('floor', filters.floor)
-      }
-      
-      const { data: allRooms, error: roomsError } = await roomQuery.order('number')
-      
-      if (roomsError) return { data: [], error: roomsError }
-      if (!allRooms || allRooms.length === 0) {
-        return { data: [], error: null }
-      }
-      
-      // 2. Verificar conflictos en reservaciones
-      const { data: conflictingReservations } = await supabase
-        .from('reservations')
-        .select('id, room_id, check_in, check_out, status')
-        .in('status', ['confirmed', 'checked_in', 'pending'])
-        .or(`and(check_in.lte.${endDate},check_out.gte.${startDate})`)
-      
-      // 3. Verificar disponibilidad usando la estructura limpia
-      const { data: availabilityData } = await this.getRoomAvailability({
-        startDate,
-        endDate,
-        roomIds: allRooms.map(r => r.id)
-      })
-      
-      // 4. Filtrar habitaciones realmente disponibles
-      const availableRooms = []
-      
-      for (const room of allRooms) {
-        // Verificar conflictos de reservaciones
-        const hasReservationConflict = conflictingReservations?.some(reservation => {
-          if (reservation.room_id !== room.id) return false
-          
-          const reservationCheckIn = new Date(reservation.check_in)
-          const reservationCheckOut = new Date(reservation.check_out)
-          const requestStart = new Date(startDate)
-          const requestEnd = new Date(endDate)
-          
-          return (requestStart < reservationCheckOut && requestEnd > reservationCheckIn)
-        })
-        
-        if (hasReservationConflict) continue
-        
-        // Verificar disponibilidad en room_availability
-        const roomAvailabilityCheck = await this.checkRoomAvailabilityForDates(
-          room.id, 
-          startDate, 
-          endDate
-        )
-        
-        if (!roomAvailabilityCheck.available) continue
-        
-        // Obtener tarifa específica para las fechas
-        const dateAvailability = availabilityData?.find(av => 
-          av.room_id === room.id && av.date === startDate
-        )
-        
-        availableRooms.push({
-          ...room,
-          currentRate: dateAvailability?.rate || room.base_rate,
-          minStay: dateAvailability?.min_stay || 1,
-          maxStay: dateAvailability?.max_stay || 30,
-          availabilityNotes: dateAvailability?.notes,
-          // Compatibilidad con frontend existente
-          rate: dateAvailability?.rate || room.base_rate,
-          capacity: room.capacity || 2,
-          features: room.features || ['WiFi Gratis'],
-          beds: room.beds || [{ type: 'Doble', count: 1 }]
-        })
-      }
-      
-      return { data: availableRooms, error: null }
-      
-    } catch (error) {
-      return handleSupabaseError(error, 'getAvailableRoomsForDates')
-    }
-  }
-}
-
-// =============================================
-// HOOK ACTUALIZADO SIN branch_id
-// =============================================
-
-// src/hooks/useRoomAvailability.js - Actualización
-
-
-// Extender el objeto db existente
-
 
 // =============================================
 // SUBSCRIPTIONS FOR REAL-TIME UPDATES
@@ -2053,22 +1589,6 @@ export const generateUniqueCode = (prefix = 'HTP', length = 6) => {
   return `${prefix}-${new Date().getFullYear()}-${timestamp}${random}`
 }
 
-Object.assign(db, {
-  // Aquí van SOLO las funciones que creamos anteriormente
-  getRoomAvailability,
-  createRoomAvailability,
-  updateRoomAvailability,
-  bulkCreateRoomAvailability,
-  getAvailabilityByBranch,
-  getAvailabilityStatsForBranch,
-  getRoomAvailabilityCalendar,
-  getAvailableRoomsForDates,
-  checkRoomAvailabilityForDates,
-  blockRoomForDates,
-  unblockRoomForDates,
-  updateRoomRatesForDates
-});
-
 // Export default (mantener el existente)
 export default {
   supabase,
@@ -2080,4 +1600,4 @@ export default {
   formatLocalDate,
   validateRequired,
   generateUniqueCode
-};
+}
