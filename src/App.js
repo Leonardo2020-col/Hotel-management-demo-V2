@@ -1,135 +1,282 @@
-// src/App.js - VERSIÓN FINAL CON TODAS LAS RUTAS
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import React from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'react-hot-toast'
+import { ErrorBoundary } from 'react-error-boundary'
 
-// Layout - CORREGIR RUTA SEGÚN TU ESTRUCTURA
-import DashboardLayout from './layout/DashboardLayout'; // Si está en src/layout/
-// O usar: import DashboardLayout from './layouts/DashboardLayout'; // Si está en src/layouts/
+// Contexts
+import { AuthProvider } from './context/AuthContext'
 
 // Components
-import ProtectedRoute from './components/common/ProtectedRoute';
+import ProtectedRoute from './components/auth/ProtectedRoute.jsx'
+import ErrorFallback from './components/common/ErrorFallback.jsx'
 
 // Pages
-import LoginPage from './pages/Auth/LoginPage';
-import Dashboard from './pages/Dashboard/Dashboard';
-import Rooms from './pages/Rooms/Rooms';
-import Guests from './pages/Guests/Guests';
-import CheckIn from './pages/CheckIn/CheckIn';
-import Reservations from './pages/Reservations/Reservations';
-import Supplies from './pages/Supplies/Supplies';
-import Reports from './pages/Reports/Reports';
-import Settings from './pages/Settings/Settings';
+import LoginPage from './pages/Login.jsx'
+import Dashboard from './pages/Dashboard.jsx'
+import AdminPanel from './pages/AdminPanel.jsx'
+import Unauthorized from './pages/Unauthorized.jsx'
+import NotFound from './pages/NotFound.jsx'
 
-// Estilos
-import './index.css';
+// Lazy loading para optimización (opcional)
+// const Dashboard = React.lazy(() => import('./pages/Dashboard.jsx'))
+// const AdminPanel = React.lazy(() => import('./pages/AdminPanel.jsx'))
 
-// Componente principal de rutas
-const AppRoutes = () => {
-  const { isAuthenticated, loading } = useAuth();
-
-  // Loading global
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando aplicación...</p>
-        </div>
-      </div>
-    );
-  }
-
+function App() {
   return (
-    <Routes>
-      {/* Ruta de login */}
-      <Route 
-        path="/login" 
-        element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} 
-      />
-
-      {/* Rutas protegidas con layout */}
-      <Route 
-        path="/*" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Routes>
-                {/* Dashboard principal */}
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/dashboard" element={<Navigate to="/" replace />} />
-
-                {/* Gestión de habitaciones */}
-                <Route path="/rooms" element={<Rooms />} />
-
-                {/* Gestión de huéspedes */}
-                <Route path="/guests" element={<Guests />} />
-
-                {/* Check-in/Check-out */}
-                <Route path="/checkin" element={<CheckIn />} />
-
-                {/* Reservaciones */}
-                <Route path="/reservations" element={<Reservations />} />
-
-                {/* Suministros e inventario */}
-                <Route path="/supplies" element={<Supplies />} />
-
-                {/* Reportes */}
-                <Route path="/reports" element={<Reports />} />
-
-                {/* Configuraciones */}
-                <Route path="/settings" element={<Settings />} />
-
-                {/* Ruta catch-all para rutas no encontradas */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-
-      {/* Ruta catch-all global */}
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
-  );
-};
-
-// Componente principal de la aplicación
-const App = () => {
-  return (
-    <AuthProvider>
-      <BrowserRouter>
-        <div className="App">
-          <AppRoutes />
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                background: '#363636',
-                color: '#fff',
-              },
-              success: {
-                duration: 3000,
-                iconTheme: {
-                  primary: '#4ade80',
-                  secondary: '#fff',
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <Router>
+        <AuthProvider>
+          <div className="App">
+            {/* Configuración de rutas */}
+            <Routes>
+              {/* Ruta raíz - redirecciona según autenticación */}
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              
+              {/* Login - accesible solo si no está autenticado */}
+              <Route path="/login" element={<LoginPage />} />
+              
+              {/* Dashboard - requiere estar autenticado (recepción o admin) */}
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Panel de administrador - solo para administradores */}
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminPanel />
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Páginas del hotel (todas requieren recepción o admin) */}
+              <Route
+                path="/checkin"
+                element={
+                  <ProtectedRoute requireReception>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Check-in Rápido</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/reservations"
+                element={
+                  <ProtectedRoute requireReception>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reservaciones</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/guests"
+                element={
+                  <ProtectedRoute requireReception>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Huéspedes</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/rooms"
+                element={
+                  <ProtectedRoute requireReception>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Habitaciones</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/supplies"
+                element={
+                  <ProtectedRoute requireReception>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Suministros</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/reports"
+                element={
+                  <ProtectedRoute requireReception>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reportes</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Configuración</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Rutas de administrador */}
+              <Route
+                path="/admin/users"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Gestión de Usuarios</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/admin/settings"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Configuración del Hotel</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/admin/branches"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Gestión de Sucursales</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/admin/reports"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reportes Avanzados</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/admin/audit"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Auditoría del Sistema</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/admin/database"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                      <div className="text-center">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Base de Datos</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Páginas de error */}
+              <Route path="/unauthorized" element={<Unauthorized />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+            
+            {/* Toast notifications */}
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                duration: 4000,
+                style: {
+                  background: '#363636',
+                  color: '#fff',
                 },
-              },
-              error: {
-                duration: 5000,
-                iconTheme: {
-                  primary: '#ef4444',
-                  secondary: '#fff',
+                success: {
+                  duration: 3000,
+                  style: {
+                    background: '#10b981',
+                  },
                 },
-              },
-            }}
-          />
-        </div>
-      </BrowserRouter>
-    </AuthProvider>
-  );
-};
+                error: {
+                  duration: 5000,
+                  style: {
+                    background: '#ef4444',
+                  },
+                },
+                loading: {
+                  style: {
+                    background: '#3b82f6',
+                  },
+                },
+              }}
+            />
+          </div>
+        </AuthProvider>
+      </Router>
+    </ErrorBoundary>
+  )
+}
 
-export default App;
+export default App
