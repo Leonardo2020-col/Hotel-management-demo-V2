@@ -1,3 +1,4 @@
+// src/App.js - VERSIÓN CON DEBUG
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
@@ -17,25 +18,74 @@ import AdminPanel from './pages/AdminPanel.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 
-// Lazy loading para optimización (opcional)
-// const Dashboard = React.lazy(() => import('./pages/Dashboard.jsx'))
-// const AdminPanel = React.lazy(() => import('./pages/AdminPanel.jsx'))
+// Componente de debug para verificar que todo se carga
+const AppDebug = () => {
+  console.log('🚀 App component rendering...')
+  
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">
+          Sistema de Hotel Cargando...
+        </h1>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+      </div>
+    </div>
+  )
+}
 
 function App() {
+  console.log('🏗️ App function starting...')
+
+  // Verificar que las variables de entorno están configuradas
+  if (!process.env.REACT_APP_SUPABASE_URL) {
+    console.error('❌ REACT_APP_SUPABASE_URL no está configurada')
+    return (
+      <div className="min-h-screen bg-red-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-900 mb-4">
+            Error de Configuración
+          </h1>
+          <p className="text-red-700">
+            Variables de entorno de Supabase no configuradas
+          </p>
+          <p className="text-sm text-red-600 mt-2">
+            Verifica tu archivo .env
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  console.log('✅ Variables de entorno OK')
+
   return (
-    <ErrorBoundary FallbackComponent={ErrorFallback}>
+    <ErrorBoundary 
+      FallbackComponent={ErrorFallback}
+      onError={(error, errorInfo) => {
+        console.error('🚨 Error capturado por ErrorBoundary:', error)
+        console.error('📍 Error Info:', errorInfo)
+      }}
+    >
       <Router>
         <AuthProvider>
           <div className="App">
-            {/* Configuración de rutas */}
+            {console.log('🛣️ Configurando rutas...')}
+            
             <Routes>
-              {/* Ruta raíz - redirecciona según autenticación */}
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              {/* Ruta raíz */}
+              <Route 
+                path="/" 
+                element={<Navigate to="/dashboard" replace />} 
+              />
               
-              {/* Login - accesible solo si no está autenticado */}
-              <Route path="/login" element={<LoginPage />} />
+              {/* Login */}
+              <Route 
+                path="/login" 
+                element={<LoginPage />} 
+              />
               
-              {/* Dashboard - requiere estar autenticado (recepción o admin) */}
+              {/* Dashboard */}
               <Route
                 path="/dashboard"
                 element={
@@ -45,7 +95,7 @@ function App() {
                 }
               />
               
-              {/* Panel de administrador - solo para administradores */}
+              {/* Admin Panel */}
               <Route
                 path="/admin"
                 element={
@@ -55,187 +105,28 @@ function App() {
                 }
               />
               
-              {/* Páginas del hotel (todas requieren recepción o admin) */}
+              {/* Páginas del hotel - Placeholders simples sin ProtectedRoute por ahora */}
               <Route
                 path="/checkin"
                 element={
-                  <ProtectedRoute requireReception>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Check-in Rápido</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                    <div className="text-center">
+                      <h1 className="text-2xl font-bold text-gray-900 mb-4">Check-in Rápido</h1>
+                      <p className="text-gray-600">Página en desarrollo</p>
                     </div>
-                  </ProtectedRoute>
+                  </div>
                 }
               />
               
               <Route
                 path="/reservations"
                 element={
-                  <ProtectedRoute requireReception>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reservaciones</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                    <div className="text-center">
+                      <h1 className="text-2xl font-bold text-gray-900 mb-4">Reservaciones</h1>
+                      <p className="text-gray-600">Página en desarrollo</p>
                     </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/guests"
-                element={
-                  <ProtectedRoute requireReception>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Huéspedes</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/rooms"
-                element={
-                  <ProtectedRoute requireReception>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Habitaciones</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/supplies"
-                element={
-                  <ProtectedRoute requireReception>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Suministros</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/reports"
-                element={
-                  <ProtectedRoute requireReception>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reportes</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/settings"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Configuración</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              {/* Rutas de administrador */}
-              <Route
-                path="/admin/users"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Gestión de Usuarios</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/admin/settings"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Configuración del Hotel</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/admin/branches"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Gestión de Sucursales</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/admin/reports"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reportes Avanzados</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/admin/audit"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Auditoría del Sistema</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              
-              <Route
-                path="/admin/database"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                      <div className="text-center">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Base de Datos</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </div>
-                  </ProtectedRoute>
+                  </div>
                 }
               />
               
@@ -272,6 +163,8 @@ function App() {
                 },
               }}
             />
+            
+            {console.log('✅ App configurada correctamente')}
           </div>
         </AuthProvider>
       </Router>

@@ -1,13 +1,18 @@
+// src/components/common/ErrorFallback.jsx - VERSIÓN CORREGIDA
 import React from 'react'
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 
 const ErrorFallback = ({ error, resetErrorBoundary }) => {
-  const navigate = useNavigate()
-
+  // NO usar useNavigate aquí porque puede ejecutarse fuera del Router
+  
   const handleGoHome = () => {
-    navigate('/dashboard')
+    // Usar window.location en lugar de navigate
+    window.location.href = '/dashboard'
     resetErrorBoundary()
+  }
+
+  const handleReload = () => {
+    window.location.reload()
   }
 
   return (
@@ -27,7 +32,7 @@ const ErrorFallback = ({ error, resetErrorBoundary }) => {
             <summary className="cursor-pointer font-medium text-red-800 mb-2">
               Detalles del error (desarrollo)
             </summary>
-            <pre className="text-sm text-red-700 whitespace-pre-wrap overflow-auto">
+            <pre className="text-sm text-red-700 whitespace-pre-wrap overflow-auto max-h-40">
               {error.message}
               {error.stack && `\n\nStack trace:\n${error.stack}`}
             </pre>
@@ -44,8 +49,16 @@ const ErrorFallback = ({ error, resetErrorBoundary }) => {
           </button>
           
           <button
-            onClick={handleGoHome}
+            onClick={handleReload}
             className="w-full inline-flex items-center justify-center px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Recargar Página
+          </button>
+
+          <button
+            onClick={handleGoHome}
+            className="w-full inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
           >
             <Home className="h-4 w-4 mr-2" />
             Ir al Dashboard

@@ -1,126 +1,171 @@
-// src/context/AuthContext.js - VERSIÓN SIMPLIFICADA Y FUNCIONAL
-import React, { createContext, useContext, useState, useEffect } from 'react';
+// src/context/AuthContext.js - VERSIÓN SIMPLIFICADA PARA DEBUG
+import React, { createContext, useContext, useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
 
-const AuthContext = createContext();
+const AuthContext = createContext({})
 
-// Mock users para demo
-const DEMO_USERS = {
-  'admin@hotelparaiso.com': {
-    id: 1,
-    email: 'admin@hotelparaiso.com',
-    name: 'Administrador del Sistema',
-    role: 'admin',
-    password: 'admin123'
-  },
-  'recepcion@hotelparaiso.com': {
-    id: 2,
-    email: 'recepcion@hotelparaiso.com',
-    name: 'Personal de Recepción',
-    role: 'reception',
-    password: 'recepcion123'
+export const useAuth = () => {
+  const context = useContext(AuthContext)
+  if (!context) {
+    throw new Error('useAuth debe ser usado dentro de AuthProvider')
   }
-};
-
-// Permisos por rol
-const ROLE_PERMISSIONS = {
-  admin: {
-    dashboard: true,
-    guests: true,
-    rooms: true,
-    supplies: true,
-    reports: true,
-    settings: true,
-    checkin: false,
-    reservations: false
-  },
-  reception: {
-    dashboard: true,
-    guests: true,
-    rooms: true,
-    supplies: false,
-    reports: false,
-    settings: false,
-    checkin: true,
-    reservations: true
-  }
-};
+  return context
+}
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [user, setUser] = useState(null)
+  const [userInfo, setUserInfo] = useState(null)
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [initializing, setInitializing] = useState(true)
 
-  // Verificar sesión guardada al cargar
+  console.log('🔐 AuthProvider inicializando...')
+
   useEffect(() => {
-    const savedUser = localStorage.getItem('hotel_user');
-    if (savedUser) {
+    const initializeAuth = async () => {
       try {
-        setUser(JSON.parse(savedUser));
+        console.log('🔍 Verificando variables de entorno...')
+        
+        if (!process.env.REACT_APP_SUPABASE_URL || !process.env.REACT_APP_SUPABASE_ANON_KEY) {
+          console.error('❌ Variables de entorno de Supabase no configuradas')
+          toast.error('Error de configuración: Variables de entorno faltantes')
+          return
+        }
+
+        console.log('✅ Variables de entorno configuradas')
+
+        // Por ahora, solo simulamos que no hay usuario logueado
+        console.log('👤 No hay usuario logueado (simulado)')
+        
       } catch (error) {
-        localStorage.removeItem('hotel_user');
+        console.error('❌ Error inicializando auth:', error)
+        toast.error('Error al inicializar autenticación')
+      } finally {
+        setLoading(false)
+        setInitializing(false)
+        console.log('✅ Auth inicializado')
       }
     }
-    setLoading(false);
-  }, []);
 
+    initializeAuth()
+  }, [])
+
+  // Login simulado por ahora
   const login = async (email, password) => {
-    setLoading(true);
-    setError(null);
-
     try {
-      // Simular delay de red
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      const user = DEMO_USERS[email];
-      if (!user || user.password !== password) {
-        throw new Error('Credenciales incorrectas');
+      setLoading(true)
+      console.log('🔑 Intentando login con:', { email, password: '***' })
+      
+      // Simulación de login exitoso
+      if (email === 'admin@hotel.com' && password === '123456') {
+        const mockUser = { id: '1', email }
+        const mockUserInfo = {
+          id: '1',
+          first_name: 'Admin',
+          last_name: 'Sistema',
+          role: { name: 'administrador', permissions: { all: true } },
+          user_branches: [{
+            branch: { id: '1', name: 'Hotel Principal' },
+            is_primary: true
+          }]
+        }
+        
+        setUser(mockUser)
+        setUserInfo(mockUserInfo)
+        setSession({ user: mockUser })
+        
+        toast.success('Login exitoso!')
+        console.log('✅ Login exitoso')
+        return { success: true, user: mockUser, userInfo: mockUserInfo }
       }
-
-      const { password: _, ...userWithoutPassword } = user;
-      setUser(userWithoutPassword);
-      localStorage.setItem('hotel_user', JSON.stringify(userWithoutPassword));
-
-      return { success: true };
+      
+      throw new Error('Credenciales incorrectas')
+      
     } catch (error) {
-      setError(error.message);
-      return { success: false, error: error.message };
+      console.error('❌ Error en login:', error)
+      toast.error(error.message)
+      return { success: false, error: error.message }
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('hotel_user');
-  };
+  const logout = async () => {
+    try {
+      setLoading(true)
+      setUser(null)
+      setSession(null)
+      setUserInfo(null)
+      toast.success('Sesión cerrada')
+      console.log('👋 Logout exitoso')
+      return { success: true }
+    } catch (error) {
+      console.error('❌ Error en logout:', error)
+      return { success: false, error: error.message }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Funciones de utilidad
+  const hasRole = (roleName) => {
+    return userInfo?.role?.name === roleName
+  }
 
   const hasPermission = (permission) => {
-    if (!user?.role) return false;
-    return ROLE_PERMISSIONS[user.role]?.[permission] || false;
-  };
+    if (!userInfo?.role?.permissions) return false
+    if (userInfo.role.permissions.all) return true
+    return userInfo.role.permissions[permission] === true
+  }
+
+  const isAdmin = () => hasRole('administrador')
+  const isReception = () => hasRole('recepcion')
+
+  const getPrimaryBranch = () => {
+    const primaryBranch = userInfo?.user_branches?.find(ub => ub.is_primary)
+    return primaryBranch?.branch || userInfo?.user_branches?.[0]?.branch
+  }
+
+  const getUserBranches = () => {
+    return userInfo?.user_branches?.map(ub => ub.branch) || []
+  }
+
+  const refreshUserInfo = async () => {
+    console.log('🔄 Refresh user info (simulado)')
+    return userInfo
+  }
 
   const value = {
     user,
+    userInfo,
+    session,
     loading,
-    error,
+    initializing,
     isAuthenticated: !!user,
     login,
     logout,
+    refreshUserInfo,
+    hasRole,
     hasPermission,
-    clearError: () => setError(null)
-  };
+    isAdmin,
+    isReception,
+    getPrimaryBranch,
+    getUserBranches,
+    userName: userInfo ? `${userInfo.first_name} ${userInfo.last_name}` : '',
+    userRole: userInfo?.role?.name || '',
+    userEmail: user?.email || ''
+  }
+
+  console.log('🎯 AuthProvider state:', {
+    isAuthenticated: !!user,
+    loading,
+    initializing,
+    userRole: userInfo?.role?.name
+  })
 
   return (
     <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
-  );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth debe usarse dentro de AuthProvider');
-  }
-  return context;
-};
+  )
+}
