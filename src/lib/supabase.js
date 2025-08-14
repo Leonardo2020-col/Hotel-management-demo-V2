@@ -1914,95 +1914,10 @@ const finalCleanRoomAvailabilityMethods = {
 // =============================================
 
 // src/hooks/useRoomAvailability.js - Actualización
-export const useRoomAvailabilityClean = () => {
-  const [availability, setAvailability] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
 
-  // Cargar disponibilidad sin usar branch_id directamente
-  const loadAvailability = async (startDate = null, endDate = null, branchId = null) => {
-    try {
-      setLoading(true)
-      setError(null)
-
-      const start = startDate || new Date().toISOString().split('T')[0]
-      const end = endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-      console.log('Loading availability (estructura limpia):', { start, end, branchId })
-
-      // Usar filtro por branchId que internamente hace JOIN
-      const filters = { startDate: start, endDate: end }
-      if (branchId) {
-        filters.branchId = branchId
-      }
-
-      const { data, error } = await db.getRoomAvailability(filters)
-
-      if (error) {
-        throw error
-      }
-
-      setAvailability(data || [])
-      
-    } catch (err) {
-      console.error('Error loading availability:', err)
-      setError(err.message)
-      toast.error('Error al cargar disponibilidad')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Resto de métodos actualizados sin branch_id...
-  const createAvailability = async (roomId, startDate, endDate, availabilityData) => {
-    try {
-      // No pasar branch_id ya que no existe en la tabla
-      const cleanData = { ...availabilityData }
-      delete cleanData.branch_id // Eliminar si viene en los datos
-      
-      const { data, error } = await db.bulkCreateRoomAvailability(
-        roomId, 
-        startDate, 
-        endDate, 
-        cleanData
-      )
-      
-      if (error) {
-        throw error
-      }
-
-      toast.success(`Disponibilidad actualizada`)
-      await loadAvailability()
-      
-      return { data, error: null }
-
-    } catch (error) {
-      console.error('Error creating availability:', error)
-      toast.error('Error al crear disponibilidad')
-      return { data: null, error }
-    }
-  }
-
-  // Cargar datos al montar
-  useEffect(() => {
-    loadAvailability()
-  }, [])
-
-
-  return {
-    availability,
-    loading,
-    error,
-    loadAvailability,
-    createAvailability,
-    // ... resto de métodos
-  }
-}
 
 // Extender el objeto db existente
-Object.assign(db, finalCleanRoomAvailabilityMethods)
 
-export { finalCleanRoomAvailabilityMethods }
 
 // =============================================
 // SUBSCRIPTIONS FOR REAL-TIME UPDATES
@@ -2138,7 +2053,23 @@ export const generateUniqueCode = (prefix = 'HTP', length = 6) => {
   return `${prefix}-${new Date().getFullYear()}-${timestamp}${random}`
 }
 
-// Export default
+Object.assign(db, {
+  // Aquí van SOLO las funciones que creamos anteriormente
+  getRoomAvailability,
+  createRoomAvailability,
+  updateRoomAvailability,
+  bulkCreateRoomAvailability,
+  getAvailabilityByBranch,
+  getAvailabilityStatsForBranch,
+  getRoomAvailabilityCalendar,
+  getAvailableRoomsForDates,
+  checkRoomAvailabilityForDates,
+  blockRoomForDates,
+  unblockRoomForDates,
+  updateRoomRatesForDates
+});
+
+// Export default (mantener el existente)
 export default {
   supabase,
   db,
@@ -2149,4 +2080,4 @@ export default {
   formatLocalDate,
   validateRequired,
   generateUniqueCode
-}
+};

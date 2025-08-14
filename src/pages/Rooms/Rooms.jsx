@@ -23,6 +23,7 @@ import EditRoomModal from '../../components/rooms/EditRoomModal';
 import RoomDetailsModal from '../../components/rooms/RoomDetailsModal';
 import CleaningManagement from '../../components/rooms/CleaningManagement';
 import Button from '../../components/common/Button';
+import { useRoomAvailabilityClean } from '../hooks/useRoomAvailabilityClean';
 
 const Rooms = () => {
   // Hook existente con sistema de 3 estados simplificados
