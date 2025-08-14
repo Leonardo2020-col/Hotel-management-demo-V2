@@ -56,7 +56,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(true)
       console.log('🔑 Intentando login con:', { email, password: '***' })
       
-      // Simulación de login exitoso
+      // Simulación de login exitoso para ADMINISTRADOR
       if (email === 'admin@hotel.com' && password === '123456') {
         const mockUser = { id: '1', email }
         const mockUserInfo = {
@@ -74,11 +74,44 @@ export const AuthProvider = ({ children }) => {
         setUserInfo(mockUserInfo)
         setSession({ user: mockUser })
         
-        toast.success('Login exitoso!')
-        console.log('✅ Login exitoso')
+        toast.success(`Bienvenido, ${mockUserInfo.first_name}!`)
+        console.log('✅ Login exitoso - Administrador')
         return { success: true, user: mockUser, userInfo: mockUserInfo }
       }
       
+      // Simulación de login exitoso para RECEPCIÓN
+      if (email === 'recepcion@hotel.com' && password === '123456') {
+        const mockUser = { id: '2', email }
+        const mockUserInfo = {
+          id: '2',
+          first_name: 'Recepción',
+          last_name: 'Hotel',
+          role: { 
+            name: 'recepcion', 
+            permissions: { 
+              checkin: true, 
+              checkout: true, 
+              reservations: true, 
+              guests: true, 
+              reports_view: true 
+            } 
+          },
+          user_branches: [{
+            branch: { id: '1', name: 'Hotel Principal' },
+            is_primary: true
+          }]
+        }
+        
+        setUser(mockUser)
+        setUserInfo(mockUserInfo)
+        setSession({ user: mockUser })
+        
+        toast.success(`Bienvenido, ${mockUserInfo.first_name}!`)
+        console.log('✅ Login exitoso - Recepción')
+        return { success: true, user: mockUser, userInfo: mockUserInfo }
+      }
+      
+      // Si no coincide ningún usuario
       throw new Error('Credenciales incorrectas')
       
     } catch (error) {
