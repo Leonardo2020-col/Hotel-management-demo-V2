@@ -1,4 +1,4 @@
-// src/pages/Rooms/Rooms.jsx - VERSIÓN FINAL INTEGRADA CON TU HOOK
+// src/pages/Rooms/Rooms.jsx - VERSIÓN CORREGIDA SIN IMPORTS INNECESARIOS
 import React, { useState, useMemo } from 'react';
 import { 
   Plus, 
@@ -23,7 +23,9 @@ import EditRoomModal from '../../components/rooms/EditRoomModal';
 import RoomDetailsModal from '../../components/rooms/RoomDetailsModal';
 import CleaningManagement from '../../components/rooms/CleaningManagement';
 import Button from '../../components/common/Button';
-import { useRoomAvailabilityClean } from '../hooks/useRoomAvailabilityClean';
+
+// REMOVIDO: import problemático que causa el error
+// import { useRoomAvailabilityClean } from '../hooks/useRoomAvailabilityClean';
 
 const Rooms = () => {
   // Hook existente con sistema de 3 estados simplificados
@@ -156,9 +158,9 @@ const Rooms = () => {
       Numero: room.number,
       Piso: room.floor,
       Estado: room.status,
-      Capacidad: room.capacity,
+      Capacidad: room.capacity || 2,
       Tarifa: room.base_rate,
-      'Ultima Limpieza': room.last_cleaned
+      'Ultima Limpieza': room.last_cleaned || 'N/A'
     }));
 
     const csvContent = [
@@ -432,7 +434,7 @@ const Rooms = () => {
             >
               Agregar Habitación
             </Button>
-          </div>
+            </div>
         </div>
       )}
     </div>
