@@ -1953,6 +1953,34 @@ async getConsumptionHistory(filters = {}) {
     }
   }
 }
+Object.assign(db, {
+  // Categorías
+  getAllCategories,
+  createSupplyCategory,
+  
+  // Proveedores  
+  getAllSupplierNames,
+  createSupplier,
+  
+  // Inventario unificado
+  getAllInventoryItems,
+  
+  // Supplies
+  createSupply,
+  updateSupply, 
+  deleteSupply,
+  
+  // Snacks
+  createSnackItem,
+  updateSnackItem,
+  deleteSnackItem,
+  
+  // Movimientos
+  recordSupplyConsumption,
+  getConsumptionHistory
+});
+
+
 
 // =============================================
 // SUBSCRIPTIONS FOR REAL-TIME UPDATES
@@ -2088,32 +2116,7 @@ export const generateUniqueCode = (prefix = 'HTP', length = 6) => {
   return `${prefix}-${new Date().getFullYear()}-${timestamp}${random}`
 }
 
-Object.assign(db, {
-  // Categorías
-  getAllCategories,
-  createSupplyCategory,
-  
-  // Proveedores  
-  getAllSupplierNames,
-  createSupplier,
-  
-  // Inventario unificado
-  getAllInventoryItems,
-  
-  // Supplies
-  createSupply,
-  updateSupply, 
-  deleteSupply,
-  
-  // Snacks
-  createSnackItem,
-  updateSnackItem,
-  deleteSnackItem,
-  
-  // Movimientos
-  recordSupplyConsumption,
-  getConsumptionHistory
-});
+
 
 // Export default (mantener el existente)
 export default {
