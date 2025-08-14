@@ -103,7 +103,7 @@ export const authService = {
   }
 }
 
-// src/contexts/AuthContext.js
+// src/context/AuthContext.js
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { authService, supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
