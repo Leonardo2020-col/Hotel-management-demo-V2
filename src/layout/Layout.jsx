@@ -44,7 +44,7 @@ const Layout = ({ children }) => {
       href: '/checkin',
       icon: ClipboardCheck,
       current: location.pathname === '/checkin',
-      badge: 3 // Ejemplo de badge
+      badge: 3
     },
     {
       name: 'Reservaciones',
@@ -70,7 +70,7 @@ const Layout = ({ children }) => {
       href: '/supplies',
       icon: Package,
       current: location.pathname === '/supplies',
-      alert: true // Indicador de alerta
+      alert: true
     },
     {
       name: 'Reportes',
@@ -80,7 +80,7 @@ const Layout = ({ children }) => {
     }
   ]
 
-  // Menú de administrador (solo visible para admins)
+  // Menú de administrador
   const adminNavigation = [
     {
       name: 'Panel de Admin',
@@ -105,7 +105,7 @@ const Layout = ({ children }) => {
 
   const handleNavigation = (href) => {
     navigate(href)
-    setSidebarOpen(false) // Cerrar sidebar en móvil
+    setSidebarOpen(false)
   }
 
   return (
@@ -161,7 +161,7 @@ const Layout = ({ children }) => {
           </button>
 
           <div className="flex-1 px-4 flex justify-between">
-            {/* Barra de búsqueda (opcional) */}
+            {/* Barra de búsqueda */}
             <div className="flex-1 flex">
               <div className="w-full flex md:ml-0">
                 <div className="relative w-full text-gray-400 focus-within:text-gray-600">

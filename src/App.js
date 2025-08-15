@@ -10,7 +10,7 @@ import { AuthProvider } from './context/AuthContext'
 // Components
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx'
 import ErrorFallback from './components/common/ErrorFallback.jsx'
-import Layout from './components/layout/Layout.jsx'
+import Layout from './layout/Layout.jsx'
 
 // Pages
 import LoginPage from './pages/Login.jsx'
