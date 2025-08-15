@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN CON DEBUG
+// src/App.js - CON DEBUG PARA VERIFICAR LAYOUT
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
@@ -20,46 +20,8 @@ import CheckIn from './pages/CheckIn.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 
-// Componente de debug para verificar que todo se carga
-const AppDebug = () => {
-  console.log('🚀 App component rendering...')
-  
-  return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">
-          Sistema de Hotel Cargando...
-        </h1>
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-      </div>
-    </div>
-  )
-}
-
 function App() {
-  console.log('🏗️ App function starting...')
-
-  // Verificar que las variables de entorno están configuradas
-  if (!process.env.REACT_APP_SUPABASE_URL) {
-    console.error('❌ REACT_APP_SUPABASE_URL no está configurada')
-    return (
-      <div className="min-h-screen bg-red-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-900 mb-4">
-            Error de Configuración
-          </h1>
-          <p className="text-red-700">
-            Variables de entorno de Supabase no configuradas
-          </p>
-          <p className="text-sm text-red-600 mt-2">
-            Verifica tu archivo .env
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  console.log('✅ Variables de entorno OK')
+  console.log('🚀 App rendering...')
 
   return (
     <ErrorBoundary 
@@ -72,8 +34,6 @@ function App() {
       <Router>
         <AuthProvider>
           <div className="App">
-            {console.log('🛣️ Configurando rutas...')}
-            
             <Routes>
               {/* Ruta raíz */}
               <Route 
@@ -81,55 +41,134 @@ function App() {
                 element={<Navigate to="/dashboard" replace />} 
               />
               
-              {/* Login */}
+              {/* Login SIN Layout */}
               <Route 
                 path="/login" 
                 element={<LoginPage />} 
               />
               
-              {/* Dashboard */}
+              {/* Dashboard CON Layout */}
               <Route
                 path="/dashboard"
                 element={
                   <ProtectedRoute requireReception>
-                    <Dashboard />
+                    <Layout>
+                      <Dashboard />
+                    </Layout>
                   </ProtectedRoute>
                 }
               />
               
-              {/* Admin Panel */}
+              {/* Panel de administrador CON Layout */}
               <Route
                 path="/admin"
                 element={
                   <ProtectedRoute requireAdmin>
-                    <AdminPanel />
+                    <Layout>
+                      <AdminPanel />
+                    </Layout>
                   </ProtectedRoute>
                 }
               />
               
-              {/* Páginas del hotel */}
+              {/* Check-in CON Layout */}
               <Route
                 path="/checkin"
                 element={
                   <ProtectedRoute requireReception>
-                    <CheckIn />
+                    <Layout>
+                      <CheckIn />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Resto de páginas CON Layout */}
+              <Route
+                path="/reservations"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <div className="p-6">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reservaciones</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </Layout>
                   </ProtectedRoute>
                 }
               />
               
               <Route
-                path="/reservations"
+                path="/guests"
                 element={
-                  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                    <div className="text-center">
-                      <h1 className="text-2xl font-bold text-gray-900 mb-4">Reservaciones</h1>
-                      <p className="text-gray-600">Página en desarrollo</p>
-                    </div>
-                  </div>
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <div className="p-6">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Huéspedes</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </Layout>
+                  </ProtectedRoute>
                 }
               />
               
-              {/* Páginas de error */}
+              <Route
+                path="/rooms"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <div className="p-6">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Habitaciones</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/supplies"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <div className="p-6">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Suministros</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/reports"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <div className="p-6">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reportes</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Layout>
+                      <div className="p-6">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Configuración</h1>
+                        <p className="text-gray-600">Página en desarrollo</p>
+                      </div>
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Páginas de error SIN Layout */}
               <Route path="/unauthorized" element={<Unauthorized />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
@@ -162,8 +201,6 @@ function App() {
                 },
               }}
             />
-            
-            {console.log('✅ App configurada correctamente')}
           </div>
         </AuthProvider>
       </Router>
