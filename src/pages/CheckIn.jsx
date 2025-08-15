@@ -50,7 +50,7 @@ const checkinSchema = yup.object().shape({
 const CheckIn = () => {
   const { userInfo, getPrimaryBranch } = useAuth()
   const navigate = useNavigate()
-  const [step, setStep] = useState(1) // 1: Buscar/Nuevo Huésped, 2: Habitaciones, 3: Detalles, 4: Pago
+  const [step, setStep] = useState(1)
   const [selectedGuest, setSelectedGuest] = useState(null)
   const [isNewGuest, setIsNewGuest] = useState(true)
   const [availableRooms, setAvailableRooms] = useState([])
@@ -208,46 +208,44 @@ const CheckIn = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
-            <div className="flex items-center">
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="mr-4 p-2 text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Check-in Rápido</h1>
-                <p className="text-sm text-gray-600">
-                  Registro de huéspedes - Paso {step} de 4
-                </p>
-              </div>
-            </div>
-            
-            {/* Indicador de progreso */}
-            <div className="flex items-center space-x-2">
-              {[1, 2, 3, 4].map((stepNumber) => (
-                <div
-                  key={stepNumber}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                    stepNumber <= step
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}
-                >
-                  {stepNumber}
-                </div>
-              ))}
+    <div className="p-6">
+      {/* Header de página */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="mr-4 p-2 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Check-in Rápido</h1>
+              <p className="text-sm text-gray-600">
+                Registro de huéspedes - Paso {step} de 4
+              </p>
             </div>
           </div>
+          
+          {/* Indicador de progreso */}
+          <div className="flex items-center space-x-2">
+            {[1, 2, 3, 4].map((stepNumber) => (
+              <div
+                key={stepNumber}
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                  stepNumber <= step
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-600'
+                }`}
+              >
+                {stepNumber}
+              </div>
+            ))}
+          </div>
         </div>
-      </header>
+      </div>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-4xl mx-auto">{/* Resto del contenido igual */}
         {/* Paso 1: Buscar o crear huésped */}
         {step === 1 && (
           <div className="bg-white rounded-lg shadow p-6">
