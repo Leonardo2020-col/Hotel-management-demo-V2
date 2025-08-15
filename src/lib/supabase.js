@@ -694,21 +694,34 @@ export const hotelService = {
   // ✅ Obtener todos los datos necesarios para el dashboard de check-in
   async getCheckinDashboardData(branchId) {
     try {
+      console.log('🔄 Getting dashboard data for branch:', branchId)
+      
+      // Validar que branchId sea un UUID válido
+      if (!branchId || typeof branchId !== 'string') {
+        throw new Error('Branch ID inválido')
+      }
+
       const [
         roomsResult,
         quickCheckinsResult,
-        reservationCheckinsResult,
         snackCategoriesResult,
         snackItemsResult,
         paymentMethodsResult
       ] = await Promise.all([
         roomService.getRoomsWithStatus(branchId),
         quickCheckinService.getActiveQuickCheckins(branchId),
-        quickCheckinService.getActiveReservationCheckins([]), // Se filtrarán después
         snackService.getSnackCategories(),
         snackService.getSnackItems(),
         paymentService.getPaymentMethods()
       ])
+
+      console.log('📊 Results received:', {
+        rooms: roomsResult.data?.length || 0,
+        quickCheckins: quickCheckinsResult.data?.length || 0,
+        snackCategories: snackCategoriesResult.data?.length || 0,
+        snackItems: snackItemsResult.data?.length || 0,
+        paymentMethods: paymentMethodsResult.data?.length || 0
+      })
 
       // Si hay habitaciones, obtener check-ins de reservaciones
       let reservationCheckins = []
@@ -716,6 +729,12 @@ export const hotelService = {
         const roomIds = roomsResult.data.map(r => r.id)
         const reservationResult = await quickCheckinService.getActiveReservationCheckins(roomIds)
         reservationCheckins = reservationResult.data || []
+      }
+
+      // Verificar si hay errores críticos
+      if (roomsResult.error) {
+        console.error('❌ Error fetching rooms:', roomsResult.error)
+        throw new Error(`Error al cargar habitaciones: ${roomsResult.error.message}`)
       }
 
       return {
@@ -728,7 +747,7 @@ export const hotelService = {
         error: null
       }
     } catch (error) {
-      console.error('Error fetching checkin dashboard data:', error)
+      console.error('❌ Error fetching checkin dashboard data:', error)
       return {
         rooms: [],
         quickCheckins: [],

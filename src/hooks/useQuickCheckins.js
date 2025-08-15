@@ -26,6 +26,16 @@ export const useQuickCheckins = () => {
 
   const currentBranch = getPrimaryBranch()
   const currentBranchId = currentBranch?.id
+
+  console.log('🏢 Current branch info:', {
+    currentBranch,
+    currentBranchId,
+    userInfo: userInfo ? {
+      id: userInfo.id,
+      name: userInfo.first_name,
+      branches: userInfo.user_branches?.length || 0
+    } : 'No user info'
+  })
   const realtimeChannelRef = useRef(null)
 
   // ✅ FUNCIÓN PRINCIPAL PARA OBTENER DATOS DEL DASHBOARD
@@ -46,6 +56,8 @@ export const useQuickCheckins = () => {
       if (dashboardData.error) {
         throw dashboardData.error
       }
+
+      console.log('📊 Dashboard data received:', dashboardData)
 
       // 📊 Procesar datos de habitaciones por piso
       const roomsGrouped = {}
@@ -144,7 +156,11 @@ export const useQuickCheckins = () => {
       setSnackItems(dashboardData.snackItems)
       setPaymentMethods(dashboardData.paymentMethods)
 
-      console.log('✅ Dashboard data loaded successfully')
+      console.log('✅ Dashboard data loaded successfully:', {
+        floors: Object.keys(roomsGrouped),
+        totalRooms: Object.values(roomsGrouped).flat().length,
+        activeCheckins: Object.keys(activeCheckinsMap).length
+      })
 
     } catch (error) {
       console.error('❌ Error fetching dashboard data:', error)
@@ -188,10 +204,29 @@ export const useQuickCheckins = () => {
 
   // ✅ EFECTO INICIAL
   useEffect(() => {
-    if (currentBranchId) {
+    console.log('🚀 Hook effect triggered:', {
+      currentBranchId,
+      userInfo: !!userInfo,
+      isValidUUID: currentBranchId ? /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(currentBranchId) : false
+    })
+    
+    if (currentBranchId && userInfo) {
+      // Validar que sea un UUID válido antes de hacer consultas
+      const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(currentBranchId)
+      
+      if (!isValidUUID) {
+        console.error('❌ Invalid branch UUID:', currentBranchId)
+        setError('ID de sucursal inválido')
+        setLoading(false)
+        return
+      }
+      
       refreshData()
+    } else {
+      console.warn('⚠️ Missing required data:', { currentBranchId: !!currentBranchId, userInfo: !!userInfo })
+      setLoading(false)
     }
-  }, [currentBranchId, refreshData])
+  }, [currentBranchId, userInfo, refreshData])
 
   // =====================================================
   // 🚀 FUNCIONES DE QUICK CHECK-IN OPTIMIZADAS
