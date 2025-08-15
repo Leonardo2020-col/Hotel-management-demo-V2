@@ -1,460 +1,509 @@
-// src/hooks/useQuickCheckins.js - Hook separado para check-ins rápidos
-import { useState, useEffect } from 'react'
-import { db } from '../lib/supabase'
+// src/hooks/useQuickCheckins.js
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { 
+  hotelService, 
+  roomService, 
+  quickCheckinService, 
+  snackService, 
+  paymentService,
+  guestService,
+  utilityService,
+  realtimeService
+} from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 
 export const useQuickCheckins = () => {
+  const { userInfo, getPrimaryBranch } = useAuth()
   const [roomsByFloor, setRoomsByFloor] = useState({})
-  const [activeCheckins, setActiveCheckins] = useState({}) // Por número de habitación
-  const [snackItems, setSnackItems] = useState({})
+  const [activeCheckins, setActiveCheckins] = useState({})
+  const [snackTypes, setSnackTypes] = useState([])
+  const [snackItems, setSnackItems] = useState([])
+  const [roomPrices, setRoomPrices] = useState({})
+  const [paymentMethods, setPaymentMethods] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // Tipos de snacks 
-  const snackTypes = [
-    { id: 'FRUTAS', name: 'FRUTAS', description: 'Frutas frescas y naturales' },
-    { id: 'BEBIDAS', name: 'BEBIDAS', description: 'Bebidas frías y calientes' },
-    { id: 'SNACKS', name: 'SNACKS', description: 'Bocadillos y aperitivos' },
-    { id: 'POSTRES', name: 'POSTRES', description: 'Dulces y postres' }
-  ]
+  const currentBranch = getPrimaryBranch()
+  const currentBranchId = currentBranch?.id
+  const realtimeChannelRef = useRef(null)
 
-  // Precios de habitaciones por piso 
-  const roomPrices = {
-    1: 80.00,
-    2: 95.00,
-    3: 110.00,
-    4: 120.00
-  }
-
-  // Cargar datos iniciales
-  useEffect(() => {
-    loadInitialData()
-  }, [])
-
-  const loadInitialData = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      
-      console.log('🔄 Loading quick check-in data...')
-      
-      // 1. Cargar habitaciones con check-ins activos
-      await loadRoomsWithQuickCheckins()
-      
-      // 2. Cargar snacks
-      const { data: snacksData } = await db.getSnackItems()
-      setSnackItems(snacksData || {})
-      
-      console.log('✅ Quick check-in data loaded successfully!')
-      
-    } catch (err) {
-      console.error('❌ Error loading quick check-in data:', err)
-      setError(err.message || 'Error al cargar datos del panel de recepción')
-      toast.error('Error al cargar datos del panel de recepción')
-    } finally {
+  // ✅ FUNCIÓN PRINCIPAL PARA OBTENER DATOS DEL DASHBOARD
+  const fetchDashboardData = useCallback(async () => {
+    if (!currentBranchId) {
+      setError('No se encontró sucursal activa')
       setLoading(false)
+      return
     }
-  }
 
-  // Cargar habitaciones con información de check-ins rápidos activos
-  const loadRoomsWithQuickCheckins = async () => {
     try {
-      // Obtener habitaciones
-      const { data: rooms, error: roomsError } = await db.getRooms()
+      setError(null)
+      console.log('🔄 Fetching dashboard data for branch:', currentBranchId)
       
-      if (roomsError) {
-        console.warn('Error getting rooms:', roomsError)
-        return generateMockRooms()
+      // 🎯 Usar servicio optimizado para obtener todos los datos
+      const dashboardData = await hotelService.getCheckinDashboardData(currentBranchId)
+      
+      if (dashboardData.error) {
+        throw dashboardData.error
       }
-      
-      // Obtener check-ins rápidos activos
-      const { data: activeQuickCheckins } = await db.getActiveQuickCheckins()
-      
-      // Agrupar habitaciones por piso
-      const roomsByFloor = {}
+
+      // 📊 Procesar datos de habitaciones por piso
+      const roomsGrouped = {}
+      const prices = {}
       const activeCheckinsMap = {}
-      
-      // Crear mapa de check-ins activos por habitación
-      if (activeQuickCheckins) {
-        activeQuickCheckins.forEach(checkin => {
-          activeCheckinsMap[checkin.room_number] = checkin
-        })
-      }
-      
-      rooms?.forEach(room => {
-        const floor = room.floor || Math.floor(parseInt(room.number) / 100) || 1
+
+      dashboardData.rooms?.forEach(room => {
+        const floor = room.floor || Math.floor(parseInt(room.room_number) / 100)
         
-        if (!roomsByFloor[floor]) {
-          roomsByFloor[floor] = []
+        if (!roomsGrouped[floor]) {
+          roomsGrouped[floor] = []
         }
-        
-        const activeCheckin = activeCheckinsMap[room.number]
-        
-        // Formatear habitación con información de check-in rápido
-        const formattedRoom = {
-          id: room.id,
-          number: room.number,
-          floor: floor,
-          capacity: room.capacity || 2,
-          rate: room.base_rate || roomPrices[floor] || 100,
-          
-          // Estado basado en check-ins rápidos (NO reservaciones)
-          status: activeCheckin ? 'occupied' : (room.status || 'available'),
-          cleaning_status: room.cleaning_status || 'clean',
-          
-          // Información del check-in rápido actual
-          quickCheckin: activeCheckin || null,
-          guestName: activeCheckin?.guest_name || null,
-          checkInDate: activeCheckin?.check_in_date || null,
-          checkOutDate: activeCheckin?.check_out_date || null,
-          confirmationCode: activeCheckin?.confirmation_code || null,
-          
-          // NO incluir información de reservaciones
-          // ❌ activeReservation: null,
-          // ❌ nextReservation: null,
-          // ❌ reservationId: null
-        }
-        
-        roomsByFloor[floor].push(formattedRoom)
-      })
-      
-      // Ordenar habitaciones por número
-      Object.keys(roomsByFloor).forEach(floor => {
-        roomsByFloor[floor].sort((a, b) => {
-          const numA = parseInt(a.number) || 0
-          const numB = parseInt(b.number) || 0
-          return numA - numB
-        })
-      })
-      
-      setRoomsByFloor(roomsByFloor)
-      setActiveCheckins(activeCheckinsMap)
-      
-      console.log('📋 Rooms with quick check-ins loaded:', {
-        floors: Object.keys(roomsByFloor).length,
-        totalRooms: Object.values(roomsByFloor).flat().length,
-        activeCheckins: Object.keys(activeCheckinsMap).length
-      })
-      
-    } catch (error) {
-      console.error('❌ Error loading rooms with quick check-ins:', error)
-      setRoomsByFloor(generateMockRooms())
-    }
-  }
 
-  // Procesar check-in rápido (SIN crear reservación)
-  const processQuickCheckIn = async (roomData, guestData, snacks = []) => {
-    try {
-      console.log('🏨 Processing quick check-in (NO reservation):', {
-        room: roomData.number,
-        guest: guestData.fullName,
-        snacksCount: snacks.length
-      })
-      
-      // Validación mínima
-      if (!guestData.fullName?.trim()) {
-        throw new Error('El nombre completo es obligatorio')
-      }
-      
-      if (!guestData.documentNumber?.trim()) {
-        throw new Error('El documento de identidad es obligatorio')
-      }
-      
-      const room = roomData.room || roomData
-      const floor = Math.floor(parseInt(room.number) / 100)
-      const roomPrice = roomPrices[floor] || 100
-      const snacksTotal = snacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-      const totalAmount = roomPrice + snacksTotal
+        // 🎯 Determinar estado real de la habitación
+        let roomStatus = room.room_status?.status || 'disponible'
+        let cleaning_status = 'clean'
+        let quickCheckin = null
 
-      // 1. Crear check-in rápido (NO reservación)
-      const quickCheckinData = {
-        guest_name: guestData.fullName.trim(),
-        document_type: guestData.documentType || 'DNI',
-        document_number: guestData.documentNumber.trim(),
-        phone: guestData.phone?.trim() || null,
-        email: guestData.email?.trim() || null,
-        
-        room_id: room.id || room.room_id,
-        room_number: room.number,
-        floor: floor,
-        
-        check_in_date: new Date().toISOString().split('T')[0],
-        check_out_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        nights: 1,
-        
-        room_rate: roomPrice,
-        snacks_total: snacksTotal,
-        total_amount: totalAmount,
-        payment_method: 'cash',
-        payment_status: 'pending',
-        
-        snacks_consumed: snacks || [],
-        special_notes: snacks.length > 0 ? `Snacks: ${snacks.map(s => `${s.name} x${s.quantity}`).join(', ')}` : null,
-        
-        status: 'checked_in',
-        source: 'walk_in',
-        branch_id: 1
-      }
-
-      console.log('📝 Creating quick check-in record:', quickCheckinData)
-
-      const { data: quickCheckin, error: checkinError } = await db.createQuickCheckin(quickCheckinData)
-      
-      if (checkinError) {
-        console.error('❌ Error creating quick check-in:', checkinError)
-        throw new Error(`Error al crear check-in: ${checkinError.message}`)
-      }
-
-      console.log('✅ Quick check-in created successfully:', quickCheckin.id)
-
-      // 2. Actualizar estado de la habitación
-      const { error: roomError } = await db.updateRoomStatus(
-        room.id || room.room_id, 
-        'occupied', 
-        'dirty'
-      )
-      
-      if (roomError) {
-        console.warn('⚠️ Warning updating room status:', roomError)
-      }
-
-      // 3. Actualizar estado local
-      const newQuickCheckin = {
-        ...quickCheckin,
-        room: { 
-          id: room.id || room.room_id,
-          number: room.number, 
-          status: 'occupied',
-          floor: floor,
-        },
-        roomPrice,
-        snacks,
-        total: totalAmount,
-        guestName: guestData.fullName,
-        isQuickCheckin: true // Flag para distinguir de reservaciones
-      }
-
-      setActiveCheckins(prev => ({
-        ...prev,
-        [room.number]: newQuickCheckin
-      }))
-
-      // Actualizar roomsByFloor localmente
-      setRoomsByFloor(prev => {
-        const updated = { ...prev }
-        Object.keys(updated).forEach(floor => {
-          if (Array.isArray(updated[floor])) {
-            updated[floor] = updated[floor].map(r => 
-              r.number === room.number 
-                ? { 
-                    ...r, 
-                    status: 'occupied', 
-                    cleaning_status: 'dirty',
-                    quickCheckin: newQuickCheckin,
-                    guestName: guestData.fullName,
-                    checkInDate: quickCheckinData.check_in_date,
-                    confirmationCode: quickCheckin.confirmation_code
-                  }
-                : r
-            )
+        // Buscar quick check-in activo para esta habitación
+        const activeQuickCheckin = dashboardData.quickCheckins?.find(qc => qc.room_id === room.id)
+        if (activeQuickCheckin) {
+          roomStatus = 'occupied'
+          quickCheckin = {
+            id: activeQuickCheckin.id,
+            guest_name: activeQuickCheckin.guest_name,
+            guest_document: activeQuickCheckin.guest_document,
+            guest_phone: activeQuickCheckin.guest_phone,
+            check_in_date: activeQuickCheckin.check_in_date,
+            check_out_date: activeQuickCheckin.check_out_date,
+            total_amount: activeQuickCheckin.amount,
+            room_rate: room.base_price,
+            payment_method: activeQuickCheckin.payment_method?.name,
+            confirmation_code: utilityService.generateConfirmationCode('QC'),
+            snacks_consumed: [],
+            document_type: activeQuickCheckin.guest_document?.split(':')[0] || 'DNI',
+            document_number: activeQuickCheckin.guest_document?.split(':')[1] || '',
+            phone: activeQuickCheckin.guest_phone
           }
-        })
-        return updated
+        }
+
+        // Buscar check-in de reservación activo
+        const activeReservationCheckin = dashboardData.reservationCheckins?.find(rc => rc.room_id === room.id)
+        if (activeReservationCheckin && !quickCheckin) {
+          roomStatus = 'occupied'
+          quickCheckin = {
+            id: activeReservationCheckin.id,
+            guest_name: activeReservationCheckin.reservation?.guest?.full_name,
+            guest_document: activeReservationCheckin.reservation?.guest?.document_number,
+            guest_phone: activeReservationCheckin.reservation?.guest?.phone,
+            check_in_date: activeReservationCheckin.check_in_time?.split('T')[0],
+            check_out_date: activeReservationCheckin.expected_checkout,
+            total_amount: activeReservationCheckin.reservation?.total_amount,
+            room_rate: room.base_price,
+            confirmation_code: activeReservationCheckin.reservation?.reservation_code,
+            snacks_consumed: [],
+            isFromReservation: true,
+            document_type: activeReservationCheckin.reservation?.guest?.document_type || 'DNI',
+            document_number: activeReservationCheckin.reservation?.guest?.document_number || '',
+            phone: activeReservationCheckin.reservation?.guest?.phone
+          }
+        }
+
+        // Determinar si necesita limpieza
+        if (roomStatus !== 'occupied' && roomStatus !== 'disponible') {
+          cleaning_status = 'dirty'
+        }
+
+        const processedRoom = {
+          id: room.id,
+          room_id: room.id,
+          number: room.room_number,
+          floor: floor,
+          base_price: room.base_price,
+          description: room.description,
+          status: roomStatus,
+          cleaning_status: cleaning_status,
+          quickCheckin: quickCheckin,
+          available: roomStatus === 'disponible' && cleaning_status === 'clean',
+          status_color: room.room_status?.color || '#22c55e'
+        }
+
+        roomsGrouped[floor].push(processedRoom)
+        prices[floor] = room.base_price
+
+        // Agregar a active checkins si existe
+        if (quickCheckin) {
+          activeCheckinsMap[room.room_number] = quickCheckin
+        }
       })
 
-      toast.success(`¡Check-in rápido completado! ${guestData.fullName} en habitación ${room.number}`, {
-        icon: '🎉',
-        duration: 4000
-      })
-      
-      return { data: newQuickCheckin, error: null }
+      // Actualizar estados
+      setRoomsByFloor(roomsGrouped)
+      setRoomPrices(prices)
+      setActiveCheckins(activeCheckinsMap)
+      setSnackTypes(dashboardData.snackCategories)
+      setSnackItems(dashboardData.snackItems)
+      setPaymentMethods(dashboardData.paymentMethods)
+
+      console.log('✅ Dashboard data loaded successfully')
 
     } catch (error) {
-      console.error('❌ Error in quick check-in:', error)
-      toast.error(`Error al procesar check-in: ${error.message}`)
+      console.error('❌ Error fetching dashboard data:', error)
+      setError(error.message)
+      toast.error('Error al cargar datos del dashboard')
+    }
+  }, [currentBranchId])
+
+  // ✅ FUNCIÓN DE REFRESH OPTIMIZADA
+  const refreshData = useCallback(async () => {
+    setLoading(true)
+    await fetchDashboardData()
+    setLoading(false)
+  }, [fetchDashboardData])
+
+  // ✅ CONFIGURAR ACTUALIZACIONES EN TIEMPO REAL
+  useEffect(() => {
+    if (!currentBranchId) return
+
+    // Cleanup anterior
+    if (realtimeChannelRef.current) {
+      realtimeChannelRef.current.unsubscribe()
+    }
+
+    // Configurar nueva suscripción
+    realtimeChannelRef.current = realtimeService.subscribeToRoomChanges(
+      currentBranchId,
+      (payload) => {
+        console.log('🔄 Real-time update received:', payload)
+        // Refrescar datos cuando hay cambios
+        fetchDashboardData()
+      }
+    )
+
+    return () => {
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.unsubscribe()
+      }
+    }
+  }, [currentBranchId, fetchDashboardData])
+
+  // ✅ EFECTO INICIAL
+  useEffect(() => {
+    if (currentBranchId) {
+      refreshData()
+    }
+  }, [currentBranchId, refreshData])
+
+  // =====================================================
+  // 🚀 FUNCIONES DE QUICK CHECK-IN OPTIMIZADAS
+  // =====================================================
+
+  // ✅ PROCESAR QUICK CHECK-IN (WALK-IN)
+  const processQuickCheckIn = useCallback(async (orderData, guestData, selectedSnacks = []) => {
+    if (!currentBranchId || !userInfo?.id) {
+      throw new Error('Información de usuario o sucursal faltante')
+    }
+
+    try {
+      console.log('🔄 Processing quick check-in:', { orderData, guestData, selectedSnacks })
+
+      // 1️⃣ Validar datos del huésped
+      const validation = utilityService.validateGuestData(guestData)
+      if (!validation.isValid) {
+        throw new Error(validation.errors.join(', '))
+      }
+
+      // 2️⃣ Obtener método de pago
+      const { data: paymentMethod } = await paymentService.getPaymentMethodByName('efectivo')
+      const paymentMethodId = paymentMethod?.id || paymentMethods[0]?.id
+
+      // 3️⃣ Calcular total con snacks
+      const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
+      const totalAmount = (orderData.roomPrice || 0) + snacksTotal
+
+      // 4️⃣ Preparar datos para el servicio
+      const quickCheckinData = {
+        branchId: currentBranchId,
+        roomId: orderData.room.id,
+        checkInDate: orderData.checkInDate || new Date().toISOString().split('T')[0],
+        checkOutDate: orderData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        totalAmount: totalAmount,
+        paymentMethodId: paymentMethodId,
+        createdBy: userInfo.id
+      }
+
+      // 5️⃣ Crear quick check-in usando el servicio optimizado
+      const result = await quickCheckinService.createQuickCheckin(
+        quickCheckinData, 
+        guestData, 
+        selectedSnacks
+      )
+
+      if (result.error) {
+        throw result.error
+      }
+
+      // 6️⃣ Actualizar estado de habitación a ocupada
+      await roomService.updateRoomStatus(orderData.room.id, 'ocupada')
+
+      // 7️⃣ Procesar consumo de snacks si existen
+      if (selectedSnacks.length > 0) {
+        const snacksWithStock = selectedSnacks.map(snack => ({
+          ...snack,
+          currentStock: snackItems.find(item => item.id === snack.id)?.stock || 0
+        }))
+
+        await snackService.processSnackConsumption(snacksWithStock)
+      }
+
+      // 8️⃣ Refrescar datos
+      await fetchDashboardData()
+
+      return { 
+        data: { 
+          ...result.data,
+          totalAmount,
+          confirmationCode: utilityService.generateConfirmationCode('QC'),
+          snacksIncluded: selectedSnacks.length > 0
+        }, 
+        error: null 
+      }
+
+    } catch (error) {
+      console.error('❌ Error in processQuickCheckIn:', error)
       return { data: null, error }
     }
-  }
+  }, [currentBranchId, userInfo, paymentMethods, snackItems, fetchDashboardData])
 
-  // Procesar check-out rápido
-  const processQuickCheckOut = async (roomNumber, paymentMethod) => {
+  // ✅ PROCESAR QUICK CHECK-OUT
+  const processQuickCheckOut = useCallback(async (roomNumber, paymentMethod = 'efectivo') => {
+    if (!currentBranchId || !userInfo?.id) {
+      throw new Error('Información de usuario o sucursal faltante')
+    }
+
     try {
       console.log('🚪 Processing quick check-out for room:', roomNumber)
-      
+
+      // 1️⃣ Buscar el check-in activo en el estado local
       const activeCheckin = activeCheckins[roomNumber]
       if (!activeCheckin) {
         throw new Error(`No se encontró check-in activo para la habitación ${roomNumber}`)
       }
 
-      // Actualizar check-in a checked_out
-      const { error: updateError } = await db.updateQuickCheckin(activeCheckin.id, {
-        status: 'checked_out',
-        checked_out_at: new Date().toISOString(),
-        payment_status: 'paid',
-        payment_method: paymentMethod || 'cash'
-      })
-
-      if (updateError) {
-        throw new Error(`Error al actualizar check-in: ${updateError.message}`)
+      // 2️⃣ Procesar check-out usando el servicio optimizado
+      const checkoutData = {
+        totalCharges: activeCheckin.total_amount,
+        additionalCharges: [], // Se puede expandir para servicios adicionales
+        processedBy: userInfo.id
       }
 
-      // Actualizar habitación
-      const roomId = activeCheckin.room?.id || activeCheckin.room_id
-      if (roomId) {
-        await db.updateRoomStatus(roomId, 'available', 'dirty')
+      const result = await quickCheckinService.processQuickCheckout(
+        activeCheckin.id, 
+        checkoutData
+      )
+
+      if (result.error) {
+        throw result.error
       }
 
-      // Remover de check-ins activos
-      setActiveCheckins(prev => {
-        const newCheckins = { ...prev }
-        delete newCheckins[roomNumber]
-        return newCheckins
-      })
+      // 3️⃣ Encontrar la habitación y cambiar estado a limpieza
+      const room = Object.values(roomsByFloor)
+        .flat()
+        .find(r => r.number === roomNumber)
 
-      // Actualizar roomsByFloor
-      setRoomsByFloor(prev => {
-        const updated = { ...prev }
-        Object.keys(updated).forEach(floor => {
-          if (Array.isArray(updated[floor])) {
-            updated[floor] = updated[floor].map(r => 
-              r.number === roomNumber 
-                ? { 
-                    ...r, 
-                    status: 'available',
-                    cleaning_status: 'dirty',
-                    quickCheckin: null,
-                    guestName: null,
-                    checkInDate: null,
-                    confirmationCode: null
-                  }
-                : r
-            )
-          }
-        })
-        return updated
-      })
+      if (room) {
+        await roomService.updateRoomStatus(room.id, 'limpieza')
+      }
 
-      toast.success(`Check-out completado para habitación ${roomNumber}. La habitación necesita limpieza.`, {
-        icon: '🚪',
-        duration: 4000
-      })
-      
-      return { data: true, error: null }
+      // 4️⃣ Refrescar datos
+      await fetchDashboardData()
+
+      return { 
+        data: { 
+          ...result.data,
+          totalAmount: activeCheckin.total_amount,
+          roomNumber: roomNumber,
+          guestName: activeCheckin.guest_name
+        }, 
+        error: null 
+      }
 
     } catch (error) {
-      console.error('❌ Error processing quick check-out:', error)
-      toast.error(`Error al procesar check-out: ${error.message}`)
+      console.error('❌ Error in processQuickCheckOut:', error)
       return { data: null, error }
     }
-  }
+  }, [currentBranchId, userInfo, activeCheckins, roomsByFloor, fetchDashboardData])
 
-  // Limpiar habitación
-  const cleanRoom = async (roomId) => {
+  // ✅ LIMPIAR HABITACIÓN
+  const cleanRoom = useCallback(async (roomId) => {
+    if (!userInfo?.id) {
+      throw new Error('Información de usuario faltante')
+    }
+
     try {
-      const { data, error } = await db.updateRoomStatus(roomId, 'available', 'clean')
-      
-      if (error) {
-        throw new Error(`Error updating room status: ${error.message}`)
+      console.log('🧹 Cleaning room:', roomId)
+
+      // Usar servicio optimizado para cambiar estado
+      const result = await roomService.updateRoomStatus(roomId, 'disponible')
+
+      if (result.error) {
+        throw result.error
       }
-      
-      // Actualizar estado local
-      setRoomsByFloor(prev => {
-        const updated = { ...prev }
-        Object.keys(updated).forEach(floor => {
-          if (Array.isArray(updated[floor])) {
-            updated[floor] = updated[floor].map(room => 
-              room.id === roomId || room.room_id === roomId
-                ? { 
-                    ...room, 
-                    status: 'available', 
-                    cleaning_status: 'clean',
-                    last_cleaned: new Date().toISOString()
-                  }
-                : room
-            )
-          }
-        })
-        return updated
-      })
-      
-      let roomNumber = 'desconocida'
-      Object.values(roomsByFloor).flat().forEach(room => {
-        if ((room.id === roomId || room.room_id === roomId)) {
-          roomNumber = room.number
-        }
-      })
-      
-      toast.success(`Habitación ${roomNumber} marcada como limpia y disponible`, {
-        icon: '✨',
-        duration: 3000
-      })
-      
-      return { data, error: null }
-      
+
+      // Refrescar datos
+      await fetchDashboardData()
+
+      return { 
+        data: { room: result.data }, 
+        error: null 
+      }
+
     } catch (error) {
-      console.error('❌ Error cleaning room:', error)
-      toast.error(`Error al limpiar habitación: ${error.message}`)
+      console.error('❌ Error in cleanRoom:', error)
       return { data: null, error }
     }
-  }
+  }, [userInfo, fetchDashboardData])
 
-  // Obtener historial de check-ins
-  const getQuickCheckinHistory = async (filters = {}) => {
+  // =====================================================
+  // 👥 FUNCIONES DE BÚSQUEDA DE HUÉSPEDES
+  // =====================================================
+
+  // ✅ BUSCAR HUÉSPEDES EXISTENTES
+  const searchGuests = useCallback(async (searchTerm) => {
+    if (!searchTerm?.trim()) {
+      return { data: [], error: null }
+    }
+
     try {
-      const { data, error } = await db.getQuickCheckinHistory(filters)
-      return { data: data || [], error }
+      const result = await guestService.searchGuests(searchTerm, 10)
+      return result
     } catch (error) {
-      console.error('Error getting quick checkin history:', error)
+      console.error('❌ Error searching guests:', error)
       return { data: [], error }
     }
-  }
+  }, [])
 
-  // Generar habitaciones mock para pruebas
-  const generateMockRooms = () => {
-    return {
-      1: [
-        {
-          id: 1, number: '101', status: 'available', cleaning_status: 'clean',
-          capacity: 2, rate: 80.00, floor: 1, quickCheckin: null
-        },
-        {
-          id: 2, number: '102', status: 'available', cleaning_status: 'clean',
-          capacity: 2, rate: 80.00, floor: 1, quickCheckin: null
-        }
-      ]
+  // ✅ CREAR NUEVO HUÉSPED
+  const createGuest = useCallback(async (guestData) => {
+    try {
+      // Validar datos
+      const validation = utilityService.validateGuestData(guestData)
+      if (!validation.isValid) {
+        throw new Error(validation.errors.join(', '))
+      }
+
+      const result = await guestService.createGuest(guestData)
+      return result
+    } catch (error) {
+      console.error('❌ Error creating guest:', error)
+      return { data: null, error }
     }
-  }
+  }, [])
 
-  const refreshData = () => {
-    loadInitialData()
-  }
+  // =====================================================
+  // 📊 FUNCIONES DE ESTADÍSTICAS
+  // =====================================================
+
+  // ✅ OBTENER ESTADÍSTICAS
+  const getStats = useCallback(() => {
+    const allRooms = Object.values(roomsByFloor).flat()
+    const total = allRooms.length
+    const occupied = allRooms.filter(r => r.status === 'occupied').length
+    const available = allRooms.filter(r => r.status === 'disponible' && r.cleaning_status === 'clean').length
+    const needsCleaning = allRooms.filter(r => r.cleaning_status === 'dirty' || r.status === 'limpieza').length
+    const maintenance = allRooms.filter(r => r.status === 'mantenimiento').length
+
+    return {
+      total,
+      occupied,
+      available,
+      needsCleaning,
+      maintenance,
+      occupancyRate: total > 0 ? Math.round((occupied / total) * 100) : 0
+    }
+  }, [roomsByFloor])
+
+  // ✅ OBTENER INGRESOS PENDIENTES
+  const getPendingRevenue = useCallback(() => {
+    return Object.values(activeCheckins).reduce((total, checkin) => {
+      return total + (checkin.total_amount || 0)
+    }, 0)
+  }, [activeCheckins])
+
+  // ✅ OBTENER HABITACIONES DISPONIBLES
+  const getAvailableRooms = useCallback((floor = null) => {
+    const allRooms = Object.values(roomsByFloor).flat()
+    const available = allRooms.filter(r => r.available)
+    
+    if (floor !== null) {
+      return available.filter(r => r.floor === floor)
+    }
+    
+    return available
+  }, [roomsByFloor])
+
+  // =====================================================
+  // 🔧 FUNCIONES AUXILIARES
+  // =====================================================
+
+  // ✅ FORMATEAR PRECIO
+  const formatPrice = useCallback((amount) => {
+    return utilityService.formatPrice(amount)
+  }, [])
+
+  // ✅ VALIDAR DATOS DE HUÉSPED
+  const validateGuestData = useCallback((guestData) => {
+    return utilityService.validateGuestData(guestData)
+  }, [])
+
+  // ✅ OBTENER MÉTODO DE PAGO POR NOMBRE
+  const getPaymentMethodByName = useCallback((name) => {
+    return paymentMethods.find(pm => pm.name === name)
+  }, [paymentMethods])
 
   return {
-    // Estado
+    // 📊 Estado principal
     roomsByFloor,
     activeCheckins,
     snackTypes,
     snackItems,
     roomPrices,
+    paymentMethods,
     loading,
     error,
     
-    // Acciones principales
+    // 🔄 Funciones principales de check-in
     processQuickCheckIn,
     processQuickCheckOut,
     cleanRoom,
     refreshData,
     
-    // Consultas
-    getQuickCheckinHistory,
+    // 👥 Funciones de huéspedes
+    searchGuests,
+    createGuest,
     
-    // Utilidades
-    hasQuickCleanCapability: true,
-    supportedFeatures: [
-      'quick_walk_in_checkin',
-      'guest_registration', 
-      'snack_selection',
-      'quick_room_cleaning'
-    ]
+    // 📈 Estadísticas y consultas
+    getStats,
+    getPendingRevenue,
+    getAvailableRooms,
+    
+    // 🔧 Funciones auxiliares
+    formatPrice,
+    validateGuestData,
+    getPaymentMethodByName,
+    
+    // 🏪 Información de contexto
+    currentBranch,
+    currentBranchId,
+    
+    // 🛠️ Servicios expuestos para uso avanzado
+    services: {
+      hotel: hotelService,
+      room: roomService,
+      quickCheckin: quickCheckinService,
+      snack: snackService,
+      payment: paymentService,
+      guest: guestService,
+      utility: utilityService
+    }
   }
 }
