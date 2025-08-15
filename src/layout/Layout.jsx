@@ -1,7 +1,7 @@
 // src/components/layout/Layout.jsx
 import React, { useState } from 'react'
-import { useAuth } from '../../context/AuthContext'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import { 
   Hotel,
   Home,
@@ -20,7 +20,6 @@ import {
   Bell,
   Search
 } from 'lucide-react'
-import classNames from 'classnames'
 
 const Layout = ({ children }) => {
   const { userName, userRole, logout, isAdmin, getPrimaryBranch } = useAuth()
@@ -31,52 +30,55 @@ const Layout = ({ children }) => {
 
   const primaryBranch = getPrimaryBranch()
 
+  // Función para determinar si una ruta está activa
+  const isCurrentPath = (path) => location.pathname === path
+
   // Menú de navegación
   const navigation = [
     {
       name: 'Dashboard',
       href: '/dashboard',
       icon: Home,
-      current: location.pathname === '/dashboard'
+      current: isCurrentPath('/dashboard')
     },
     {
       name: 'Check-in Rápido',
       href: '/checkin',
       icon: ClipboardCheck,
-      current: location.pathname === '/checkin',
+      current: isCurrentPath('/checkin'),
       badge: 3
     },
     {
       name: 'Reservaciones',
       href: '/reservations',
       icon: Calendar,
-      current: location.pathname === '/reservations',
+      current: isCurrentPath('/reservations'),
       badge: 8
     },
     {
       name: 'Huéspedes',
       href: '/guests',
       icon: Users,
-      current: location.pathname === '/guests'
+      current: isCurrentPath('/guests')
     },
     {
       name: 'Habitaciones',
       href: '/rooms',
       icon: Bed,
-      current: location.pathname === '/rooms'
+      current: isCurrentPath('/rooms')
     },
     {
       name: 'Suministros',
       href: '/supplies',
       icon: Package,
-      current: location.pathname === '/supplies',
+      current: isCurrentPath('/supplies'),
       alert: true
     },
     {
       name: 'Reportes',
       href: '/reports',
       icon: BarChart3,
-      current: location.pathname === '/reports'
+      current: isCurrentPath('/reports')
     }
   ]
 
@@ -86,26 +88,35 @@ const Layout = ({ children }) => {
       name: 'Panel de Admin',
       href: '/admin',
       icon: Settings,
-      current: location.pathname === '/admin'
+      current: isCurrentPath('/admin')
     },
     {
       name: 'Configuración',
       href: '/settings',
       icon: Settings,
-      current: location.pathname === '/settings'
+      current: isCurrentPath('/settings')
     }
   ]
 
   const handleLogout = async () => {
-    const result = await logout()
-    if (result.success) {
-      navigate('/login', { replace: true })
+    try {
+      const result = await logout()
+      if (result.success) {
+        navigate('/login', { replace: true })
+      }
+    } catch (error) {
+      console.error('Error al hacer logout:', error)
     }
   }
 
   const handleNavigation = (href) => {
     navigate(href)
     setSidebarOpen(false)
+  }
+
+  // Función para combinar clases CSS
+  const classNames = (...classes) => {
+    return classes.filter(Boolean).join(' ')
   }
 
   return (
@@ -131,6 +142,7 @@ const Layout = ({ children }) => {
             isAdmin={isAdmin}
             onNavigate={handleNavigation}
             primaryBranch={primaryBranch}
+            classNames={classNames}
           />
         </div>
       </div>
@@ -144,6 +156,7 @@ const Layout = ({ children }) => {
             isAdmin={isAdmin}
             onNavigate={handleNavigation}
             primaryBranch={primaryBranch}
+            classNames={classNames}
           />
         </div>
       </div>
@@ -232,7 +245,7 @@ const Layout = ({ children }) => {
 }
 
 // Componente del contenido del sidebar
-const SidebarContent = ({ navigation, adminNavigation, isAdmin, onNavigate, primaryBranch }) => {
+const SidebarContent = ({ navigation, adminNavigation, isAdmin, onNavigate, primaryBranch, classNames }) => {
   return (
     <div className="flex flex-col h-full bg-white border-r border-gray-200">
       {/* Logo y título */}
