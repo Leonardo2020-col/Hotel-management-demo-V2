@@ -1,4 +1,4 @@
-/* src/index.css - Archivo principal de estilos */
+/* src/index.css - Archivo principal de estilos CORREGIDO */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -282,7 +282,7 @@ code {
   @apply bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all;
 }
 
-/* Sidebar específico */
+/* Sidebar específico - CORREGIDO */
 .sidebar {
   @apply fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out;
 }
@@ -295,28 +295,15 @@ code {
   @apply -translate-x-full;
 }
 
-.sidebar-nav-item {
-  @apply group flex items-center justify-between w-full px-2 py-2 text-sm font-medium rounded-md transition-colors;
-}
-
-.sidebar-nav-item.active {
-  @apply bg-indigo-100 text-indigo-900;
-}
-
-.sidebar-nav-item:not(.active) {
-  @apply text-gray-600 hover:bg-gray-50 hover:text-gray-900;
-}
-
-.sidebar-nav-icon {
-  @apply mr-3 h-5 w-5;
-}
+/* REMOVIDO: .sidebar-nav-item con group - causaba el error */
+/* En su lugar, aplicamos las clases directamente en el JSX */
 
 .sidebar-nav-icon.active {
   @apply text-indigo-500;
 }
 
 .sidebar-nav-icon:not(.active) {
-  @apply text-gray-400 group-hover:text-gray-500;
+  @apply text-gray-400;
 }
 
 /* Responsive utilities adicionales */
@@ -361,7 +348,36 @@ code {
   }
 }
 
-/* Dark mode support (preparado para futuro) */
-@media (prefers-color-scheme: dark) {
-  /* Se puede agregar soporte para modo oscuro aquí */
+/* Utilidades adicionales */
+.glass-effect {
+  backdrop-filter: blur(10px) saturate(180%);
+  background-color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.125);
+}
+
+.text-shadow {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.border-gradient {
+  border: 2px solid;
+  border-image: linear-gradient(45deg, #667eea, #764ba2) 1;
+}
+
+/* Scrollbar personalizado para contenido principal */
+.main-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.main-content::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.main-content::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.main-content::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
