@@ -1,4 +1,3 @@
-// src/components/checkin/QuickCheckoutModal.jsx - Modal de confirmación rápida para check-out
 import React, { useState, useEffect } from 'react';
 import { X, CreditCard, DollarSign, Smartphone, User, Calendar, Clock } from 'lucide-react';
 
@@ -9,7 +8,7 @@ const QuickCheckoutModal = ({
   onConfirm, 
   onViewDetails 
 }) => {
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash'); // Cambiado por defecto
   const [isProcessing, setIsProcessing] = useState(false);
 
   const paymentMethods = [
@@ -39,7 +38,7 @@ const QuickCheckoutModal = ({
   // Reset al abrir el modal
   useEffect(() => {
     if (isOpen) {
-      setSelectedPaymentMethod('cash');
+      setSelectedPaymentMethod('cash'); // Efectivo por defecto
       setIsProcessing(false);
     }
   }, [isOpen]);
@@ -71,6 +70,10 @@ const QuickCheckoutModal = ({
 
   const stayDays = calculateStayDays();
 
+  // ✅ Adaptación para datos del hook actualizado
+  const roomNumber = orderData.room?.number || orderData.room?.room_number || 'N/A';
+  const guestName = orderData.guestName || orderData.guest_name || 'Huésped';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Overlay */}
@@ -87,7 +90,7 @@ const QuickCheckoutModal = ({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-xl font-bold">Check-out Rápido</h3>
-              <p className="text-red-100 text-sm">Habitación {orderData.room.number}</p>
+              <p className="text-red-100 text-sm">Habitación {roomNumber}</p>
             </div>
             <button
               onClick={onClose}
@@ -112,7 +115,7 @@ const QuickCheckoutModal = ({
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Nombre:</span>
-                <span className="font-medium">{orderData.guestName || 'Huésped'}</span>
+                <span className="font-medium">{guestName}</span>
               </div>
               
               <div className="flex justify-between">
@@ -147,7 +150,7 @@ const QuickCheckoutModal = ({
             <div className="text-center">
               <p className="text-sm text-green-700 mb-1">Total a Cobrar</p>
               <p className="text-3xl font-bold text-green-800">
-                S/ {(orderData.total || 0).toFixed(2)}
+                S/ {(orderData.total || orderData.total_amount || 0).toFixed(2)}
               </p>
               {orderData.snacks && orderData.snacks.length > 0 && (
                 <p className="text-xs text-green-600 mt-1">
@@ -212,13 +215,15 @@ const QuickCheckoutModal = ({
               Cancelar
             </button>
             
-            <button
-              onClick={onViewDetails}
-              disabled={isProcessing}
-              className="flex-1 px-4 py-2 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Ver Detalle
-            </button>
+            {onViewDetails && (
+              <button
+                onClick={onViewDetails}
+                disabled={isProcessing}
+                className="flex-1 px-4 py-2 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Ver Detalle
+              </button>
+            )}
             
             <button
               onClick={handleConfirm}

@@ -1,4 +1,3 @@
-// src/components/checkin/SnackSelection.jsx - CÓDIGO COMPLETO CORREGIDO
 import React from 'react';
 import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X, LogOut, LogIn, User } from 'lucide-react';
 import Button from '../common/Button';
@@ -35,7 +34,7 @@ const SnackSelection = ({
     return (currentOrder?.roomPrice || 0) + getTotalSnacks();
   };
 
-  // VALIDACIÓN SIMPLIFICADA - Solo nombre y documento
+  // ✅ VALIDACIÓN SIMPLIFICADA - Solo nombre y documento
   const isGuestDataValid = () => {
     if (isCheckout) {
       // Para check-out, solo necesitamos el nombre (ya debería existir)
@@ -44,6 +43,25 @@ const SnackSelection = ({
     // Para check-in, solo validar los 2 campos obligatorios
     return guestData?.fullName?.trim() && guestData?.documentNumber?.trim();
   };
+
+  // ✅ Procesar datos de snacks del hook actualizado
+  const processedSnackItems = React.useMemo(() => {
+    if (!snackItems || !Array.isArray(snackItems)) {
+      return {};
+    }
+
+    // Agrupar items por categoría
+    const grouped = {};
+    snackItems.forEach(item => {
+      const categoryId = item.category_id;
+      if (!grouped[categoryId]) {
+        grouped[categoryId] = [];
+      }
+      grouped[categoryId].push(item);
+    });
+
+    return grouped;
+  }, [snackItems]);
 
   // Validate data
   if (!currentOrder) {
@@ -59,6 +77,9 @@ const SnackSelection = ({
     );
   }
 
+  // ✅ Compatibilidad mejorada con datos del hook
+  const roomNumber = currentOrder?.room?.number || currentOrder?.room?.room_number || 'N/A';
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -66,12 +87,12 @@ const SnackSelection = ({
           {isCheckout ? (
             <>
               <LogOut className="w-5 h-5 mr-2 text-red-600" />
-              Habitación {currentOrder?.room?.number} - Check-out y Servicios Adicionales
+              Habitación {roomNumber} - Check-out y Servicios Adicionales
             </>
           ) : (
             <>
               <LogIn className="w-5 h-5 mr-2 text-blue-600" />
-              Habitación {currentOrder?.room?.number} - Check-in Rápido
+              Habitación {roomNumber} - Check-in Rápido
             </>
           )}
         </h2>
@@ -138,28 +159,13 @@ const SnackSelection = ({
                     <p className="text-gray-900">{guestData.email}</p>
                   </div>
                 )}
-
-                <div>
-                  <span className="font-medium text-gray-700">Huéspedes:</span>
-                  <p className="text-gray-900">
-                    {guestData?.adults || 1} adulto{(guestData?.adults || 1) > 1 ? 's' : ''}
-                    {guestData?.children > 0 && `, ${guestData.children} niño${guestData.children > 1 ? 's' : ''}`}
-                  </p>
-                </div>
               </div>
 
-              {guestData?.specialRequests && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <span className="font-medium text-gray-700">Observaciones:</span>
-                  <p className="text-gray-900 mt-1">{guestData.specialRequests}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-700 text-sm">
-                ℹ️ <strong>Check-out en proceso:</strong> Agrega servicios adicionales si es necesario antes de finalizar.
-              </p>
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-700 text-sm">
+                  ℹ️ <strong>Check-out en proceso:</strong> Agrega servicios adicionales si es necesario antes de finalizar.
+                </p>
+              </div>
             </div>
           </div>
         ) : (
@@ -219,9 +225,9 @@ const SnackSelection = ({
                   }
                 </h4>
                 
-                {selectedSnackType && snackItems?.[selectedSnackType] ? (
+                {selectedSnackType && processedSnackItems[selectedSnackType] ? (
                   <div className="space-y-3 overflow-y-auto h-[400px]">
-                    {snackItems[selectedSnackType].map((item) => (
+                    {processedSnackItems[selectedSnackType].map((item) => (
                       <button
                         key={item.id}
                         onClick={() => onSnackSelect(item)}
@@ -236,6 +242,9 @@ const SnackSelection = ({
                             <p className="text-green-600 font-bold text-sm">S/ {item.price.toFixed(2)}</p>
                             {item.description && (
                               <p className="text-xs text-gray-500 mt-1">{item.description}</p>
+                            )}
+                            {item.stock !== undefined && (
+                              <p className="text-xs text-gray-400">Stock: {item.stock}</p>
                             )}
                           </div>
                           {selectedSnacks.find(s => s.id === item.id) && (
@@ -268,8 +277,8 @@ const SnackSelection = ({
                   <div className={`text-center mb-4 p-3 text-white rounded-lg ${
                     isCheckout ? 'bg-red-600' : 'bg-blue-600'
                   }`}>
-                    <h5 className="font-bold">Habitación {currentOrder?.room?.number}</h5>
-                    <p className="text-xs opacity-90">{currentOrder?.room?.room_type || 'Estándar'}</p>
+                    <h5 className="font-bold">Habitación {roomNumber}</h5>
+                    <p className="text-xs opacity-90">{currentOrder?.room?.description || 'Estándar'}</p>
                     {isCheckout && (
                       <p className="text-xs opacity-90 mt-1">Check-out en proceso</p>
                     )}
@@ -324,17 +333,6 @@ const SnackSelection = ({
                         S/ {(isCheckout ? (currentOrder?.originalTotal || currentOrder?.roomPrice || 0) : (currentOrder?.roomPrice || 0)).toFixed(2)}
                       </span>
                     </div>
-
-                    {/* Número de huéspedes */}
-                    {(guestData?.adults || guestData?.children) && (
-                      <div className="flex justify-between items-center py-1 text-sm text-gray-600">
-                        <span>Huéspedes:</span>
-                        <span>
-                          {guestData.adults || 1} adulto{(guestData.adults || 1) > 1 ? 's' : ''}
-                          {guestData.children > 0 && `, ${guestData.children} niño${guestData.children > 1 ? 's' : ''}`}
-                        </span>
-                      </div>
-                    )}
 
                     {/* Servicios seleccionados */}
                     {selectedSnacks && selectedSnacks.length > 0 ? (

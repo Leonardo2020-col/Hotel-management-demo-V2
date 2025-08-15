@@ -1,6 +1,3 @@
-// ============================================
-// src/components/checkin/CheckoutSummary.jsx - SIN ROOM_TYPES
-// ============================================
 import React, { useState } from 'react';
 import { ChevronLeft, Check, CreditCard, DollarSign, Smartphone } from 'lucide-react';
 import Button from '../common/Button';
@@ -11,20 +8,20 @@ const CheckoutSummary = ({
   onProcessPayment, 
   onCancel 
 }) => {
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash'); // Cambiado por defecto
 
   const paymentMethods = [
-    { 
-      id: 'card', 
-      name: 'Tarjeta', 
-      icon: CreditCard,
-      description: 'Débito/Crédito'
-    },
     { 
       id: 'cash', 
       name: 'Efectivo', 
       icon: DollarSign,
       description: 'Pago en efectivo'
+    },
+    { 
+      id: 'card', 
+      name: 'Tarjeta', 
+      icon: CreditCard,
+      description: 'Débito/Crédito'
     },
     { 
       id: 'digital', 
@@ -47,9 +44,10 @@ const CheckoutSummary = ({
     );
   }
 
+  // ✅ Adaptación para datos del hook actualizado
   const roomInfo = currentOrder.room || {};
-  const roomType = roomInfo.room_type || 'Habitación Estándar';
-  const roomNumber = roomInfo.number || 'N/A';
+  const roomType = roomInfo.description || 'Habitación Estándar';
+  const roomNumber = roomInfo.number || roomInfo.room_number || 'N/A';
   const roomPrice = currentOrder.roomPrice || currentOrder.total || 0;
 
   return (

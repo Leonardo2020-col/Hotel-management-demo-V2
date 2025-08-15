@@ -1,4 +1,3 @@
-// src/components/checkin/GuestRegistrationForm.jsx - ULTRA SIMPLIFICADO
 import React, { useState } from 'react';
 import { User, Save, X } from 'lucide-react';
 import Button from '../common/Button';
@@ -143,6 +142,42 @@ const GuestRegistrationForm = ({
               )}
             </div>
           </div>
+
+          {/* ✅ Campos opcionales adicionales */}
+          <div className="mt-6 pt-6 border-t border-blue-200">
+            <h5 className="text-md font-semibold text-blue-800 mb-4">📱 Información Opcional</h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Teléfono opcional */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Teléfono (opcional)
+                </label>
+                <input
+                  type="tel"
+                  value={guestData.phone || ''}
+                  onChange={(e) => handleInputChange('phone', e.target.value)}
+                  placeholder="987654321"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                  disabled={loading}
+                />
+              </div>
+
+              {/* Email opcional */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email (opcional)
+                </label>
+                <input
+                  type="email"
+                  value={guestData.email || ''}
+                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  placeholder="ejemplo@email.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Botones */}
@@ -185,8 +220,8 @@ const GuestRegistrationForm = ({
               ¡Check-in Ultra Rápido!
             </p>
             <p className="text-green-800 text-sm">
-              Solo necesitas completar estos 2 campos para un check-in inmediato. 
-              Sin formularios largos, sin campos innecesarios.
+              Solo necesitas completar 2 campos obligatorios para un check-in inmediato. 
+              Los campos opcionales ayudan pero no son necesarios.
             </p>
           </div>
         </div>
