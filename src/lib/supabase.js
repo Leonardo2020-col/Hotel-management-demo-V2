@@ -1,4 +1,4 @@
-// src/lib/supabase.js
+// src/lib/supabase.js - CORREGIDO SIN ERRORES
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -7,11 +7,11 @@ const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // =====================================================
-// 🔐 SERVICIOS DE AUTENTICACIÓN
+// 🔐 SERVICIOS DE AUTENTICACIÓN - CORREGIDO
 // =====================================================
 export const authService = {
-
-  Supabase,
+  // Exponer el cliente de Supabase para el AuthContext
+  supabase, // ✅ CORREGIDO: era "Supabase" (mayúscula)
 
   async signIn(email, password) {
     try {
@@ -365,7 +365,6 @@ export const quickCheckinService = {
 // 🍿 SERVICIOS DE SNACKS
 // =====================================================
 export const snackService = {
-  // ✅ Obtener categorías de snacks
   async getSnackCategories() {
     try {
       const { data, error } = await supabase
@@ -382,7 +381,6 @@ export const snackService = {
     }
   },
 
-  // ✅ Obtener items de snacks
   async getSnackItems() {
     try {
       const { data, error } = await supabase
@@ -409,7 +407,6 @@ export const snackService = {
     }
   },
 
-  // ✅ Actualizar stock de snack
   async updateSnackStock(snackId, newStock) {
     try {
       const { data, error } = await supabase
@@ -427,7 +424,6 @@ export const snackService = {
     }
   },
 
-  // ✅ Procesar consumo de snacks (reducir stock)
   async processSnackConsumption(snacksConsumed) {
     try {
       const updates = []
@@ -458,7 +454,6 @@ export const snackService = {
 // 💳 SERVICIOS DE PAGOS
 // =====================================================
 export const paymentService = {
-  // ✅ Obtener métodos de pago
   async getPaymentMethods() {
     try {
       const { data, error } = await supabase
@@ -475,7 +470,6 @@ export const paymentService = {
     }
   },
 
-  // ✅ Obtener método de pago por nombre
   async getPaymentMethodByName(name) {
     try {
       const { data, error } = await supabase
@@ -498,7 +492,6 @@ export const paymentService = {
 // 👥 SERVICIOS DE HUÉSPEDES
 // =====================================================
 export const guestService = {
-  // ✅ Buscar huéspedes
   async searchGuests(searchTerm, limit = 10) {
     try {
       const { data, error } = await supabase
@@ -516,7 +509,6 @@ export const guestService = {
     }
   },
 
-  // ✅ Crear huésped
   async createGuest(guestData) {
     try {
       const { data, error } = await supabase
@@ -543,7 +535,6 @@ export const guestService = {
 // 📊 SERVICIOS DE REPORTES Y ESTADÍSTICAS
 // =====================================================
 export const reportService = {
-  // ✅ Obtener estadísticas del dashboard
   async getDashboardStats(branchId) {
     try {
       const { data, error } = await supabase.rpc('get_dashboard_stats', {
@@ -558,7 +549,6 @@ export const reportService = {
     }
   },
 
-  // ✅ Calcular ingresos por período
   async calculateRevenueByPeriod(branchId, startDate, endDate) {
     try {
       const { data, error } = await supabase.rpc('calculate_revenue_by_period', {
@@ -575,7 +565,6 @@ export const reportService = {
     }
   },
 
-  // ✅ Generar reporte diario
   async generateDailyReport(branchId, reportDate = null) {
     try {
       const { data, error } = await supabase.rpc('generate_daily_report', {
@@ -596,7 +585,6 @@ export const reportService = {
 // 🔧 SERVICIOS AUXILIARES
 // =====================================================
 export const utilityService = {
-  // ✅ Formatear precio en soles peruanos
   formatPrice(amount) {
     return new Intl.NumberFormat('es-PE', {
       style: 'currency',
@@ -604,7 +592,6 @@ export const utilityService = {
     }).format(amount)
   },
 
-  // ✅ Formatear fecha
   formatDate(date, options = {}) {
     const defaultOptions = {
       year: 'numeric',
@@ -615,14 +602,12 @@ export const utilityService = {
     return new Intl.DateTimeFormat('es-PE', defaultOptions).format(new Date(date))
   },
 
-  // ✅ Generar código de confirmación
   generateConfirmationCode(prefix = 'QC') {
     const timestamp = Date.now().toString(36)
     const random = Math.random().toString(36).substr(2, 5)
     return `${prefix}-${timestamp}-${random}`.toUpperCase()
   },
 
-  // ✅ Validar datos de huésped
   validateGuestData(guestData) {
     const errors = []
     
@@ -653,7 +638,6 @@ export const utilityService = {
 // 📡 SERVICIOS DE TIEMPO REAL (SUBSCRIPCIONES)
 // =====================================================
 export const realtimeService = {
-  // ✅ Suscribirse a cambios en habitaciones
   subscribeToRoomChanges(branchId, callback) {
     return supabase
       .channel('room-changes')
@@ -680,7 +664,6 @@ export const realtimeService = {
       .subscribe()
   },
 
-  // ✅ Suscribirse a cambios en check-ins
   subscribeToCheckinChanges(callback) {
     return supabase
       .channel('checkin-changes')
@@ -710,12 +693,10 @@ export const realtimeService = {
 // 🛠️ SERVICIOS COMBINADOS PARA EL HOOK
 // =====================================================
 export const hotelService = {
-  // ✅ Obtener todos los datos necesarios para el dashboard de check-in
   async getCheckinDashboardData(branchId) {
     try {
       console.log('🔄 Getting dashboard data for branch:', branchId)
       
-      // Validar que branchId sea un UUID válido
       if (!branchId || typeof branchId !== 'string') {
         throw new Error('Branch ID inválido')
       }
@@ -742,7 +723,6 @@ export const hotelService = {
         paymentMethods: paymentMethodsResult.data?.length || 0
       })
 
-      // Si hay habitaciones, obtener check-ins de reservaciones
       let reservationCheckins = []
       if (roomsResult.data?.length > 0) {
         const roomIds = roomsResult.data.map(r => r.id)
@@ -750,7 +730,6 @@ export const hotelService = {
         reservationCheckins = reservationResult.data || []
       }
 
-      // Verificar si hay errores críticos
       if (roomsResult.error) {
         console.error('❌ Error fetching rooms:', roomsResult.error)
         throw new Error(`Error al cargar habitaciones: ${roomsResult.error.message}`)
