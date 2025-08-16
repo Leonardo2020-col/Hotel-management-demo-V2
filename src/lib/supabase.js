@@ -10,15 +10,26 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // 🔐 SERVICIOS DE AUTENTICACIÓN
 // =====================================================
 export const authService = {
+
+  Supabase,
+
   async signIn(email, password) {
     try {
+      console.log('🔑 Iniciando login en Supabase...', email)
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error de Supabase Auth:', error)
+        throw error
+      }
 
+      console.log('✅ Login exitoso en Supabase Auth')
+      
+      // Obtener información adicional del usuario desde nuestra tabla
       const userInfo = await this.getUserInfo(data.user.id)
       
       return { 
@@ -27,24 +38,28 @@ export const authService = {
         userInfo 
       }
     } catch (error) {
-      console.error('Error en login:', error)
+      console.error('❌ Error en signIn:', error)
       throw error
     }
   },
 
   async signOut() {
     try {
+      console.log('👋 Cerrando sesión en Supabase...')
       const { error } = await supabase.auth.signOut()
       if (error) throw error
+      console.log('✅ Logout exitoso')
       return true
     } catch (error) {
-      console.error('Error en logout:', error)
+      console.error('❌ Error en signOut:', error)
       throw error
     }
   },
 
   async getUserInfo(userId) {
     try {
+      console.log('📋 Obteniendo info del usuario desde DB:', userId)
+      
       const { data, error } = await supabase
         .from('users')
         .select(`
@@ -56,31 +71,49 @@ export const authService = {
             branch:branches(id, name, is_active)
           )
         `)
-        .eq('id', userId)
+        .eq('auth_id', userId)  // ⚠️ CAMBIO IMPORTANTE: usar auth_id en lugar de id
         .eq('is_active', true)
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error obteniendo usuario de DB:', error)
+        throw error
+      }
+
+      if (!data) {
+        throw new Error('Usuario no encontrado en la base de datos')
+      }
+
+      console.log('✅ Info del usuario obtenida:', {
+        name: `${data.first_name} ${data.last_name}`,
+        role: data.role?.name,
+        branches: data.user_branches?.length
+      })
+
       return data
     } catch (error) {
-      console.error('Error obteniendo info del usuario:', error)
+      console.error('❌ Error en getUserInfo:', error)
       throw error
     }
   },
 
   async getCurrentSession() {
     try {
+      console.log('🔍 Obteniendo sesión actual...')
+      
       const { data: { session }, error } = await supabase.auth.getSession()
       if (error) throw error
       
       if (session?.user) {
+        console.log('✅ Sesión encontrada para:', session.user.email)
         const userInfo = await this.getUserInfo(session.user.id)
         return { session, userInfo }
       }
       
+      console.log('ℹ️ No hay sesión activa')
       return { session: null, userInfo: null }
     } catch (error) {
-      console.error('Error obteniendo sesión:', error)
+      console.error('❌ Error obteniendo sesión:', error)
       return { session: null, userInfo: null }
     }
   },
@@ -109,7 +142,6 @@ export const authService = {
 // 🏨 SERVICIOS DE HABITACIONES
 // =====================================================
 export const roomService = {
-  // ✅ Obtener habitaciones con estado detallado
   async getRoomsWithStatus(branchId) {
     try {
       const { data, error } = await supabase
@@ -140,10 +172,8 @@ export const roomService = {
     }
   },
 
-  // ✅ Actualizar estado de habitación
   async updateRoomStatus(roomId, statusName) {
     try {
-      // Primero obtener el ID del status
       const { data: statusData, error: statusError } = await supabase
         .from('room_status')
         .select('id')
@@ -152,7 +182,6 @@ export const roomService = {
 
       if (statusError) throw statusError
 
-      // Actualizar la habitación
       const { data, error } = await supabase
         .from('rooms')
         .update({ status_id: statusData.id })
@@ -168,7 +197,6 @@ export const roomService = {
     }
   },
 
-  // ✅ Obtener habitaciones disponibles en un rango de fechas
   async getAvailableRooms(branchId, startDate, endDate) {
     try {
       const { data, error } = await supabase.rpc('get_available_rooms', {
@@ -190,10 +218,8 @@ export const roomService = {
 // 🚀 SERVICIOS DE QUICK CHECK-INS
 // =====================================================
 export const quickCheckinService = {
-  // ✅ Crear quick check-in completo
   async createQuickCheckin(quickCheckinData, guestData, snacksData = []) {
     try {
-      // Iniciar transacción manual
       const { data: quickCheckin, error: quickCheckinError } = await supabase
         .from('quick_checkins')
         .insert({
@@ -213,7 +239,6 @@ export const quickCheckinService = {
 
       if (quickCheckinError) throw quickCheckinError
 
-      // Crear checkin order
       const { data: checkinOrder, error: checkinOrderError } = await supabase
         .from('checkin_orders')
         .insert({
@@ -235,7 +260,6 @@ export const quickCheckinService = {
     }
   },
 
-  // ✅ Obtener quick check-ins activos
   async getActiveQuickCheckins(branchId) {
     try {
       const { data, error } = await supabase
@@ -265,10 +289,8 @@ export const quickCheckinService = {
     }
   },
 
-  // ✅ Procesar check-out de quick checkin
   async processQuickCheckout(quickCheckinId, checkoutData) {
     try {
-      // Buscar checkin order activo
       const { data: checkinOrder, error: checkinOrderError } = await supabase
         .from('checkin_orders')
         .select('id, room_id')
@@ -278,7 +300,6 @@ export const quickCheckinService = {
 
       if (checkinOrderError) throw checkinOrderError
 
-      // Crear checkout order
       const { data: checkoutOrder, error: checkoutOrderError } = await supabase
         .from('checkout_orders')
         .insert({
@@ -293,7 +314,6 @@ export const quickCheckinService = {
 
       if (checkoutOrderError) throw checkoutOrderError
 
-      // Actualizar checkin order
       const { error: updateError } = await supabase
         .from('checkin_orders')
         .update({ actual_checkout: new Date().toISOString() })
@@ -308,7 +328,6 @@ export const quickCheckinService = {
     }
   },
 
-  // ✅ Obtener check-ins de reservaciones activos
   async getActiveReservationCheckins(roomIds) {
     try {
       const { data, error } = await supabase

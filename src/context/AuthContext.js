@@ -1,6 +1,7 @@
-// src/context/AuthContext.js - VERSIÓN SIMPLIFICADA PARA DEBUG
+// src/context/AuthContext.js - VERSIÓN REAL CON SUPABASE
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
+import { authService } from '../lib/supabase'
 
 const AuthContext = createContext({})
 
@@ -19,7 +20,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
   const [initializing, setInitializing] = useState(true)
 
-  console.log('🔐 AuthProvider inicializando...')
+  console.log('🔐 AuthProvider inicializando con Supabase...')
 
   useEffect(() => {
     const initializeAuth = async () => {
@@ -29,13 +30,26 @@ export const AuthProvider = ({ children }) => {
         if (!process.env.REACT_APP_SUPABASE_URL || !process.env.REACT_APP_SUPABASE_ANON_KEY) {
           console.error('❌ Variables de entorno de Supabase no configuradas')
           toast.error('Error de configuración: Variables de entorno faltantes')
+          setLoading(false)
+          setInitializing(false)
           return
         }
 
         console.log('✅ Variables de entorno configuradas')
+        console.log('🔄 Obteniendo sesión actual...')
 
-        // Por ahora, solo simulamos que no hay usuario logueado
-        console.log('👤 No hay usuario logueado (simulado)')
+        // Obtener sesión actual
+        const { session: currentSession, userInfo: currentUserInfo } = await authService.getCurrentSession()
+        
+        if (currentSession?.user) {
+          console.log('✅ Usuario ya logueado:', currentSession.user.email)
+          setUser(currentSession.user)
+          setSession(currentSession)
+          setUserInfo(currentUserInfo)
+          toast.success(`Bienvenido de vuelta, ${currentUserInfo?.first_name || 'Usuario'}!`)
+        } else {
+          console.log('👤 No hay usuario logueado')
+        }
         
       } catch (error) {
         console.error('❌ Error inicializando auth:', error)
@@ -48,99 +62,123 @@ export const AuthProvider = ({ children }) => {
     }
 
     initializeAuth()
+
+    // Escuchar cambios de autenticación en tiempo real
+    const { data: { subscription } } = authService.supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('🔄 Auth state change:', event, session?.user?.email)
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          try {
+            const userInfo = await authService.getUserInfo(session.user.id)
+            setUser(session.user)
+            setSession(session)
+            setUserInfo(userInfo)
+            console.log('✅ Usuario logueado via listener:', userInfo)
+          } catch (error) {
+            console.error('❌ Error obteniendo info del usuario:', error)
+            toast.error('Error al obtener información del usuario')
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null)
+          setSession(null)
+          setUserInfo(null)
+          console.log('👋 Usuario deslogueado via listener')
+        }
+        
+        setLoading(false)
+      }
+    )
+
+    return () => {
+      subscription?.unsubscribe()
+    }
   }, [])
 
-  // Login simulado por ahora
+  // Login real con Supabase
   const login = async (email, password) => {
     try {
       setLoading(true)
-      console.log('🔑 Intentando login con:', { email, password: '***' })
+      console.log('🔑 Intentando login con Supabase:', { email, password: '***' })
       
-      // Simulación de login exitoso para ADMINISTRADOR
-      if (email === 'admin@hotel.com' && password === '123456') {
-        const mockUser = { id: '1', email }
-        const mockUserInfo = {
-          id: '1',
-          first_name: 'Admin',
-          last_name: 'Sistema',
-          role: { name: 'administrador', permissions: { all: true } },
-          user_branches: [{
-            branch: { id: '1', name: 'Hotel Principal' },
-            is_primary: true
-          }]
-        }
-        
-        setUser(mockUser)
-        setUserInfo(mockUserInfo)
-        setSession({ user: mockUser })
-        
-        toast.success(`Bienvenido, ${mockUserInfo.first_name}!`)
-        console.log('✅ Login exitoso - Administrador')
-        return { success: true, user: mockUser, userInfo: mockUserInfo }
-      }
+      const { user: authUser, session: authSession, userInfo: authUserInfo } = await authService.signIn(email, password)
       
-      // Simulación de login exitoso para RECEPCIÓN
-      if (email === 'recepcion@hotel.com' && password === '123456') {
-        const mockUser = { id: '2', email }
-        const mockUserInfo = {
-          id: '2',
-          first_name: 'Recepción',
-          last_name: 'Hotel',
-          role: { 
-            name: 'recepcion', 
-            permissions: { 
-              checkin: true, 
-              checkout: true, 
-              reservations: true, 
-              guests: true, 
-              reports_view: true 
-            } 
-          },
-          user_branches: [{
-            branch: { id: '1', name: 'Hotel Principal' },
-            is_primary: true
-          }]
-        }
-        
-        setUser(mockUser)
-        setUserInfo(mockUserInfo)
-        setSession({ user: mockUser })
-        
-        toast.success(`Bienvenido, ${mockUserInfo.first_name}!`)
-        console.log('✅ Login exitoso - Recepción')
-        return { success: true, user: mockUser, userInfo: mockUserInfo }
-      }
+      setUser(authUser)
+      setSession(authSession)
+      setUserInfo(authUserInfo)
       
-      // Si no coincide ningún usuario
-      throw new Error('Credenciales incorrectas')
+      toast.success(`¡Bienvenido, ${authUserInfo.first_name}!`)
+      console.log('✅ Login exitoso:', {
+        email: authUser.email,
+        role: authUserInfo.role?.name,
+        branch: authUserInfo.user_branches?.[0]?.branch?.name
+      })
+      
+      return { success: true, user: authUser, userInfo: authUserInfo }
       
     } catch (error) {
       console.error('❌ Error en login:', error)
-      toast.error(error.message)
-      return { success: false, error: error.message }
+      
+      let errorMessage = 'Error al iniciar sesión'
+      
+      // Personalizar mensajes de error
+      if (error.message?.includes('Invalid login credentials')) {
+        errorMessage = 'Email o contraseña incorrectos'
+      } else if (error.message?.includes('Email not confirmed')) {
+        errorMessage = 'Debes verificar tu email antes de iniciar sesión'
+      } else if (error.message?.includes('Too many requests')) {
+        errorMessage = 'Demasiados intentos. Intenta más tarde'
+      }
+      
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     } finally {
       setLoading(false)
     }
   }
 
+  // Logout real con Supabase
   const logout = async () => {
     try {
       setLoading(true)
+      console.log('👋 Cerrando sesión...')
+      
+      await authService.signOut()
+      
       setUser(null)
       setSession(null)
       setUserInfo(null)
-      toast.success('Sesión cerrada')
-      console.log('👋 Logout exitoso')
+      
+      toast.success('Sesión cerrada exitosamente')
+      console.log('✅ Logout exitoso')
+      
       return { success: true }
     } catch (error) {
       console.error('❌ Error en logout:', error)
+      toast.error('Error al cerrar sesión')
       return { success: false, error: error.message }
     } finally {
       setLoading(false)
     }
   }
 
-  // Funciones de utilidad
+  // Refresh información del usuario
+  const refreshUserInfo = async () => {
+    try {
+      if (!user?.id) return null
+      
+      console.log('🔄 Actualizando información del usuario...')
+      const updatedUserInfo = await authService.getUserInfo(user.id)
+      setUserInfo(updatedUserInfo)
+      console.log('✅ Información actualizada')
+      return updatedUserInfo
+    } catch (error) {
+      console.error('❌ Error actualizando info del usuario:', error)
+      return userInfo
+    }
+  }
+
+  // Funciones de utilidad para roles y permisos
   const hasRole = (roleName) => {
     return userInfo?.role?.name === roleName
   }
@@ -163,37 +201,53 @@ export const AuthProvider = ({ children }) => {
     return userInfo?.user_branches?.map(ub => ub.branch) || []
   }
 
-  const refreshUserInfo = async () => {
-    console.log('🔄 Refresh user info (simulado)')
-    return userInfo
-  }
+  // Información computada
+  const userName = userInfo ? `${userInfo.first_name} ${userInfo.last_name}` : ''
+  const userRole = userInfo?.role?.name || ''
+  const userEmail = user?.email || ''
+  const primaryBranch = getPrimaryBranch()
 
   const value = {
+    // Estado principal
     user,
     userInfo,
     session,
     loading,
     initializing,
     isAuthenticated: !!user,
+    
+    // Acciones
     login,
     logout,
     refreshUserInfo,
+    
+    // Utilidades de roles
     hasRole,
     hasPermission,
     isAdmin,
     isReception,
+    
+    // Información de sucursales
     getPrimaryBranch,
     getUserBranches,
-    userName: userInfo ? `${userInfo.first_name} ${userInfo.last_name}` : '',
-    userRole: userInfo?.role?.name || '',
-    userEmail: user?.email || ''
+    
+    // Información computada
+    userName,
+    userRole,
+    userEmail,
+    primaryBranch,
+    
+    // Para debugging
+    authService // Exponer el servicio para casos específicos
   }
 
   console.log('🎯 AuthProvider state:', {
     isAuthenticated: !!user,
     loading,
     initializing,
-    userRole: userInfo?.role?.name
+    userRole: userInfo?.role?.name,
+    userEmail: user?.email,
+    primaryBranch: primaryBranch?.name
   })
 
   return (
