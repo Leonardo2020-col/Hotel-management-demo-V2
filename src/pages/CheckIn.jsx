@@ -1,11 +1,11 @@
 // src/pages/CheckIn/CheckIn.jsx - VERSIÓN CORREGIDA
 import React, { useState, useEffect } from 'react'
 import { RefreshCw, Sparkles, User, CreditCard, AlertTriangle } from 'lucide-react'
-import Button from '../../components/common/Button'
-import RoomGrid from '../../components/checkin/RoomGrid'
-import SnackSelection from '../../components/checkin/SnackSelection'
-import QuickCheckoutModal from '../../components/checkin/QuickCheckoutModal'
-import { useQuickCheckins } from '../../hooks/useQuickCheckins'
+import Button from '../components/common/Button'
+import RoomGrid from '../components/checkin/RoomGrid'
+import SnackSelection from '../components/checkin/SnackSelection'
+import QuickCheckoutModal from '../components/checkin/QuickCheckoutModal'
+import { useQuickCheckins } from '../hooks/useQuickCheckins'
 import toast from 'react-hot-toast'
 
 const CheckIn = () => {
