@@ -1,4 +1,4 @@
-// src/context/AuthContext.js - VERSIÓN REAL CON SUPABASE
+// src/context/AuthContext.js - VERSIÓN CORREGIDA CONTRA CARGA INFINITA
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../lib/supabase'
@@ -20,18 +20,32 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
   const [initializing, setInitializing] = useState(true)
 
-  console.log('🔐 AuthProvider inicializando con Supabase...')
+  console.log('🔍 AuthProvider inicializando con Supabase...')
+
+  // Función para limpiar el estado completamente
+  const clearAuthState = () => {
+    console.log('🧹 Limpiando estado de autenticación...')
+    setUser(null)
+    setUserInfo(null)
+    setSession(null)
+    setLoading(false) // ⚠️ IMPORTANTE: Siempre establecer loading a false
+  }
 
   useEffect(() => {
+    let isMounted = true // Para evitar actualizaciones de estado en componentes desmontados
+    let authSubscription = null
+
     const initializeAuth = async () => {
       try {
         console.log('🔍 Verificando variables de entorno...')
         
         if (!process.env.REACT_APP_SUPABASE_URL || !process.env.REACT_APP_SUPABASE_ANON_KEY) {
           console.error('❌ Variables de entorno de Supabase no configuradas')
-          toast.error('Error de configuración: Variables de entorno faltantes')
-          setLoading(false)
-          setInitializing(false)
+          if (isMounted) {
+            toast.error('Error de configuración: Variables de entorno faltantes')
+            setLoading(false)
+            setInitializing(false)
+          }
           return
         }
 
@@ -41,6 +55,8 @@ export const AuthProvider = ({ children }) => {
         // Obtener sesión actual
         const { session: currentSession, userInfo: currentUserInfo } = await authService.getCurrentSession()
         
+        if (!isMounted) return // Evitar actualizaciones si el componente se desmontó
+
         if (currentSession?.user) {
           console.log('✅ Usuario ya logueado:', currentSession.user.email)
           setUser(currentSession.user)
@@ -49,53 +65,89 @@ export const AuthProvider = ({ children }) => {
           toast.success(`Bienvenido de vuelta, ${currentUserInfo?.first_name || 'Usuario'}!`)
         } else {
           console.log('👤 No hay usuario logueado')
+          clearAuthState()
         }
         
       } catch (error) {
         console.error('❌ Error inicializando auth:', error)
-        toast.error('Error al inicializar autenticación')
-      } finally {
-        setLoading(false)
-        setInitializing(false)
-        console.log('✅ Auth inicializado')
-      }
-    }
-
-    initializeAuth()
-
-    // Escuchar cambios de autenticación en tiempo real
-    const { data: { subscription } } = authService.supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('🔄 Auth state change:', event, session?.user?.email)
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          try {
-            const userInfo = await authService.getUserInfo(session.user.id)
-            setUser(session.user)
-            setSession(session)
-            setUserInfo(userInfo)
-            console.log('✅ Usuario logueado via listener:', userInfo)
-          } catch (error) {
-            console.error('❌ Error obteniendo info del usuario:', error)
-            toast.error('Error al obtener información del usuario')
-          }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null)
-          setSession(null)
-          setUserInfo(null)
-          console.log('👋 Usuario deslogueado via listener')
+        if (isMounted) {
+          toast.error('Error al inicializar autenticación')
+          clearAuthState()
         }
-        
-        setLoading(false)
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+          setInitializing(false)
+          console.log('✅ Auth inicializado')
+        }
       }
-    )
-
-    return () => {
-      subscription?.unsubscribe()
     }
-  }, [])
 
-  // Login real con Supabase
+    // Configurar listener de cambios de autenticación
+    const setupAuthListener = () => {
+      try {
+        authSubscription = authService.supabase.auth.onAuthStateChange(
+          async (event, session) => {
+            console.log('🔄 Auth state change:', event, session?.user?.email)
+            
+            if (!isMounted) return // Evitar actualizaciones si el componente se desmontó
+            
+            // ⚠️ CRÍTICO: Evitar bucles infinitos con estos checks
+            if (event === 'SIGNED_IN' && session?.user) {
+              try {
+                // Solo actualizar si realmente cambió el usuario
+                if (user?.id !== session.user.id) {
+                  setLoading(true)
+                  const userInfo = await authService.getUserInfo(session.user.id)
+                  
+                  if (isMounted) {
+                    setUser(session.user)
+                    setSession(session)
+                    setUserInfo(userInfo)
+                    setLoading(false)
+                    console.log('✅ Usuario logueado via listener:', userInfo)
+                  }
+                }
+              } catch (error) {
+                console.error('❌ Error obteniendo info del usuario:', error)
+                if (isMounted) {
+                  toast.error('Error al obtener información del usuario')
+                  clearAuthState()
+                }
+              }
+            } else if (event === 'SIGNED_OUT') {
+              console.log('👋 Usuario deslogueado via listener')
+              if (isMounted) {
+                clearAuthState()
+              }
+            }
+          }
+        )
+        console.log('👂 Auth listener configurado')
+      } catch (error) {
+        console.error('❌ Error configurando auth listener:', error)
+      }
+    }
+
+    // Inicializar autenticación y configurar listener
+    initializeAuth().then(() => {
+      if (isMounted) {
+        setupAuthListener()
+      }
+    })
+
+    // Cleanup function
+    return () => {
+      console.log('🧹 Limpiando AuthProvider...')
+      isMounted = false
+      if (authSubscription) {
+        authSubscription.unsubscribe()
+        authSubscription = null
+      }
+    }
+  }, []) // ⚠️ IMPORTANTE: Array de dependencias vacío
+
+  // Login mejorado
   const login = async (email, password) => {
     try {
       setLoading(true)
@@ -121,7 +173,6 @@ export const AuthProvider = ({ children }) => {
       
       let errorMessage = 'Error al iniciar sesión'
       
-      // Personalizar mensajes de error
       if (error.message?.includes('Invalid login credentials')) {
         errorMessage = 'Email o contraseña incorrectos'
       } else if (error.message?.includes('Email not confirmed')) {
@@ -137,28 +188,32 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  // Logout real con Supabase
+  // ⚠️ LOGOUT CORREGIDO PARA EVITAR CARGA INFINITA
   const logout = async () => {
     try {
-      setLoading(true)
-      console.log('👋 Cerrando sesión...')
+      console.log('👋 Iniciando cierre de sesión...')
       
+      // ⚠️ CRÍTICO: NO establecer loading durante logout
+      // setLoading(true) // COMENTADO PARA EVITAR BUCLES
+      
+      // Primero limpiar el estado local inmediatamente
+      clearAuthState()
+      
+      // Luego hacer el signOut en segundo plano
       await authService.signOut()
       
-      setUser(null)
-      setSession(null)
-      setUserInfo(null)
-      
       toast.success('Sesión cerrada exitosamente')
-      console.log('✅ Logout exitoso')
+      console.log('✅ Logout exitoso - Estado limpiado')
       
       return { success: true }
     } catch (error) {
       console.error('❌ Error en logout:', error)
-      toast.error('Error al cerrar sesión')
+      
+      // Mantener el estado limpio incluso si hay error
+      clearAuthState()
+      
+      toast.error('Sesión cerrada (con advertencias)')
       return { success: false, error: error.message }
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -238,7 +293,7 @@ export const AuthProvider = ({ children }) => {
     primaryBranch,
     
     // Para debugging
-    authService // Exponer el servicio para casos específicos
+    authService
   }
 
   console.log('🎯 AuthProvider state:', {
