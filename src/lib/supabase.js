@@ -1,4 +1,3 @@
-// src/lib/supabase.js - CORREGIDO SIN ERRORES
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -7,11 +6,11 @@ const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // =====================================================
-// 🔐 SERVICIOS DE AUTENTICACIÓN - CORREGIDO
+// 🔐 SERVICIOS DE AUTENTICACIÓN
 // =====================================================
 export const authService = {
   // Exponer el cliente de Supabase para el AuthContext
-  supabase, // ✅ CORREGIDO: era "Supabase" (mayúscula)
+  supabase,
 
   async signIn(email, password) {
     try {
@@ -71,7 +70,7 @@ export const authService = {
             branch:branches(id, name, is_active)
           )
         `)
-        .eq('auth_id', userId)  // ⚠️ CAMBIO IMPORTANTE: usar auth_id en lugar de id
+        .eq('auth_id', userId)
         .eq('is_active', true)
         .single()
 
@@ -215,275 +214,371 @@ export const roomService = {
 }
 
 // =====================================================
-// 🚀 SERVICIOS DE QUICK CHECK-INS
+// 📅 SERVICIOS DE RESERVACIONES
 // =====================================================
-export const quickCheckinService = {
-  async createQuickCheckin(quickCheckinData, guestData, snacksData = []) {
+export const reservationService = {
+  // Crear nueva reservación
+  async createReservation(reservationData, guestData) {
     try {
-      const { data: quickCheckin, error: quickCheckinError } = await supabase
-        .from('quick_checkins')
-        .insert({
-          branch_id: quickCheckinData.branchId,
-          room_id: quickCheckinData.roomId,
-          guest_name: guestData.fullName,
-          guest_document: `${guestData.documentType}:${guestData.documentNumber}`,
-          guest_phone: guestData.phone,
-          check_in_date: quickCheckinData.checkInDate,
-          check_out_date: quickCheckinData.checkOutDate,
-          amount: quickCheckinData.totalAmount,
-          payment_method_id: quickCheckinData.paymentMethodId,
-          created_by: quickCheckinData.createdBy
-        })
-        .select()
-        .single()
-
-      if (quickCheckinError) throw quickCheckinError
-
-      const { data: checkinOrder, error: checkinOrderError } = await supabase
-        .from('checkin_orders')
-        .insert({
-          quick_checkin_id: quickCheckin.id,
-          room_id: quickCheckinData.roomId,
-          check_in_time: new Date().toISOString(),
-          expected_checkout: quickCheckinData.checkOutDate,
-          processed_by: quickCheckinData.createdBy
-        })
-        .select()
-        .single()
-
-      if (checkinOrderError) throw checkinOrderError
-
-      return { data: { quickCheckin, checkinOrder }, error: null }
-    } catch (error) {
-      console.error('Error creating quick checkin:', error)
-      return { data: null, error }
-    }
-  },
-
-  async getActiveQuickCheckins(branchId) {
-    try {
-      const { data, error } = await supabase
-        .from('quick_checkins')
-        .select(`
-          id,
-          room_id,
-          guest_name,
-          guest_document,
-          guest_phone,
-          check_in_date,
-          check_out_date,
-          amount,
-          created_at,
-          room:room_id(room_number),
-          payment_method:payment_method_id(name)
-        `)
-        .eq('branch_id', branchId)
-        .gte('check_out_date', new Date().toISOString().split('T')[0])
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching active quick checkins:', error)
-      return { data: null, error }
-    }
-  },
-
-  async processQuickCheckout(quickCheckinId, checkoutData) {
-    try {
-      const { data: checkinOrder, error: checkinOrderError } = await supabase
-        .from('checkin_orders')
-        .select('id, room_id')
-        .eq('quick_checkin_id', quickCheckinId)
-        .is('actual_checkout', null)
-        .single()
-
-      if (checkinOrderError) throw checkinOrderError
-
-      const { data: checkoutOrder, error: checkoutOrderError } = await supabase
-        .from('checkout_orders')
-        .insert({
-          checkin_order_id: checkinOrder.id,
-          checkout_time: new Date().toISOString(),
-          total_charges: checkoutData.totalCharges,
-          additional_charges: checkoutData.additionalCharges || [],
-          processed_by: checkoutData.processedBy
-        })
-        .select()
-        .single()
-
-      if (checkoutOrderError) throw checkoutOrderError
-
-      const { error: updateError } = await supabase
-        .from('checkin_orders')
-        .update({ actual_checkout: new Date().toISOString() })
-        .eq('id', checkinOrder.id)
-
-      if (updateError) throw updateError
-
-      return { data: { checkoutOrder, checkinOrder }, error: null }
-    } catch (error) {
-      console.error('Error processing quick checkout:', error)
-      return { data: null, error }
-    }
-  },
-
-  async getActiveReservationCheckins(roomIds) {
-    try {
-      const { data, error } = await supabase
-        .from('checkin_orders')
-        .select(`
-          id,
-          room_id,
-          check_in_time,
-          expected_checkout,
-          reservation:reservation_id(
-            id,
-            reservation_code,
-            total_amount,
-            guest:guest_id(
-              full_name,
-              phone,
-              document_type,
-              document_number
-            )
-          )
-        `)
-        .is('actual_checkout', null)
-        .in('room_id', roomIds)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching active reservation checkins:', error)
-      return { data: null, error }
-    }
-  }
-}
-
-// =====================================================
-// 🍿 SERVICIOS DE SNACKS
-// =====================================================
-export const snackService = {
-  async getSnackCategories() {
-    try {
-      const { data, error } = await supabase
-        .from('snack_categories')
-        .select('*')
-        .eq('is_active', true)
-        .order('name')
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching snack categories:', error)
-      return { data: null, error }
-    }
-  },
-
-  async getSnackItems() {
-    try {
-      const { data, error } = await supabase
-        .from('snack_items')
-        .select(`
-          id,
-          name,
-          price,
-          cost,
-          stock,
-          minimum_stock,
-          category_id,
-          is_active,
-          snack_category:category_id(name)
-        `)
-        .eq('is_active', true)
-        .order('name')
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching snack items:', error)
-      return { data: null, error }
-    }
-  },
-
-  async updateSnackStock(snackId, newStock) {
-    try {
-      const { data, error } = await supabase
-        .from('snack_items')
-        .update({ stock: newStock })
-        .eq('id', snackId)
-        .select()
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error updating snack stock:', error)
-      return { data: null, error }
-    }
-  },
-
-  async processSnackConsumption(snacksConsumed) {
-    try {
-      const updates = []
+      console.log('🎫 Creando nueva reservación...', reservationData)
       
-      for (const snack of snacksConsumed) {
-        const { data, error } = await supabase
-          .from('snack_items')
-          .update({ 
-            stock: Math.max(0, snack.currentStock - snack.quantity) 
+      // 1. Crear o encontrar huésped
+      let guest = null
+      if (guestData.id) {
+        // Huésped existente
+        guest = { id: guestData.id }
+      } else {
+        // Crear nuevo huésped
+        const { data: newGuest, error: guestError } = await supabase
+          .from('guests')
+          .insert({
+            full_name: guestData.fullName,
+            phone: guestData.phone || '',
+            document_type: guestData.documentType || 'dni',
+            document_number: guestData.documentNumber
           })
-          .eq('id', snack.id)
           .select()
           .single()
 
-        if (error) throw error
-        updates.push(data)
+        if (guestError) throw guestError
+        guest = newGuest
       }
 
-      return { data: updates, error: null }
-    } catch (error) {
-      console.error('Error processing snack consumption:', error)
-      return { data: null, error }
-    }
-  }
-}
+      // 2. Obtener estado "pendiente"
+      const { data: statusData, error: statusError } = await supabase
+        .from('reservation_status')
+        .select('id')
+        .eq('status', 'pendiente')
+        .single()
 
-// =====================================================
-// 💳 SERVICIOS DE PAGOS
-// =====================================================
-export const paymentService = {
-  async getPaymentMethods() {
-    try {
-      const { data, error } = await supabase
-        .from('payment_methods')
-        .select('*')
-        .eq('is_active', true)
-        .order('name')
+      if (statusError) throw statusError
 
-      if (error) throw error
-      return { data, error: null }
+      // 3. Crear reservación
+      const { data: reservation, error: reservationError } = await supabase
+        .from('reservations')
+        .insert({
+          branch_id: reservationData.branchId,
+          guest_id: guest.id,
+          room_id: reservationData.roomId,
+          check_in_date: reservationData.checkInDate,
+          check_out_date: reservationData.checkOutDate,
+          total_amount: reservationData.totalAmount,
+          status_id: statusData.id,
+          created_by: reservationData.createdBy
+        })
+        .select(`
+          *,
+          guest:guest_id(full_name, phone, document_type, document_number),
+          room:room_id(room_number, base_price),
+          status:status_id(status, color),
+          branch:branch_id(name)
+        `)
+        .single()
+
+      if (reservationError) throw reservationError
+
+      console.log('✅ Reservación creada exitosamente:', reservation.reservation_code)
+      return { data: reservation, error: null }
     } catch (error) {
-      console.error('Error fetching payment methods:', error)
+      console.error('❌ Error creando reservación:', error)
       return { data: null, error }
     }
   },
 
-  async getPaymentMethodByName(name) {
+  // Obtener reservaciones por sucursal
+  async getReservationsByBranch(branchId, filters = {}) {
+    try {
+      let query = supabase
+        .from('reservations')
+        .select(`
+          id,
+          reservation_code,
+          check_in_date,
+          check_out_date,
+          total_amount,
+          paid_amount,
+          created_at,
+          guest:guest_id(
+            id,
+            full_name,
+            phone,
+            document_type,
+            document_number
+          ),
+          room:room_id(
+            id,
+            room_number,
+            floor,
+            base_price
+          ),
+          status:status_id(
+            id,
+            status,
+            color,
+            description
+          ),
+          created_by_user:created_by(
+            first_name,
+            last_name
+          )
+        `)
+        .eq('branch_id', branchId)
+
+      // Aplicar filtros
+      if (filters.status) {
+        const { data: statusData } = await supabase
+          .from('reservation_status')
+          .select('id')
+          .eq('status', filters.status)
+          .single()
+        
+        if (statusData) {
+          query = query.eq('status_id', statusData.id)
+        }
+      }
+
+      if (filters.dateFrom) {
+        query = query.gte('check_in_date', filters.dateFrom)
+      }
+
+      if (filters.dateTo) {
+        query = query.lte('check_out_date', filters.dateTo)
+      }
+
+      if (filters.guestName) {
+        // Buscar por nombre de huésped
+        const { data: guests } = await supabase
+          .from('guests')
+          .select('id')
+          .ilike('full_name', `%${filters.guestName}%`)
+        
+        if (guests?.length > 0) {
+          const guestIds = guests.map(g => g.id)
+          query = query.in('guest_id', guestIds)
+        } else {
+          // Si no encuentra huéspedes, devolver array vacío
+          return { data: [], error: null }
+        }
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(filters.limit || 50)
+
+      if (error) throw error
+
+      // Agregar campos calculados
+      const enrichedData = data?.map(reservation => ({
+        ...reservation,
+        balance: reservation.total_amount - (reservation.paid_amount || 0),
+        nights: Math.ceil((new Date(reservation.check_out_date) - new Date(reservation.check_in_date)) / (1000 * 60 * 60 * 24)),
+        isToday: new Date(reservation.check_in_date).toDateString() === new Date().toDateString(),
+        isPending: reservation.status?.status === 'pendiente',
+        isConfirmed: reservation.status?.status === 'confirmada',
+        canCheckIn: reservation.status?.status === 'confirmada' && 
+                   new Date(reservation.check_in_date) <= new Date()
+      })) || []
+
+      return { data: enrichedData, error: null }
+    } catch (error) {
+      console.error('❌ Error obteniendo reservaciones:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Buscar reservaciones
+  async searchReservations(branchId, searchTerm) {
     try {
       const { data, error } = await supabase
-        .from('payment_methods')
-        .select('*')
-        .eq('name', name)
-        .eq('is_active', true)
+        .from('reservations')
+        .select(`
+          id,
+          reservation_code,
+          check_in_date,
+          check_out_date,
+          total_amount,
+          guest:guest_id(full_name, phone),
+          room:room_id(room_number),
+          status:status_id(status, color)
+        `)
+        .eq('branch_id', branchId)
+        .or(`reservation_code.ilike.%${searchTerm}%`)
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error buscando reservaciones:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Actualizar estado de reservación
+  async updateReservationStatus(reservationId, newStatus, userId) {
+    try {
+      // Obtener ID del nuevo estado
+      const { data: statusData, error: statusError } = await supabase
+        .from('reservation_status')
+        .select('id')
+        .eq('status', newStatus)
+        .single()
+
+      if (statusError) throw statusError
+
+      const { data, error } = await supabase
+        .from('reservations')
+        .update({ 
+          status_id: statusData.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', reservationId)
+        .select(`
+          *,
+          status:status_id(status, color)
+        `)
         .single()
 
       if (error) throw error
       return { data, error: null }
     } catch (error) {
-      console.error('Error fetching payment method by name:', error)
+      console.error('❌ Error actualizando estado de reservación:', error)
       return { data: null, error }
+    }
+  },
+
+  // Confirmar reservación
+  async confirmReservation(reservationId, userId) {
+    return this.updateReservationStatus(reservationId, 'confirmada', userId)
+  },
+
+  // Cancelar reservación
+  async cancelReservation(reservationId, userId, reason = '') {
+    try {
+      const result = await this.updateReservationStatus(reservationId, 'cancelada', userId)
+      
+      // Aquí podrías agregar log de auditoría con la razón
+      if (result.data && reason) {
+        console.log(`Reservación ${reservationId} cancelada. Razón: ${reason}`)
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ Error cancelando reservación:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Procesar check-in desde reservación
+  async processCheckinFromReservation(reservationId, checkinData) {
+    try {
+      // 1. Verificar que la reservación esté confirmada
+      const { data: reservation, error: reservationError } = await supabase
+        .from('reservations')
+        .select(`
+          *,
+          status:status_id(status),
+          guest:guest_id(*),
+          room:room_id(*)
+        `)
+        .eq('id', reservationId)
+        .single()
+
+      if (reservationError) throw reservationError
+
+      if (reservation.status.status !== 'confirmada') {
+        throw new Error('La reservación debe estar confirmada para hacer check-in')
+      }
+
+      // 2. Crear orden de check-in
+      const { data: checkinOrder, error: checkinError } = await supabase
+        .from('checkin_orders')
+        .insert({
+          reservation_id: reservationId,
+          room_id: reservation.room_id,
+          guest_id: reservation.guest_id,
+          check_in_time: new Date().toISOString(),
+          expected_checkout: reservation.check_out_date,
+          key_cards_issued: checkinData.keyCards || 0,
+          deposit_amount: checkinData.deposit || 0,
+          processed_by: checkinData.processedBy
+        })
+        .select()
+        .single()
+
+      if (checkinError) throw checkinError
+
+      // 3. Actualizar estado de reservación a "en_uso"
+      await this.updateReservationStatus(reservationId, 'en_uso', checkinData.processedBy)
+
+      console.log('✅ Check-in procesado exitosamente para reservación:', reservation.reservation_code)
+      return { 
+        data: { 
+          checkinOrder, 
+          reservation,
+          guest: reservation.guest,
+          room: reservation.room 
+        }, 
+        error: null 
+      }
+    } catch (error) {
+      console.error('❌ Error procesando check-in:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Agregar pago a reservación
+  async addPayment(reservationId, paymentData) {
+    try {
+      const { data: payment, error: paymentError } = await supabase
+        .from('reservation_payments')
+        .insert({
+          reservation_id: reservationId,
+          payment_method_id: paymentData.paymentMethodId,
+          amount: paymentData.amount,
+          payment_reference: paymentData.reference || null,
+          payment_date: paymentData.paymentDate || new Date().toISOString(),
+          processed_by: paymentData.processedBy
+        })
+        .select(`
+          *,
+          payment_method:payment_method_id(name, requires_reference)
+        `)
+        .single()
+
+      if (paymentError) throw paymentError
+
+      // El trigger automáticamente actualizará el paid_amount en reservations
+      console.log('✅ Pago agregado exitosamente:', payment.amount)
+      return { data: payment, error: null }
+    } catch (error) {
+      console.error('❌ Error agregando pago:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Obtener pagos de una reservación
+  async getReservationPayments(reservationId) {
+    try {
+      const { data, error } = await supabase
+        .from('reservation_payments')
+        .select(`
+          id,
+          amount,
+          payment_reference,
+          payment_date,
+          created_at,
+          payment_method:payment_method_id(name),
+          processed_by_user:processed_by(first_name, last_name)
+        `)
+        .eq('reservation_id', reservationId)
+        .order('payment_date', { ascending: false })
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error obteniendo pagos:', error)
+      return { data: [], error }
     }
   }
 }
@@ -531,6 +626,168 @@ export const guestService = {
   }
 }
 
+// Servicios extendidos de huéspedes
+export const extendedGuestService = {
+  ...guestService,
+
+  // Obtener huésped por ID con reservaciones
+  async getGuestById(guestId) {
+    try {
+      const { data, error } = await supabase
+        .from('guests')
+        .select(`
+          *,
+          reservations:reservations(
+            id,
+            reservation_code,
+            check_in_date,
+            check_out_date,
+            total_amount,
+            paid_amount,
+            status:status_id(status, color),
+            room:room_id(room_number)
+          )
+        `)
+        .eq('id', guestId)
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error obteniendo huésped:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Actualizar información de huésped
+  async updateGuest(guestId, guestData) {
+    try {
+      const { data, error } = await supabase
+        .from('guests')
+        .update({
+          full_name: guestData.fullName,
+          phone: guestData.phone,
+          document_type: guestData.documentType,
+          document_number: guestData.documentNumber,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', guestId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error actualizando huésped:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Obtener historial de huésped
+  async getGuestHistory(guestId) {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select(`
+          id,
+          reservation_code,
+          check_in_date,
+          check_out_date,
+          total_amount,
+          paid_amount,
+          created_at,
+          status:status_id(status, color),
+          room:room_id(room_number),
+          branch:branch_id(name),
+          checkin_orders:checkin_orders(
+            check_in_time,
+            actual_checkout,
+            checkout_orders:checkout_orders(
+              checkout_time,
+              total_charges
+            )
+          )
+        `)
+        .eq('guest_id', guestId)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error obteniendo historial:', error)
+      return { data: [], error }
+    }
+  }
+}
+
+// =====================================================
+// 🚀 SERVICIOS DE QUICK CHECK-INS
+// =====================================================
+export const quickCheckinService = {
+  async createQuickCheckin(quickCheckinData, guestData, snacksData = []) {
+    try {
+      const { data: quickCheckin, error: quickCheckinError } = await supabase
+        .from('quick_checkins')
+        .insert({
+          branch_id: quickCheckinData.branchId,
+          room_id: quickCheckinData.roomId,
+          guest_name: guestData.fullName,
+          guest_document: `${guestData.documentType}:${guestData.documentNumber}`,
+          guest_phone: guestData.phone,
+          check_in_date: quickCheckinData.checkInDate,
+          check_out_date: quickCheckinData.checkOutDate,
+          amount: quickCheckinData.totalAmount,
+          payment_method_id: quickCheckinData.paymentMethodId,
+          created_by: quickCheckinData.createdBy
+        })
+        .select()
+        .single()
+
+      if (quickCheckinError) throw quickCheckinError
+
+      const { data: checkinOrder, error: checkinOrderError } = await supabase
+        .from('checkin_orders')
+        .insert({
+          quick_checkin_id: quickCheckin.id,
+          room_id: quickCheckinData.roomId,
+          check_in_time: new Date().toISOString(),
+          expected_checkout: quickCheckinData.checkOutDate,
+          processed_by: quickCheckinData.createdBy
+        })
+        .select()
+        .single()
+
+      if (checkinOrderError) throw checkinOrderError
+
+      return { data: { quickCheckin, checkinOrder }, error: null }
+    } catch (error) {
+      console.error('Error creating quick checkin:', error)
+      return { data: null, error }
+    }
+  }
+}
+
+// =====================================================
+// 💳 SERVICIOS DE PAGOS
+// =====================================================
+export const paymentService = {
+  async getPaymentMethods() {
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching payment methods:', error)
+      return { data: null, error }
+    }
+  }
+}
+
 // =====================================================
 // 📊 SERVICIOS DE REPORTES Y ESTADÍSTICAS
 // =====================================================
@@ -545,37 +802,6 @@ export const reportService = {
       return { data: data[0] || {}, error: null }
     } catch (error) {
       console.error('Error fetching dashboard stats:', error)
-      return { data: null, error }
-    }
-  },
-
-  async calculateRevenueByPeriod(branchId, startDate, endDate) {
-    try {
-      const { data, error } = await supabase.rpc('calculate_revenue_by_period', {
-        branch_uuid: branchId,
-        start_date: startDate,
-        end_date: endDate
-      })
-
-      if (error) throw error
-      return { data: data[0] || {}, error: null }
-    } catch (error) {
-      console.error('Error calculating revenue by period:', error)
-      return { data: null, error }
-    }
-  },
-
-  async generateDailyReport(branchId, reportDate = null) {
-    try {
-      const { data, error } = await supabase.rpc('generate_daily_report', {
-        branch_uuid: branchId,
-        report_date_param: reportDate || new Date().toISOString().split('T')[0]
-      })
-
-      if (error) throw error
-      return { data: true, error: null }
-    } catch (error) {
-      console.error('Error generating daily report:', error)
       return { data: null, error }
     }
   }
@@ -635,61 +861,6 @@ export const utilityService = {
 }
 
 // =====================================================
-// 📡 SERVICIOS DE TIEMPO REAL (SUBSCRIPCIONES)
-// =====================================================
-export const realtimeService = {
-  subscribeToRoomChanges(branchId, callback) {
-    return supabase
-      .channel('room-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'rooms',
-          filter: `branch_id=eq.${branchId}`
-        },
-        callback
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'quick_checkins',
-          filter: `branch_id=eq.${branchId}`
-        },
-        callback
-      )
-      .subscribe()
-  },
-
-  subscribeToCheckinChanges(callback) {
-    return supabase
-      .channel('checkin-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'checkin_orders'
-        },
-        callback
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'checkout_orders'
-        },
-        callback
-      )
-      .subscribe()
-  }
-}
-
-// =====================================================
 // 🛠️ SERVICIOS COMBINADOS PARA EL HOOK
 // =====================================================
 export const hotelService = {
@@ -704,31 +875,18 @@ export const hotelService = {
       const [
         roomsResult,
         quickCheckinsResult,
-        snackCategoriesResult,
-        snackItemsResult,
         paymentMethodsResult
       ] = await Promise.all([
         roomService.getRoomsWithStatus(branchId),
-        quickCheckinService.getActiveQuickCheckins(branchId),
-        snackService.getSnackCategories(),
-        snackService.getSnackItems(),
+        quickCheckinService.getActiveQuickCheckins ? quickCheckinService.getActiveQuickCheckins(branchId) : Promise.resolve({ data: [] }),
         paymentService.getPaymentMethods()
       ])
 
       console.log('📊 Results received:', {
         rooms: roomsResult.data?.length || 0,
         quickCheckins: quickCheckinsResult.data?.length || 0,
-        snackCategories: snackCategoriesResult.data?.length || 0,
-        snackItems: snackItemsResult.data?.length || 0,
         paymentMethods: paymentMethodsResult.data?.length || 0
       })
-
-      let reservationCheckins = []
-      if (roomsResult.data?.length > 0) {
-        const roomIds = roomsResult.data.map(r => r.id)
-        const reservationResult = await quickCheckinService.getActiveReservationCheckins(roomIds)
-        reservationCheckins = reservationResult.data || []
-      }
 
       if (roomsResult.error) {
         console.error('❌ Error fetching rooms:', roomsResult.error)
@@ -738,9 +896,8 @@ export const hotelService = {
       return {
         rooms: roomsResult.data || [],
         quickCheckins: quickCheckinsResult.data || [],
-        reservationCheckins,
-        snackCategories: snackCategoriesResult.data || [],
-        snackItems: snackItemsResult.data || [],
+        snackCategories: [], // Para compatibilidad
+        snackItems: [], // Para compatibilidad
         paymentMethods: paymentMethodsResult.data || [],
         error: null
       }
@@ -749,7 +906,6 @@ export const hotelService = {
       return {
         rooms: [],
         quickCheckins: [],
-        reservationCheckins: [],
         snackCategories: [],
         snackItems: [],
         paymentMethods: [],

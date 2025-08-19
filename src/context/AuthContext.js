@@ -1,4 +1,4 @@
-// src/context/AuthContext.js - VERSIÓN CORREGIDA CONTRA CARGA INFINITA
+// src/context/AuthContext.js - VERSIÓN ACTUALIZADA
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../lib/supabase'
@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
   const [initializing, setInitializing] = useState(true)
 
-  console.log('🔍 AuthProvider inicializando con Supabase...')
+  console.log('🔍 AuthProvider inicializando con Supabase actualizado...')
 
   // Función para limpiar el estado completamente
   const clearAuthState = () => {
@@ -28,11 +28,11 @@ export const AuthProvider = ({ children }) => {
     setUser(null)
     setUserInfo(null)
     setSession(null)
-    setLoading(false) // ⚠️ IMPORTANTE: Siempre establecer loading a false
+    setLoading(false)
   }
 
   useEffect(() => {
-    let isMounted = true // Para evitar actualizaciones de estado en componentes desmontados
+    let isMounted = true
     let authSubscription = null
 
     const initializeAuth = async () => {
@@ -55,14 +55,17 @@ export const AuthProvider = ({ children }) => {
         // Obtener sesión actual
         const { session: currentSession, userInfo: currentUserInfo } = await authService.getCurrentSession()
         
-        if (!isMounted) return // Evitar actualizaciones si el componente se desmontó
+        if (!isMounted) return
 
         if (currentSession?.user) {
           console.log('✅ Usuario ya logueado:', currentSession.user.email)
           setUser(currentSession.user)
           setSession(currentSession)
           setUserInfo(currentUserInfo)
-          toast.success(`Bienvenido de vuelta, ${currentUserInfo?.first_name || 'Usuario'}!`)
+          
+          if (currentUserInfo?.first_name) {
+            toast.success(`Bienvenido de vuelta, ${currentUserInfo.first_name}!`)
+          }
         } else {
           console.log('👤 No hay usuario logueado')
           clearAuthState()
@@ -90,12 +93,10 @@ export const AuthProvider = ({ children }) => {
           async (event, session) => {
             console.log('🔄 Auth state change:', event, session?.user?.email)
             
-            if (!isMounted) return // Evitar actualizaciones si el componente se desmontó
+            if (!isMounted) return
             
-            // ⚠️ CRÍTICO: Evitar bucles infinitos con estos checks
             if (event === 'SIGNED_IN' && session?.user) {
               try {
-                // Solo actualizar si realmente cambió el usuario
                 if (user?.id !== session.user.id) {
                   setLoading(true)
                   const userInfo = await authService.getUserInfo(session.user.id)
@@ -129,14 +130,12 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    // Inicializar autenticación y configurar listener
     initializeAuth().then(() => {
       if (isMounted) {
         setupAuthListener()
       }
     })
 
-    // Cleanup function
     return () => {
       console.log('🧹 Limpiando AuthProvider...')
       isMounted = false
@@ -145,13 +144,13 @@ export const AuthProvider = ({ children }) => {
         authSubscription = null
       }
     }
-  }, []) // ⚠️ IMPORTANTE: Array de dependencias vacío
+  }, [])
 
-  // Login mejorado
+  // Login actualizado
   const login = async (email, password) => {
     try {
       setLoading(true)
-      console.log('🔑 Intentando login con Supabase:', { email, password: '***' })
+      console.log('🔑 Intentando login con Supabase:', { email })
       
       const { user: authUser, session: authSession, userInfo: authUserInfo } = await authService.signIn(email, password)
       
@@ -188,18 +187,12 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  // ⚠️ LOGOUT CORREGIDO PARA EVITAR CARGA INFINITA
+  // Logout corregido
   const logout = async () => {
     try {
       console.log('👋 Iniciando cierre de sesión...')
       
-      // ⚠️ CRÍTICO: NO establecer loading durante logout
-      // setLoading(true) // COMENTADO PARA EVITAR BUCLES
-      
-      // Primero limpiar el estado local inmediatamente
       clearAuthState()
-      
-      // Luego hacer el signOut en segundo plano
       await authService.signOut()
       
       toast.success('Sesión cerrada exitosamente')
@@ -208,10 +201,7 @@ export const AuthProvider = ({ children }) => {
       return { success: true }
     } catch (error) {
       console.error('❌ Error en logout:', error)
-      
-      // Mantener el estado limpio incluso si hay error
       clearAuthState()
-      
       toast.error('Sesión cerrada (con advertencias)')
       return { success: false, error: error.message }
     }
@@ -233,19 +223,33 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  // Funciones de utilidad para roles y permisos
+  // =============================================
+  // FUNCIONES DE PERMISOS ACTUALIZADAS
+  // =============================================
+
+  // Verificar rol específico
   const hasRole = (roleName) => {
     return userInfo?.role?.name === roleName
   }
 
+  // Verificar permiso específico (ACTUALIZADO)
   const hasPermission = (permission) => {
     if (!userInfo?.role?.permissions) return false
+    
+    // Si tiene permisos de administrador total
     if (userInfo.role.permissions.all) return true
+    
+    // Verificar permiso específico
     return userInfo.role.permissions[permission] === true
   }
 
+  // Roles específicos
   const isAdmin = () => hasRole('administrador')
   const isReception = () => hasRole('recepcion')
+
+  // =============================================
+  // FUNCIONES DE SUCURSALES ACTUALIZADAS
+  // =============================================
 
   const getPrimaryBranch = () => {
     const primaryBranch = userInfo?.user_branches?.find(ub => ub.is_primary)
@@ -256,7 +260,10 @@ export const AuthProvider = ({ children }) => {
     return userInfo?.user_branches?.map(ub => ub.branch) || []
   }
 
-  // Información computada
+  // =============================================
+  // INFORMACIÓN COMPUTADA ACTUALIZADA
+  // =============================================
+
   const userName = userInfo ? `${userInfo.first_name} ${userInfo.last_name}` : ''
   const userRole = userInfo?.role?.name || ''
   const userEmail = user?.email || ''
@@ -276,7 +283,7 @@ export const AuthProvider = ({ children }) => {
     logout,
     refreshUserInfo,
     
-    // Utilidades de roles
+    // Utilidades de roles ACTUALIZADAS
     hasRole,
     hasPermission,
     isAdmin,
@@ -296,13 +303,14 @@ export const AuthProvider = ({ children }) => {
     authService
   }
 
-  console.log('🎯 AuthProvider state:', {
+  console.log('🎯 AuthProvider state actualizado:', {
     isAuthenticated: !!user,
     loading,
     initializing,
     userRole: userInfo?.role?.name,
     userEmail: user?.email,
-    primaryBranch: primaryBranch?.name
+    primaryBranch: primaryBranch?.name,
+    branchId: primaryBranch?.id
   })
 
   return (
