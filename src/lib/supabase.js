@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -764,6 +765,106 @@ export const quickCheckinService = {
       console.error('Error creating quick checkin:', error)
       return { data: null, error }
     }
+  },
+
+  async getActiveQuickCheckins(branchId) {
+    try {
+      const { data, error } = await supabase
+        .from('quick_checkins')
+        .select(`
+          id,
+          room_id,
+          guest_name,
+          guest_document,
+          guest_phone,
+          check_in_date,
+          check_out_date,
+          amount,
+          created_at,
+          room:room_id(room_number),
+          payment_method:payment_method_id(name)
+        `)
+        .eq('branch_id', branchId)
+        .gte('check_out_date', new Date().toISOString().split('T')[0])
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching active quick checkins:', error)
+      return { data: null, error }
+    }
+  },
+
+  async processQuickCheckout(quickCheckinId, checkoutData) {
+    try {
+      const { data: checkinOrder, error: checkinOrderError } = await supabase
+        .from('checkin_orders')
+        .select('id, room_id')
+        .eq('quick_checkin_id', quickCheckinId)
+        .is('actual_checkout', null)
+        .single()
+
+      if (checkinOrderError) throw checkinOrderError
+
+      const { data: checkoutOrder, error: checkoutOrderError } = await supabase
+        .from('checkout_orders')
+        .insert({
+          checkin_order_id: checkinOrder.id,
+          checkout_time: new Date().toISOString(),
+          total_charges: checkoutData.totalCharges,
+          additional_charges: checkoutData.additionalCharges || [],
+          processed_by: checkoutData.processedBy
+        })
+        .select()
+        .single()
+
+      if (checkoutOrderError) throw checkoutOrderError
+
+      const { error: updateError } = await supabase
+        .from('checkin_orders')
+        .update({ actual_checkout: new Date().toISOString() })
+        .eq('id', checkinOrder.id)
+
+      if (updateError) throw updateError
+
+      return { data: { checkoutOrder, checkinOrder }, error: null }
+    } catch (error) {
+      console.error('Error processing quick checkout:', error)
+      return { data: null, error }
+    }
+  },
+
+  async getActiveReservationCheckins(roomIds) {
+    try {
+      const { data, error } = await supabase
+        .from('checkin_orders')
+        .select(`
+          id,
+          room_id,
+          check_in_time,
+          expected_checkout,
+          reservation:reservation_id(
+            id,
+            reservation_code,
+            total_amount,
+            guest:guest_id(
+              full_name,
+              phone,
+              document_type,
+              document_number
+            )
+          )
+        `)
+        .is('actual_checkout', null)
+        .in('room_id', roomIds)
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching active reservation checkins:', error)
+      return { data: null, error }
+    }
   }
 }
 
@@ -857,6 +958,51 @@ export const utilityService = {
       isValid: errors.length === 0,
       errors
     }
+  },
+
+  // Función para generar reportes
+  async generateReport(type, branchId, dateRange) {
+    try {
+      console.log(`📊 Generating ${type} report for branch ${branchId}`)
+      
+      return {
+        data: {
+          type,
+          branchId,
+          dateRange,
+          generatedAt: new Date().toISOString(),
+          status: 'completed'
+        },
+        error: null
+      }
+    } catch (error) {
+      console.error('Error generating report:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Función para validar datos
+  validateFormData(formData, requiredFields) {
+    const errors = []
+    
+    requiredFields.forEach(field => {
+      if (!formData[field] || formData[field].toString().trim() === '') {
+        errors.push(`${field} es requerido`)
+      }
+    })
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  },
+
+  // Función para formatear datos para exportación
+  formatDataForExport(data, format = 'csv') {
+    if (format === 'csv') {
+      return data.map(item => Object.values(item).join(',')).join('\n')
+    }
+    return data
   }
 }
 
@@ -878,7 +1024,7 @@ export const hotelService = {
         paymentMethodsResult
       ] = await Promise.all([
         roomService.getRoomsWithStatus(branchId),
-        quickCheckinService.getActiveQuickCheckins ? quickCheckinService.getActiveQuickCheckins(branchId) : Promise.resolve({ data: [] }),
+        quickCheckinService.getActiveQuickCheckins(branchId),
         paymentService.getPaymentMethods()
       ])
 
@@ -1225,186 +1371,4 @@ export const snackService = {
       return { data: null, error }
     }
   }
-}
-
-// =====================================================
-// 🔧 SERVICIOS ADICIONALES PARA QUICK CHECKINS
-// =====================================================
-
-// Agregar estos métodos al quickCheckinService existente
-export const quickCheckinServiceExtended = {
-  ...quickCheckinService,
-
-  async getActiveQuickCheckins(branchId) {
-    try {
-      const { data, error } = await supabase
-        .from('quick_checkins')
-        .select(`
-          id,
-          room_id,
-          guest_name,
-          guest_document,
-          guest_phone,
-          check_in_date,
-          check_out_date,
-          amount,
-          created_at,
-          room:room_id(room_number),
-          payment_method:payment_method_id(name)
-        `)
-        .eq('branch_id', branchId)
-        .gte('check_out_date', new Date().toISOString().split('T')[0])
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching active quick checkins:', error)
-      return { data: null, error }
-    }
-  },
-
-  async processQuickCheckout(quickCheckinId, checkoutData) {
-    try {
-      const { data: checkinOrder, error: checkinOrderError } = await supabase
-        .from('checkin_orders')
-        .select('id, room_id')
-        .eq('quick_checkin_id', quickCheckinId)
-        .is('actual_checkout', null)
-        .single()
-
-      if (checkinOrderError) throw checkinOrderError
-
-      const { data: checkoutOrder, error: checkoutOrderError } = await supabase
-        .from('checkout_orders')
-        .insert({
-          checkin_order_id: checkinOrder.id,
-          checkout_time: new Date().toISOString(),
-          total_charges: checkoutData.totalCharges,
-          additional_charges: checkoutData.additionalCharges || [],
-          processed_by: checkoutData.processedBy
-        })
-        .select()
-        .single()
-
-      if (checkoutOrderError) throw checkoutOrderError
-
-      const { error: updateError } = await supabase
-        .from('checkin_orders')
-        .update({ actual_checkout: new Date().toISOString() })
-        .eq('id', checkinOrder.id)
-
-      if (updateError) throw updateError
-
-      return { data: { checkoutOrder, checkinOrder }, error: null }
-    } catch (error) {
-      console.error('Error processing quick checkout:', error)
-      return { data: null, error }
-    }
-  },
-
-  async getActiveReservationCheckins(roomIds) {
-    try {
-      const { data, error } = await supabase
-        .from('checkin_orders')
-        .select(`
-          id,
-          room_id,
-          check_in_time,
-          expected_checkout,
-          reservation:reservation_id(
-            id,
-            reservation_code,
-            total_amount,
-            guest:guest_id(
-              full_name,
-              phone,
-              document_type,
-              document_number
-            )
-          )
-        `)
-        .is('actual_checkout', null)
-        .in('room_id', roomIds)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching active reservation checkins:', error)
-      return { data: null, error }
-    }
-  }
-}
-
-// =====================================================
-// 🔧 SERVICIOS DE UTILIDAD EXTENDIDOS
-// =====================================================
-export const extendedUtilityService = {
-  ...utilityService,
-
-  // Función para generar reportes
-  async generateReport(type, branchId, dateRange) {
-    try {
-      console.log(`📊 Generating ${type} report for branch ${branchId}`)
-      
-      // Simulación de generación de reporte
-      return {
-        data: {
-          type,
-          branchId,
-          dateRange,
-          generatedAt: new Date().toISOString(),
-          status: 'completed'
-        },
-        error: null
-      }
-    } catch (error) {
-      console.error('Error generating report:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Función para validar datos
-  validateFormData(formData, requiredFields) {
-    const errors = []
-    
-    requiredFields.forEach(field => {
-      if (!formData[field] || formData[field].toString().trim() === '') {
-        errors.push(`${field} es requerido`)
-      }
-    })
-    
-    return {
-      isValid: errors.length === 0,
-      errors
-    }
-  },
-
-  // Función para formatear datos para exportación
-  formatDataForExport(data, format = 'csv') {
-    if (format === 'csv') {
-      // Implementar formateo CSV
-      return data.map(item => Object.values(item).join(',')).join('\n')
-    }
-    return data
-  }
-}
-
-// Al final del archivo
-export {
-  supabase,
-  authService,
-  roomService,
-  reservationService,
-  guestService,
-  extendedGuestService,
-  quickCheckinService,
-  snackService,
-  paymentService,
-  reportService,
-  utilityService,
-  hotelService,
-  realtimeService,
-  syncService,
-  analyticsService
 }
