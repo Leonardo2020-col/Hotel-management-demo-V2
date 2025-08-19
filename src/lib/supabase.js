@@ -914,3 +914,497 @@ export const hotelService = {
     }
   }
 }
+
+// =====================================================
+// 📡 SERVICIOS DE TIEMPO REAL (SUBSCRIPCIONES)
+// =====================================================
+export const realtimeService = {
+  subscribeToRoomChanges(branchId, callback) {
+    return supabase
+      .channel('room-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rooms',
+          filter: `branch_id=eq.${branchId}`
+        },
+        callback
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'quick_checkins',
+          filter: `branch_id=eq.${branchId}`
+        },
+        callback
+      )
+      .subscribe()
+  },
+
+  subscribeToCheckinChanges(callback) {
+    return supabase
+      .channel('checkin-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'checkin_orders'
+        },
+        callback
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'checkout_orders'
+        },
+        callback
+      )
+      .subscribe()
+  },
+
+  subscribeToReservationChanges(branchId, callback) {
+    return supabase
+      .channel('reservation-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'reservations',
+          filter: `branch_id=eq.${branchId}`
+        },
+        callback
+      )
+      .subscribe()
+  }
+}
+
+// =====================================================
+// 🔄 SERVICIOS DE SINCRONIZACIÓN
+// =====================================================
+export const syncService = {
+  // Sincronizar datos después de operaciones importantes
+  async syncReservationData(reservationId) {
+    try {
+      // Recargar datos completos de la reservación
+      const { data, error } = await supabase
+        .from('reservations')
+        .select(`
+          *,
+          guest:guest_id(*),
+          room:room_id(*),
+          status:status_id(*),
+          payments:reservation_payments(*),
+          checkin_orders(*)
+        `)
+        .eq('id', reservationId)
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error sincronizando datos de reservación:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Verificar disponibilidad en tiempo real
+  async verifyRoomAvailability(roomId, checkInDate, checkOutDate, excludeReservationId = null) {
+    try {
+      let query = supabase
+        .from('reservations')
+        .select('id, reservation_code, check_in_date, check_out_date')
+        .eq('room_id', roomId)
+        .not('check_out_date', 'lte', checkInDate)
+        .not('check_in_date', 'gte', checkOutDate)
+
+      if (excludeReservationId) {
+        query = query.neq('id', excludeReservationId)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+
+      const isAvailable = data.length === 0
+      return { 
+        data: { 
+          isAvailable, 
+          conflictingReservations: data 
+        }, 
+        error: null 
+      }
+    } catch (error) {
+      console.error('❌ Error verificando disponibilidad:', error)
+      return { data: { isAvailable: false, conflictingReservations: [] }, error }
+    }
+  }
+}
+
+// =====================================================
+// 📊 SERVICIOS DE ANÁLISIS ADICIONALES
+// =====================================================
+export const analyticsService = {
+  // Análisis de ocupación por período
+  async getOccupancyAnalysis(branchId, startDate, endDate) {
+    try {
+      const { data, error } = await supabase
+        .from('daily_reports')
+        .select(`
+          report_date,
+          occupancy_rate,
+          total_revenue,
+          occupied_rooms,
+          available_rooms
+        `)
+        .eq('branch_id', branchId)
+        .gte('report_date', startDate)
+        .lte('report_date', endDate)
+        .order('report_date')
+
+      if (error) throw error
+
+      const analysis = {
+        averageOccupancy: data.length > 0 ? 
+          data.reduce((sum, day) => sum + day.occupancy_rate, 0) / data.length : 0,
+        totalRevenue: data.reduce((sum, day) => sum + day.total_revenue, 0),
+        peakOccupancy: Math.max(...data.map(day => day.occupancy_rate), 0),
+        dailyData: data
+      }
+
+      return { data: analysis, error: null }
+    } catch (error) {
+      console.error('❌ Error en análisis de ocupación:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Análisis de huéspedes frecuentes
+  async getFrequentGuests(branchId, limit = 10) {
+    try {
+      const { data, error } = await supabase
+        .from('guests')
+        .select(`
+          id,
+          full_name,
+          phone,
+          reservations!inner(
+            branch_id,
+            total_amount,
+            status:status_id(status)
+          )
+        `)
+        .eq('reservations.branch_id', branchId)
+
+      if (error) throw error
+
+      // Procesar datos para obtener estadísticas por huésped
+      const guestStats = data.reduce((acc, guest) => {
+        const completedReservations = guest.reservations.filter(r => 
+          ['completada', 'en_uso'].includes(r.status.status)
+        )
+        
+        if (completedReservations.length > 0) {
+          acc.push({
+            id: guest.id,
+            name: guest.full_name,
+            phone: guest.phone,
+            totalVisits: completedReservations.length,
+            totalSpent: completedReservations.reduce((sum, r) => sum + r.total_amount, 0),
+            averageSpending: completedReservations.reduce((sum, r) => sum + r.total_amount, 0) / completedReservations.length
+          })
+        }
+        
+        return acc
+      }, [])
+
+      // Ordenar por número de visitas
+      const sortedGuests = guestStats
+        .sort((a, b) => b.totalVisits - a.totalVisits)
+        .slice(0, limit)
+
+      return { data: sortedGuests, error: null }
+    } catch (error) {
+      console.error('❌ Error obteniendo huéspedes frecuentes:', error)
+      return { data: [], error }
+    }
+  }
+}
+
+// =====================================================
+// 🍿 SERVICIOS DE SNACKS (COMPATIBILIDAD)
+// =====================================================
+export const snackService = {
+  async getSnackCategories() {
+    try {
+      const { data, error } = await supabase
+        .from('snack_categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching snack categories:', error)
+      return { data: [], error }
+    }
+  },
+
+  async getSnackItems() {
+    try {
+      const { data, error } = await supabase
+        .from('snack_items')
+        .select(`
+          id,
+          name,
+          price,
+          cost,
+          stock,
+          minimum_stock,
+          category_id,
+          is_active,
+          snack_category:category_id(name)
+        `)
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching snack items:', error)
+      return { data: [], error }
+    }
+  },
+
+  async updateSnackStock(snackId, newStock) {
+    try {
+      const { data, error } = await supabase
+        .from('snack_items')
+        .update({ stock: newStock })
+        .eq('id', snackId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error updating snack stock:', error)
+      return { data: null, error }
+    }
+  },
+
+  async processSnackConsumption(snacksConsumed) {
+    try {
+      const updates = []
+      
+      for (const snack of snacksConsumed) {
+        const { data, error } = await supabase
+          .from('snack_items')
+          .update({ 
+            stock: Math.max(0, snack.currentStock - snack.quantity) 
+          })
+          .eq('id', snack.id)
+          .select()
+          .single()
+
+        if (error) throw error
+        updates.push(data)
+      }
+
+      return { data: updates, error: null }
+    } catch (error) {
+      console.error('Error processing snack consumption:', error)
+      return { data: null, error }
+    }
+  }
+}
+
+// =====================================================
+// 🔧 SERVICIOS ADICIONALES PARA QUICK CHECKINS
+// =====================================================
+
+// Agregar estos métodos al quickCheckinService existente
+export const quickCheckinServiceExtended = {
+  ...quickCheckinService,
+
+  async getActiveQuickCheckins(branchId) {
+    try {
+      const { data, error } = await supabase
+        .from('quick_checkins')
+        .select(`
+          id,
+          room_id,
+          guest_name,
+          guest_document,
+          guest_phone,
+          check_in_date,
+          check_out_date,
+          amount,
+          created_at,
+          room:room_id(room_number),
+          payment_method:payment_method_id(name)
+        `)
+        .eq('branch_id', branchId)
+        .gte('check_out_date', new Date().toISOString().split('T')[0])
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching active quick checkins:', error)
+      return { data: null, error }
+    }
+  },
+
+  async processQuickCheckout(quickCheckinId, checkoutData) {
+    try {
+      const { data: checkinOrder, error: checkinOrderError } = await supabase
+        .from('checkin_orders')
+        .select('id, room_id')
+        .eq('quick_checkin_id', quickCheckinId)
+        .is('actual_checkout', null)
+        .single()
+
+      if (checkinOrderError) throw checkinOrderError
+
+      const { data: checkoutOrder, error: checkoutOrderError } = await supabase
+        .from('checkout_orders')
+        .insert({
+          checkin_order_id: checkinOrder.id,
+          checkout_time: new Date().toISOString(),
+          total_charges: checkoutData.totalCharges,
+          additional_charges: checkoutData.additionalCharges || [],
+          processed_by: checkoutData.processedBy
+        })
+        .select()
+        .single()
+
+      if (checkoutOrderError) throw checkoutOrderError
+
+      const { error: updateError } = await supabase
+        .from('checkin_orders')
+        .update({ actual_checkout: new Date().toISOString() })
+        .eq('id', checkinOrder.id)
+
+      if (updateError) throw updateError
+
+      return { data: { checkoutOrder, checkinOrder }, error: null }
+    } catch (error) {
+      console.error('Error processing quick checkout:', error)
+      return { data: null, error }
+    }
+  },
+
+  async getActiveReservationCheckins(roomIds) {
+    try {
+      const { data, error } = await supabase
+        .from('checkin_orders')
+        .select(`
+          id,
+          room_id,
+          check_in_time,
+          expected_checkout,
+          reservation:reservation_id(
+            id,
+            reservation_code,
+            total_amount,
+            guest:guest_id(
+              full_name,
+              phone,
+              document_type,
+              document_number
+            )
+          )
+        `)
+        .is('actual_checkout', null)
+        .in('room_id', roomIds)
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching active reservation checkins:', error)
+      return { data: null, error }
+    }
+  }
+}
+
+// =====================================================
+// 🔧 SERVICIOS DE UTILIDAD EXTENDIDOS
+// =====================================================
+export const extendedUtilityService = {
+  ...utilityService,
+
+  // Función para generar reportes
+  async generateReport(type, branchId, dateRange) {
+    try {
+      console.log(`📊 Generating ${type} report for branch ${branchId}`)
+      
+      // Simulación de generación de reporte
+      return {
+        data: {
+          type,
+          branchId,
+          dateRange,
+          generatedAt: new Date().toISOString(),
+          status: 'completed'
+        },
+        error: null
+      }
+    } catch (error) {
+      console.error('Error generating report:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Función para validar datos
+  validateFormData(formData, requiredFields) {
+    const errors = []
+    
+    requiredFields.forEach(field => {
+      if (!formData[field] || formData[field].toString().trim() === '') {
+        errors.push(`${field} es requerido`)
+      }
+    })
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  },
+
+  // Función para formatear datos para exportación
+  formatDataForExport(data, format = 'csv') {
+    if (format === 'csv') {
+      // Implementar formateo CSV
+      return data.map(item => Object.values(item).join(',')).join('\n')
+    }
+    return data
+  }
+}
+
+// Al final del archivo
+export {
+  supabase,
+  authService,
+  roomService,
+  reservationService,
+  guestService,
+  extendedGuestService,
+  quickCheckinService,
+  snackService,
+  paymentService,
+  reportService,
+  utilityService,
+  hotelService,
+  realtimeService,
+  syncService,
+  analyticsService
+}
