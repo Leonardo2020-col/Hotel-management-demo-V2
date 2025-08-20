@@ -17,7 +17,7 @@ import LoginPage from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
-import Reservations from './pages/Reservations.jsx' // ✅ NUEVA IMPORTACIÓN
+import Reservations from './pages/Reservations.jsx' 
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 
