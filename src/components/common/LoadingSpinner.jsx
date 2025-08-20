@@ -1,6 +1,6 @@
 // src/components/common/LoadingSpinner.jsx - VERSIÓN MEJORADA
 import React from 'react'
-import { Loader2, Loader, Spinner } from 'lucide-react'
+import { Loader2, Loader, RotateCw } from 'lucide-react'
 
 const LoadingSpinner = ({ 
   message = 'Cargando...', 
@@ -33,7 +33,7 @@ const LoadingSpinner = ({
   }
 
   // ✅ Variantes de spinner
-  const SpinnerIcon = variant === 'dots' ? Spinner : variant === 'loader2' ? Loader2 : Loader
+  const SpinnerIcon = variant === 'dots' ? RotateCw : variant === 'loader2' ? Loader2 : Loader
 
   // ✅ Clases de contenedor más flexibles
   const containerClasses = fullScreen || size === 'lg' || size === 'xl'

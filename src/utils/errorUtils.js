@@ -1,4 +1,4 @@
-// src/utils/errorUtils.js - UTILIDADES PARA MANEJO DE ERRORES
+// src/utils/errorUtils.js - VERSIÓN CORREGIDA
 import toast from 'react-hot-toast'
 
 // ✅ Tipos de errores comunes
@@ -132,97 +132,8 @@ export const handleError = (error, options = {}) => {
   return { error, message, type: classifyError(error) }
 }
 
-// ✅ Hook para manejo de errores en componentes
-import { useState, useCallback } from 'react'
-
-export const useErrorHandler = () => {
-  const [errors, setErrors] = useState({})
-
-  const handleError = useCallback((error, field = 'general', options = {}) => {
-    const errorInfo = handleError(error, options)
-    
-    setErrors(prev => ({
-      ...prev,
-      [field]: errorInfo
-    }))
-
-    return errorInfo
-  }, [])
-
-  const clearError = useCallback((field = 'general') => {
-    setErrors(prev => {
-      const newErrors = { ...prev }
-      delete newErrors[field]
-      return newErrors
-    })
-  }, [])
-
-  const clearAllErrors = useCallback(() => {
-    setErrors({})
-  }, [])
-
-  const hasError = useCallback((field = 'general') => {
-    return !!errors[field]
-  }, [errors])
-
-  const getError = useCallback((field = 'general') => {
-    return errors[field]
-  }, [errors])
-
-  return {
-    errors,
-    handleError,
-    clearError,
-    clearAllErrors,
-    hasError,
-    getError
-  }
-}
-
-// ✅ Hook para retry automático
-export const useRetry = (fn, maxRetries = 3, delay = 1000) => {
-  const [retryCount, setRetryCount] = useState(0)
-  const [isRetrying, setIsRetrying] = useState(false)
-
-  const executeWithRetry = useCallback(async (...args) => {
-    let lastError = null
-    
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        setRetryCount(attempt)
-        if (attempt > 0) {
-          setIsRetrying(true)
-          await new Promise(resolve => setTimeout(resolve, delay * attempt))
-        }
-        
-        const result = await fn(...args)
-        setIsRetrying(false)
-        setRetryCount(0)
-        return result
-      } catch (error) {
-        lastError = error
-        
-        // Si es el último intento o un error que no debe reintentarse
-        if (attempt === maxRetries || !shouldRetry(error)) {
-          setIsRetrying(false)
-          throw error
-        }
-      }
-    }
-    
-    setIsRetrying(false)
-    throw lastError
-  }, [fn, maxRetries, delay])
-
-  return {
-    executeWithRetry,
-    retryCount,
-    isRetrying
-  }
-}
-
 // ✅ Función para determinar si un error debe reintentarse
-const shouldRetry = (error) => {
+export const shouldRetry = (error) => {
   const errorType = classifyError(error)
   
   // No reintentar errores de cliente (4xx excepto algunos específicos)
@@ -237,42 +148,6 @@ const shouldRetry = (error) => {
     ERROR_TYPES.SERVER,
     ERROR_TYPES.UNKNOWN
   ].includes(errorType)
-}
-
-// ✅ Componente ErrorBoundary con contexto
-import React from 'react'
-import ErrorFallback from '../components/common/ErrorFallback'
-
-export const withErrorBoundary = (Component, errorFallbackProps = {}) => {
-  return function WrappedComponent(props) {
-    return (
-      <ErrorBoundary
-        FallbackComponent={(errorProps) => (
-          <ErrorFallback {...errorProps} {...errorFallbackProps} />
-        )}
-        onError={(error, errorInfo) => {
-          console.error('Error Boundary caught error:', error, errorInfo)
-          
-          // Enviar error a servicio de logging si está configurado
-          if (process.env.REACT_APP_ERROR_LOGGING_URL) {
-            fetch(process.env.REACT_APP_ERROR_LOGGING_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                error: error.toString(),
-                errorInfo,
-                timestamp: new Date().toISOString(),
-                url: window.location.href,
-                userAgent: navigator.userAgent
-              })
-            }).catch(console.error)
-          }
-        }}
-      >
-        <Component {...props} />
-      </ErrorBoundary>
-    )
-  }
 }
 
 // ✅ Validador de formularios con manejo de errores
@@ -317,4 +192,21 @@ export const createFormValidator = (schema) => {
       errors
     }
   }
+}
+
+// ✅ Utilidad para generar IDs únicos de error
+export const generateErrorId = () => {
+  return `ERR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+}
+
+// ✅ Utilidad para formatear stack traces
+export const formatStackTrace = (error) => {
+  if (!error.stack) return 'Stack trace no disponible'
+  
+  return error.stack
+    .split('\n')
+    .slice(1) // Remover la primera línea que es el mensaje
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .join('\n')
 }
