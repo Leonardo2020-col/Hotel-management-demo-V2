@@ -1,418 +1,481 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { reservationService, extendedGuestService, roomService, paymentService } from '../lib/supabase'
+// src/hooks/useReservations.js
+import { useState, useEffect, useCallback } from 'react'
+import { reservationService, paymentService, roomService, guestService } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 
-export const RESERVATION_STATUS = {
-  PENDING: 'pendiente',
-  CONFIRMED: 'confirmada', 
-  CHECKED_IN: 'en_uso',
-  CHECKED_OUT: 'completada',
-  CANCELLED: 'cancelada',
-  NO_SHOW: 'no_show'
-}
-
-export const useReservations = (initialFilters = {}) => {
-  const { user } = useAuth()
+export const useReservations = () => {
+  const { userInfo, primaryBranch } = useAuth()
+  
+  // Estados principales
   const [reservations, setReservations] = useState([])
-  const [allReservations, setAllReservations] = useState([])
   const [loading, setLoading] = useState(true)
-  const [operationLoading, setOperationLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [creating, setCreating] = useState(false)
+  const [updating, setUpdating] = useState(false)
+
+  // Estados para datos auxiliares
+  const [paymentMethods, setPaymentMethods] = useState([])
+  const [availableRooms, setAvailableRooms] = useState([])
+  const [searchResults, setSearchResults] = useState([])
+
+  // Estados para filtros
   const [filters, setFilters] = useState({
     status: '',
-    dateRange: '',
-    search: '',
-    source: '',
-    ...initialFilters
+    dateFrom: '',
+    dateTo: '',
+    guestName: '',
+    roomNumber: ''
   })
+
+  // Estado para paginación
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
     total: 0
   })
 
-  const branchId = user?.userInfo?.user_branches?.[0]?.branch_id
+  // Cargar métodos de pago al inicializar
+  useEffect(() => {
+    loadPaymentMethods()
+  }, [])
 
-  // Cargar reservaciones
-  const loadReservations = useCallback(async (customFilters = {}) => {
-    if (!branchId) return
+  // Cargar reservaciones cuando cambie la sucursal o filtros
+  useEffect(() => {
+    if (primaryBranch?.id) {
+      loadReservations()
+    }
+  }, [primaryBranch?.id, filters, pagination.page])
+
+  // =====================================================
+  // 📊 FUNCIONES DE CARGA DE DATOS
+  // =====================================================
+
+  const loadReservations = useCallback(async () => {
+    if (!primaryBranch?.id) {
+      console.warn('⚠️ No hay sucursal primaria disponible')
+      setLoading(false)
+      return
+    }
 
     try {
       setLoading(true)
       setError(null)
-      
-      const finalFilters = { ...filters, ...customFilters }
-      console.log('🔍 Loading reservations with filters:', finalFilters)
 
-      // Convertir filtros al formato de Supabase
-      const supabaseFilters = {}
-      
-      if (finalFilters.status) {
-        supabaseFilters.status = finalFilters.status
-      }
+      console.log('🔄 Cargando reservaciones para sucursal:', primaryBranch.name)
 
-      if (finalFilters.dateRange) {
-        const today = new Date()
-        const tomorrow = new Date(today)
-        tomorrow.setDate(today.getDate() + 1)
-        const nextWeek = new Date(today)
-        nextWeek.setDate(today.getDate() + 7)
-
-        switch (finalFilters.dateRange) {
-          case 'today':
-            supabaseFilters.dateFrom = today.toISOString().split('T')[0]
-            supabaseFilters.dateTo = today.toISOString().split('T')[0]
-            break
-          case 'tomorrow':
-            supabaseFilters.dateFrom = tomorrow.toISOString().split('T')[0]
-            supabaseFilters.dateTo = tomorrow.toISOString().split('T')[0]
-            break
-          case 'this_week':
-            supabaseFilters.dateFrom = today.toISOString().split('T')[0]
-            supabaseFilters.dateTo = nextWeek.toISOString().split('T')[0]
-            break
-          case 'next_week':
-            const startNextWeek = new Date(nextWeek)
-            const endNextWeek = new Date(nextWeek)
-            endNextWeek.setDate(startNextWeek.getDate() + 7)
-            supabaseFilters.dateFrom = startNextWeek.toISOString().split('T')[0]
-            supabaseFilters.dateTo = endNextWeek.toISOString().split('T')[0]
-            break
+      const { data, error: reservationError } = await reservationService.getReservationsByBranch(
+        primaryBranch.id,
+        {
+          ...filters,
+          limit: pagination.limit,
+          offset: (pagination.page - 1) * pagination.limit
         }
-      }
-
-      if (finalFilters.search) {
-        supabaseFilters.guestName = finalFilters.search
-      }
-
-      const { data, error: serviceError } = await reservationService.getReservationsByBranch(
-        branchId, 
-        supabaseFilters
       )
 
-      if (serviceError) throw new Error(serviceError.message || 'Error al cargar reservaciones')
+      if (reservationError) {
+        throw reservationError
+      }
 
-      // Transformar datos de Supabase a formato de tu UI
-      const transformedReservations = (data || []).map(reservation => ({
-        id: reservation.id,
-        confirmationCode: reservation.reservation_code,
-        guest: {
-          name: reservation.guest?.full_name,
-          email: reservation.guest?.email || '',
-          phone: reservation.guest?.phone || '',
-          document: reservation.guest?.document_number || ''
-        },
-        room: {
-          id: reservation.room?.id,
-          number: reservation.room?.room_number,
-          type: 'Estándar', // Puedes agregar este campo a la BD si lo necesitas
-          capacity: 2 // Puedes agregar este campo a la BD si lo necesitas
-        },
-        checkIn: reservation.check_in_date,
-        checkOut: reservation.check_out_date,
-        nights: reservation.nights || 1,
-        adults: 1, // Puedes agregar este campo si lo necesitas
-        children: 0, // Puedes agregar este campo si lo necesitas
-        status: reservation.status?.status || 'pendiente',
-        totalAmount: reservation.total_amount || 0,
-        paidAmount: reservation.paid_amount || 0,
-        rate: reservation.room?.base_price || 0,
-        source: 'direct', // Puedes agregar este campo si lo necesitas
-        specialRequests: '', // Puedes agregar este campo si lo necesitas
-        createdAt: reservation.created_at,
-        updatedAt: reservation.updated_at,
-        checkedInAt: null, // Puedes obtener esto de checkin_orders
-        checkedOutAt: null, // Puedes obtener esto de checkout_orders
-        paymentMethod: null // Puedes obtener esto de los pagos
-      }))
+      console.log('✅ Reservaciones cargadas:', data?.length || 0)
+      setReservations(data || [])
 
-      setReservations(transformedReservations)
-      setAllReservations(transformedReservations)
+      // Actualizar total para paginación (simulado por ahora)
       setPagination(prev => ({
         ...prev,
-        total: transformedReservations.length
+        total: data?.length || 0
       }))
 
-      console.log(`✅ Loaded ${transformedReservations.length} reservations`)
-
     } catch (err) {
-      console.error('❌ Error loading reservations:', err)
-      setError(err.message)
-      toast.error('Error al cargar reservaciones: ' + err.message)
+      console.error('❌ Error cargando reservaciones:', err)
+      setError(err.message || 'Error al cargar reservaciones')
+      toast.error('Error al cargar reservaciones')
+      setReservations([])
     } finally {
       setLoading(false)
     }
-  }, [branchId, filters])
+  }, [primaryBranch?.id, filters, pagination.page, pagination.limit])
 
-  // Cargar al inicializar
-  useEffect(() => {
-    loadReservations()
-  }, [loadReservations])
-
-  // Crear reservación
-  const createReservation = useCallback(async (reservationData) => {
-    if (!branchId) throw new Error('No hay sucursal seleccionada')
-
+  const loadPaymentMethods = async () => {
     try {
-      setOperationLoading(true)
-      console.log('🏨 Creating reservation:', reservationData)
-
-      // Buscar o crear habitación por número
-      let roomId = reservationData.room?.id
-      if (!roomId && reservationData.room?.number) {
-        // Buscar habitación por número
-        const { data: rooms } = await roomService.getRoomsWithStatus(branchId)
-        const room = rooms?.find(r => r.room_number === reservationData.room.number)
-        if (room) {
-          roomId = room.id
-        } else {
-          throw new Error(`Habitación ${reservationData.room.number} no encontrada`)
-        }
-      }
-
-      if (!roomId) {
-        throw new Error('ID de habitación requerido')
-      }
-
-      // Preparar datos de reservación para Supabase
-      const supabaseReservationData = {
-        branchId: branchId,
-        roomId: roomId,
-        checkInDate: reservationData.checkIn,
-        checkOutDate: reservationData.checkOut,
-        totalAmount: reservationData.totalAmount || (reservationData.nights * reservationData.rate) || 0,
-        createdBy: user.userInfo.id
-      }
-
-      // Preparar datos del huésped
-      const guestData = {
-        id: reservationData.guest?.id || null,
-        fullName: reservationData.guest?.name,
-        phone: reservationData.guest?.phone || '',
-        documentType: 'dni', // Puedes hacer esto configurable
-        documentNumber: reservationData.guest?.document || ''
-      }
-
-      const { data, error } = await reservationService.createReservation(
-        supabaseReservationData,
-        guestData
-      )
-
-      if (error) throw new Error(error.message || 'Error al crear reservación')
-
-      console.log('✅ Reservation created:', data.reservation_code)
-      toast.success(`Reservación ${data.reservation_code} creada exitosamente`)
-
-      // Recargar reservaciones
-      await loadReservations()
-
-      return data
+      const { data, error } = await paymentService.getPaymentMethods()
+      if (error) throw error
+      setPaymentMethods(data || [])
     } catch (err) {
-      console.error('❌ Error creating reservation:', err)
-      toast.error('Error al crear reservación: ' + err.message)
-      throw err
-    } finally {
-      setOperationLoading(false)
+      console.error('❌ Error cargando métodos de pago:', err)
+      toast.error('Error al cargar métodos de pago')
     }
-  }, [branchId, user, loadReservations])
+  }
 
-  // Actualizar estado de reservación
-  const changeReservationStatus = useCallback(async (reservationId, newStatus) => {
-    try {
-      setOperationLoading(true)
-      console.log(`🔄 Changing reservation ${reservationId} status to ${newStatus}`)
-
-      const { data, error } = await reservationService.updateReservationStatus(
-        reservationId,
-        newStatus,
-        user.userInfo.id
-      )
-
-      if (error) throw new Error(error.message || 'Error al actualizar estado')
-
-      console.log('✅ Status updated successfully')
-      toast.success('Estado actualizado exitosamente')
-
-      // Actualizar localmente
-      setReservations(prev => prev.map(reservation => 
-        reservation.id === reservationId 
-          ? { ...reservation, status: newStatus }
-          : reservation
-      ))
-
-      return data
-    } catch (err) {
-      console.error('❌ Error changing status:', err)
-      toast.error('Error al cambiar estado: ' + err.message)
-      throw err
-    } finally {
-      setOperationLoading(false)
+  const loadAvailableRooms = async (checkInDate, checkOutDate) => {
+    if (!primaryBranch?.id || !checkInDate || !checkOutDate) {
+      setAvailableRooms([])
+      return
     }
-  }, [user])
-
-  // Eliminar/cancelar reservación
-  const deleteReservation = useCallback(async (reservationId) => {
-    try {
-      setOperationLoading(true)
-      console.log(`🗑️ Cancelling reservation ${reservationId}`)
-
-      const { data, error } = await reservationService.cancelReservation(
-        reservationId,
-        user.userInfo.id,
-        'Cancelada por el usuario'
-      )
-
-      if (error) throw new Error(error.message || 'Error al cancelar reservación')
-
-      console.log('✅ Reservation cancelled successfully')
-      toast.success('Reservación cancelada exitosamente')
-
-      // Actualizar localmente
-      setReservations(prev => prev.map(reservation => 
-        reservation.id === reservationId 
-          ? { ...reservation, status: RESERVATION_STATUS.CANCELLED }
-          : reservation
-      ))
-
-      return data
-    } catch (err) {
-      console.error('❌ Error cancelling reservation:', err)
-      toast.error('Error al cancelar reservación: ' + err.message)
-      throw err
-    } finally {
-      setOperationLoading(false)
-    }
-  }, [user])
-
-  // Buscar huéspedes
-  const searchGuests = useCallback(async (searchTerm) => {
-    try {
-      console.log('🔍 Searching guests:', searchTerm)
-      const { data, error } = await extendedGuestService.searchGuests(searchTerm, 10)
-      
-      if (error) throw new Error(error.message)
-      
-      return data || []
-    } catch (err) {
-      console.error('❌ Error searching guests:', err)
-      return []
-    }
-  }, [])
-
-  // Obtener habitaciones disponibles
-  const getAvailableRoomsForDates = useCallback(async (checkInDate, checkOutDate) => {
-    if (!branchId) return []
 
     try {
-      console.log('🏠 Getting available rooms for dates:', { checkInDate, checkOutDate })
-      
       const { data, error } = await roomService.getAvailableRooms(
-        branchId,
+        primaryBranch.id,
         checkInDate,
         checkOutDate
       )
 
-      if (error) throw new Error(error.message)
-
-      // Transformar datos para tu UI
-      const transformedRooms = (data || []).map(room => ({
-        id: room.room_id,
-        number: room.room_number,
-        type: 'Estándar',
-        capacity: 2,
-        base_rate: room.base_price || 0,
-        rate: room.base_price || 0,
-        features: []
-      }))
-
-      console.log(`✅ Found ${transformedRooms.length} available rooms`)
-      return transformedRooms
+      if (error) throw error
+      setAvailableRooms(data || [])
+      return data || []
     } catch (err) {
-      console.error('❌ Error getting available rooms:', err)
-      throw err
+      console.error('❌ Error cargando habitaciones disponibles:', err)
+      toast.error('Error al cargar habitaciones disponibles')
+      setAvailableRooms([])
+      return []
     }
-  }, [branchId])
+  }
 
-  // Verificar disponibilidad de habitación
-  const checkRoomAvailability = useCallback(async (roomId, checkInDate, checkOutDate) => {
-    try {
-      // Esta función la puedes implementar usando syncService.verifyRoomAvailability
-      // Por ahora retornamos true
-      return { isAvailable: true, conflicts: [] }
-    } catch (err) {
-      console.error('❌ Error checking room availability:', err)
-      return { isAvailable: false, conflicts: [] }
+  // =====================================================
+  // 🎫 FUNCIONES DE GESTIÓN DE RESERVACIONES
+  // =====================================================
+
+  const createReservation = async (reservationData, guestData) => {
+    if (!userInfo?.id || !primaryBranch?.id) {
+      toast.error('Error de autenticación')
+      return { success: false, error: 'Usuario no autenticado' }
     }
-  }, [])
 
-  // Actualizar reservación (placeholder)
-  const updateReservation = useCallback(async (reservationId, updateData) => {
     try {
-      setOperationLoading(true)
-      console.log('📝 Updating reservation:', reservationId, updateData)
+      setCreating(true)
+
+      console.log('🎫 Creando nueva reservación...', { reservationData, guestData })
+
+      const { data, error } = await reservationService.createReservation(
+        {
+          ...reservationData,
+          branchId: primaryBranch.id,
+          createdBy: userInfo.id
+        },
+        guestData
+      )
+
+      if (error) throw error
+
+      console.log('✅ Reservación creada exitosamente:', data)
       
-      // TODO: Implementar actualización completa
-      toast.info('Función de actualización en desarrollo')
+      // Recargar reservaciones
+      await loadReservations()
       
-      return { success: true }
+      toast.success(`Reservación ${data.reservation_code} creada exitosamente`)
+      
+      return { 
+        success: true, 
+        data: data,
+        reservationCode: data.reservation_code 
+      }
+
     } catch (err) {
-      console.error('❌ Error updating reservation:', err)
-      toast.error('Error al actualizar reservación')
-      throw err
+      console.error('❌ Error creando reservación:', err)
+      
+      let errorMessage = 'Error al crear la reservación'
+      if (err.message?.includes('duplicate key')) {
+        errorMessage = 'Ya existe una reservación para estas fechas'
+      } else if (err.message?.includes('foreign key')) {
+        errorMessage = 'Datos de reservación inválidos'
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     } finally {
-      setOperationLoading(false)
+      setCreating(false)
     }
-  }, [])
+  }
 
-  // Refresh
-  const refresh = useCallback(() => {
-    return loadReservations()
-  }, [loadReservations])
+  const updateReservationStatus = async (reservationId, newStatus, reason = '') => {
+    if (!userInfo?.id) {
+      toast.error('Error de autenticación')
+      return { success: false }
+    }
 
-  // Estadísticas calculadas
-  const getReservationStats = useCallback(() => {
-    return {
+    try {
+      setUpdating(true)
+
+      console.log('🔄 Actualizando estado de reservación:', { reservationId, newStatus, reason })
+
+      const { data, error } = await reservationService.updateReservationStatus(
+        reservationId,
+        newStatus,
+        userInfo.id
+      )
+
+      if (error) throw error
+
+      // Actualizar la reservación en el estado local
+      setReservations(prev => prev.map(reservation => 
+        reservation.id === reservationId 
+          ? { ...reservation, status: data.status }
+          : reservation
+      ))
+
+      const statusMessages = {
+        'confirmada': 'Reservación confirmada',
+        'cancelada': 'Reservación cancelada',
+        'en_uso': 'Check-in realizado',
+        'completada': 'Check-out completado'
+      }
+
+      toast.success(statusMessages[newStatus] || 'Estado actualizado')
+      
+      return { success: true, data }
+
+    } catch (err) {
+      console.error('❌ Error actualizando estado:', err)
+      toast.error('Error al actualizar el estado de la reservación')
+      return { success: false, error: err.message }
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const confirmReservation = async (reservationId) => {
+    return updateReservationStatus(reservationId, 'confirmada')
+  }
+
+  const cancelReservation = async (reservationId, reason = '') => {
+    return updateReservationStatus(reservationId, 'cancelada', reason)
+  }
+
+  // =====================================================
+  // 💳 FUNCIONES DE PAGOS
+  // =====================================================
+
+  const addPayment = async (reservationId, paymentData) => {
+    if (!userInfo?.id) {
+      toast.error('Error de autenticación')
+      return { success: false }
+    }
+
+    try {
+      console.log('💳 Agregando pago a reservación:', { reservationId, paymentData })
+
+      const { data, error } = await reservationService.addPayment(reservationId, {
+        ...paymentData,
+        processedBy: userInfo.id
+      })
+
+      if (error) throw error
+
+      // Recargar reservaciones para actualizar balances
+      await loadReservations()
+
+      toast.success(`Pago de S/ ${paymentData.amount} registrado exitosamente`)
+      
+      return { success: true, data }
+
+    } catch (err) {
+      console.error('❌ Error agregando pago:', err)
+      toast.error('Error al registrar el pago')
+      return { success: false, error: err.message }
+    }
+  }
+
+  const getReservationPayments = async (reservationId) => {
+    try {
+      const { data, error } = await reservationService.getReservationPayments(reservationId)
+      if (error) throw error
+      return { success: true, data: data || [] }
+    } catch (err) {
+      console.error('❌ Error obteniendo pagos:', err)
+      return { success: false, data: [], error: err.message }
+    }
+  }
+
+  // =====================================================
+  // 🔍 FUNCIONES DE BÚSQUEDA
+  // =====================================================
+
+  const searchGuests = async (searchTerm) => {
+    if (!searchTerm?.trim()) {
+      setSearchResults([])
+      return []
+    }
+
+    try {
+      const { data, error } = await guestService.searchGuests(searchTerm, 10)
+      if (error) throw error
+      
+      setSearchResults(data || [])
+      return data || []
+    } catch (err) {
+      console.error('❌ Error buscando huéspedes:', err)
+      setSearchResults([])
+      return []
+    }
+  }
+
+  const searchReservations = async (searchTerm) => {
+    if (!primaryBranch?.id || !searchTerm?.trim()) {
+      return []
+    }
+
+    try {
+      const { data, error } = await reservationService.searchReservations(
+        primaryBranch.id,
+        searchTerm
+      )
+      if (error) throw error
+      return data || []
+    } catch (err) {
+      console.error('❌ Error buscando reservaciones:', err)
+      return []
+    }
+  }
+
+  // =====================================================
+  // 📊 FUNCIONES DE FILTROS Y PAGINACIÓN
+  // =====================================================
+
+  const updateFilters = (newFilters) => {
+    setFilters(prev => ({ ...prev, ...newFilters }))
+    setPagination(prev => ({ ...prev, page: 1 })) // Reset a primera página
+  }
+
+  const clearFilters = () => {
+    setFilters({
+      status: '',
+      dateFrom: '',
+      dateTo: '',
+      guestName: '',
+      roomNumber: ''
+    })
+    setPagination(prev => ({ ...prev, page: 1 }))
+  }
+
+  const changePage = (newPage) => {
+    setPagination(prev => ({ ...prev, page: newPage }))
+  }
+
+  // =====================================================
+  // 📈 FUNCIONES DE ESTADÍSTICAS
+  // =====================================================
+
+  const getReservationStats = () => {
+    const stats = {
       total: reservations.length,
-      pending: reservations.filter(r => r.status === RESERVATION_STATUS.PENDING).length,
-      confirmed: reservations.filter(r => r.status === RESERVATION_STATUS.CONFIRMED).length,
-      checkedIn: reservations.filter(r => r.status === RESERVATION_STATUS.CHECKED_IN).length,
-      checkedOut: reservations.filter(r => r.status === RESERVATION_STATUS.CHECKED_OUT).length,
-      cancelled: reservations.filter(r => r.status === RESERVATION_STATUS.CANCELLED).length,
-      totalRevenue: reservations
-        .filter(r => [RESERVATION_STATUS.CHECKED_IN, RESERVATION_STATUS.CHECKED_OUT].includes(r.status))
-        .reduce((sum, r) => sum + (r.totalAmount || 0), 0),
-      paidRevenue: reservations.reduce((sum, r) => sum + (r.paidAmount || 0), 0),
-      pendingRevenue: reservations.reduce((sum, r) => sum + ((r.totalAmount || 0) - (r.paidAmount || 0)), 0)
+      pendientes: reservations.filter(r => r.status?.status === 'pendiente').length,
+      confirmadas: reservations.filter(r => r.status?.status === 'confirmada').length,
+      enUso: reservations.filter(r => r.status?.status === 'en_uso').length,
+      completadas: reservations.filter(r => r.status?.status === 'completada').length,
+      canceladas: reservations.filter(r => r.status?.status === 'cancelada').length,
+      totalRevenue: reservations.reduce((sum, r) => sum + (r.total_amount || 0), 0),
+      totalPaid: reservations.reduce((sum, r) => sum + (r.paid_amount || 0), 0),
+      pendingPayments: reservations.reduce((sum, r) => sum + (r.balance || 0), 0)
     }
-  }, [reservations])
+
+    return stats
+  }
+
+  const getTodayReservations = () => {
+    const today = new Date().toDateString()
+    return reservations.filter(r => {
+      const checkIn = new Date(r.check_in_date).toDateString()
+      const checkOut = new Date(r.check_out_date).toDateString()
+      return checkIn === today || checkOut === today
+    })
+  }
+
+  // =====================================================
+  // 🔄 FUNCIONES DE REFRESCADO
+  // =====================================================
+
+  const refreshReservations = async () => {
+    await loadReservations()
+  }
+
+  const refreshData = async () => {
+    await Promise.all([
+      loadReservations(),
+      loadPaymentMethods()
+    ])
+  }
+
+  // =====================================================
+  // 📱 UTILIDADES
+  // =====================================================
+
+  const formatReservationForDisplay = (reservation) => {
+    return {
+      ...reservation,
+      guestName: reservation.guest?.full_name || 'Sin nombre',
+      roomNumber: reservation.room?.room_number || 'Sin habitación',
+      statusColor: reservation.status?.color || '#6b7280',
+      statusText: reservation.status?.status || 'Sin estado',
+      formattedTotal: new Intl.NumberFormat('es-PE', {
+        style: 'currency',
+        currency: 'PEN'
+      }).format(reservation.total_amount || 0),
+      formattedBalance: new Intl.NumberFormat('es-PE', {
+        style: 'currency',
+        currency: 'PEN'
+      }).format(reservation.balance || 0),
+      checkInFormatted: new Intl.DateTimeFormat('es-PE').format(
+        new Date(reservation.check_in_date)
+      ),
+      checkOutFormatted: new Intl.DateTimeFormat('es-PE').format(
+        new Date(reservation.check_out_date)
+      )
+    }
+  }
+
+  // =====================================================
+  // 🎯 RETORNO DEL HOOK
+  // =====================================================
 
   return {
-    // Data
-    reservations,
-    allReservations,
-    
-    // State
+    // Estados principales
+    reservations: reservations.map(formatReservationForDisplay),
     loading,
-    operationLoading,
     error,
+    creating,
+    updating,
+
+    // Datos auxiliares
+    paymentMethods,
+    availableRooms,
+    searchResults,
+
+    // Filtros y paginación
     filters,
     pagination,
-    
-    // Actions
-    setFilters,
-    setPagination,
+
+    // Funciones principales
     createReservation,
-    updateReservation,
-    deleteReservation,
-    changeReservationStatus,
+    updateReservationStatus,
+    confirmReservation,
+    cancelReservation,
+
+    // Funciones de pagos
+    addPayment,
+    getReservationPayments,
+
+    // Funciones de búsqueda
     searchGuests,
-    getAvailableRoomsForDates,
-    checkRoomAvailability,
-    refresh,
+    searchReservations,
+    loadAvailableRooms,
+
+    // Funciones de filtros
+    updateFilters,
+    clearFilters,
+    changePage,
+
+    // Funciones de estadísticas
     getReservationStats,
-    
-    // Constants
-    RESERVATION_STATUS
+    getTodayReservations,
+
+    // Funciones de refrescado
+    refreshReservations,
+    refreshData,
+
+    // Información de contexto
+    currentBranch: primaryBranch,
+    currentUser: userInfo
   }
 }
