@@ -8,7 +8,8 @@ import {
   Calendar,
   Users,
   DollarSign,
-  AlertCircle
+  AlertCircle,
+  Clock  // ✅ AGREGADO - Este import faltaba
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
