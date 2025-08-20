@@ -1,82 +1,209 @@
-// src/components/common/Button.jsx - ACTUALIZADO CON NUEVAS VARIANTES
-import React from 'react';
-import classNames from 'classnames';
+// src/components/common/Button.jsx - COMPONENTE BUTTON MEJORADO
+import React from 'react'
+import { Loader2 } from 'lucide-react'
 
-const Button = ({ 
-  children, 
-  variant = 'primary', 
-  size = 'md', 
-  onClick, 
-  disabled = false,
-  className = '',
-  icon: Icon,
+const Button = ({
+  children,
+  variant = 'primary',
+  size = 'md',
   loading = false,
+  disabled = false,
+  icon: Icon,
+  iconPosition = 'left',
   fullWidth = false,
-  ...props 
+  className = '',
+  loadingText,
+  ...props
 }) => {
-  const baseClasses = 'font-semibold rounded-lg transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2';
-  
+  // ✅ Variantes de estilo
   const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white focus:ring-blue-500',
-    secondary: 'bg-gray-600 hover:bg-gray-700 text-white focus:ring-gray-500',
-    success: 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-500',
-    danger: 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500',
-    warning: 'bg-yellow-600 hover:bg-yellow-700 text-white focus:ring-yellow-500',
-    // ✅ Nuevas variantes agregadas
-    purple: 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-500',
-    indigo: 'bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-500',
-    pink: 'bg-pink-600 hover:bg-pink-700 text-white focus:ring-pink-500',
-    teal: 'bg-teal-600 hover:bg-teal-700 text-white focus:ring-teal-500',
-    cyan: 'bg-cyan-600 hover:bg-cyan-700 text-white focus:ring-cyan-500',
-    // Variantes outline
-    outline: 'border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus:ring-blue-500',
-    'outline-green': 'border-2 border-green-600 text-green-600 hover:bg-green-600 hover:text-white focus:ring-green-500',
-    'outline-red': 'border-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white focus:ring-red-500',
-    // Variantes ghost
-    ghost: 'text-gray-600 hover:bg-gray-100 focus:ring-gray-500',
-    'ghost-blue': 'text-blue-600 hover:bg-blue-100 focus:ring-blue-500',
-    'ghost-green': 'text-green-600 hover:bg-green-100 focus:ring-green-500',
-    'ghost-red': 'text-red-600 hover:bg-red-100 focus:ring-red-500'
-  };
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-200 border-transparent',
+    secondary: 'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-200 border-transparent',
+    success: 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-200 border-transparent',
+    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-200 border-transparent',
+    warning: 'bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-200 border-transparent',
+    outline: 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 focus:ring-gray-200',
+    ghost: 'bg-transparent text-gray-700 border-transparent hover:bg-gray-100 focus:ring-gray-200',
+    link: 'bg-transparent text-blue-600 border-transparent hover:text-blue-700 focus:ring-blue-200 p-0 h-auto font-normal'
+  }
 
+  // ✅ Tamaños
   const sizes = {
     xs: 'px-2 py-1 text-xs',
     sm: 'px-3 py-1.5 text-sm',
     md: 'px-4 py-2 text-sm',
     lg: 'px-6 py-3 text-base',
     xl: 'px-8 py-4 text-lg'
-  };
+  }
 
-  const classes = classNames(
-    baseClasses,
-    variants[variant] || variants.primary, // Fallback a primary si la variante no existe
-    sizes[size],
-    {
-      'opacity-50 cursor-not-allowed': disabled || loading,
-      'w-full': fullWidth
-    },
-    className
-  );
+  // ✅ Tamaños de iconos
+  const iconSizes = {
+    xs: 'h-3 w-3',
+    sm: 'h-4 w-4',
+    md: 'h-4 w-4',
+    lg: 'h-5 w-5',
+    xl: 'h-6 w-6'
+  }
+
+  // ✅ Clases base
+  const baseClasses = `
+    inline-flex items-center justify-center
+    font-medium rounded-lg border
+    focus:outline-none focus:ring-4
+    transition-all duration-200
+    disabled:opacity-50 disabled:cursor-not-allowed
+    ${fullWidth ? 'w-full' : ''}
+    ${variant === 'link' ? '' : sizes[size]}
+  `.trim().replace(/\s+/g, ' ')
+
+  // ✅ Estado disabled
+  const isDisabled = disabled || loading
+
+  // ✅ Contenido del botón
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <>
+          <Loader2 className={`${iconSizes[size]} animate-spin mr-2`} />
+          {loadingText || children}
+        </>
+      )
+    }
+
+    if (Icon && iconPosition === 'left') {
+      return (
+        <>
+          <Icon className={`${iconSizes[size]} ${children ? 'mr-2' : ''}`} />
+          {children}
+        </>
+      )
+    }
+
+    if (Icon && iconPosition === 'right') {
+      return (
+        <>
+          {children}
+          <Icon className={`${iconSizes[size]} ${children ? 'ml-2' : ''}`} />
+        </>
+      )
+    }
+
+    return children
+  }
+
+  // ✅ Clases finales
+  const finalClasses = `
+    ${baseClasses}
+    ${variants[variant]}
+    ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
+    ${className}
+  `.trim().replace(/\s+/g, ' ')
 
   return (
     <button
-      onClick={onClick}
-      disabled={disabled || loading}
-      className={classes}
+      className={finalClasses}
+      disabled={isDisabled}
       {...props}
     >
-      {loading && (
-        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-current" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-      )}
-      {Icon && !loading && (
-        <Icon size={size === 'xs' ? 14 : size === 'sm' ? 16 : size === 'lg' ? 24 : size === 'xl' ? 28 : 20} className={children ? 'mr-2' : ''} />
-      )}
-      {children}
+      {renderContent()}
     </button>
-  );
-};
+  )
+}
 
-export default Button;
+// ✅ Componentes de botón especializados
+export const IconButton = ({ 
+  icon: Icon, 
+  size = 'md', 
+  variant = 'ghost',
+  className = '',
+  ...props 
+}) => {
+  const iconSizes = {
+    xs: 'h-3 w-3',
+    sm: 'h-4 w-4', 
+    md: 'h-5 w-5',
+    lg: 'h-6 w-6',
+    xl: 'h-7 w-7'
+  }
+
+  const buttonSizes = {
+    xs: 'p-1',
+    sm: 'p-1.5',
+    md: 'p-2',
+    lg: 'p-3',
+    xl: 'p-4'
+  }
+
+  return (
+    <Button
+      variant={variant}
+      className={`${buttonSizes[size]} ${className}`}
+      {...props}
+    >
+      <Icon className={iconSizes[size]} />
+    </Button>
+  )
+}
+
+export const ButtonGroup = ({ 
+  children, 
+  orientation = 'horizontal',
+  className = '' 
+}) => {
+  const orientationClasses = {
+    horizontal: 'flex flex-row',
+    vertical: 'flex flex-col'
+  }
+
+  return (
+    <div className={`${orientationClasses[orientation]} ${className}`}>
+      {React.Children.map(children, (child, index) => {
+        if (React.isValidElement(child)) {
+          const isFirst = index === 0
+          const isLast = index === React.Children.count(children) - 1
+          
+          let additionalClasses = ''
+          
+          if (orientation === 'horizontal') {
+            if (!isFirst && !isLast) additionalClasses = 'rounded-none border-l-0'
+            else if (!isFirst) additionalClasses = 'rounded-l-none border-l-0'
+            else if (!isLast) additionalClasses = 'rounded-r-none'
+          } else {
+            if (!isFirst && !isLast) additionalClasses = 'rounded-none border-t-0'
+            else if (!isFirst) additionalClasses = 'rounded-t-none border-t-0'
+            else if (!isLast) additionalClasses = 'rounded-b-none'
+          }
+
+          return React.cloneElement(child, {
+            className: `${child.props.className || ''} ${additionalClasses}`.trim()
+          })
+        }
+        return child
+      })}
+    </div>
+  )
+}
+
+export const FloatingActionButton = ({
+  icon: Icon,
+  className = '',
+  size = 'lg',
+  ...props
+}) => {
+  return (
+    <IconButton
+      icon={Icon}
+      size={size}
+      variant="primary"
+      className={`
+        fixed bottom-6 right-6 z-50
+        shadow-lg hover:shadow-xl
+        rounded-full
+        ${className}
+      `}
+      {...props}
+    />
+  )
+}
+
+export default Button

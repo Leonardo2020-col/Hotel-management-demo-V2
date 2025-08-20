@@ -1,4 +1,4 @@
-// src/context/AuthContext.js - VERSIÓN ACTUALIZADA
+// src/context/AuthContext.js - VERSIÓN CORREGIDA
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../lib/supabase'
@@ -17,7 +17,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [userInfo, setUserInfo] = useState(null)
   const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // ✅ Inicializar en false
   const [initializing, setInitializing] = useState(true)
 
   console.log('🔍 AuthProvider inicializando con Supabase actualizado...')
@@ -39,11 +39,17 @@ export const AuthProvider = ({ children }) => {
       try {
         console.log('🔍 Verificando variables de entorno...')
         
-        if (!process.env.REACT_APP_SUPABASE_URL || !process.env.REACT_APP_SUPABASE_ANON_KEY) {
+        // ✅ Mejorar validación de variables de entorno
+        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
+        const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY
+        
+        if (!supabaseUrl || !supabaseKey) {
           console.error('❌ Variables de entorno de Supabase no configuradas')
+          console.error('REACT_APP_SUPABASE_URL:', supabaseUrl ? '✅ Configurada' : '❌ Faltante')
+          console.error('REACT_APP_SUPABASE_ANON_KEY:', supabaseKey ? '✅ Configurada' : '❌ Faltante')
+          
           if (isMounted) {
             toast.error('Error de configuración: Variables de entorno faltantes')
-            setLoading(false)
             setInitializing(false)
           }
           return
@@ -63,8 +69,10 @@ export const AuthProvider = ({ children }) => {
           setSession(currentSession)
           setUserInfo(currentUserInfo)
           
-          if (currentUserInfo?.first_name) {
+          // ✅ Solo mostrar toast de bienvenida si es necesario
+          if (currentUserInfo?.first_name && !sessionStorage.getItem('welcome_shown')) {
             toast.success(`Bienvenido de vuelta, ${currentUserInfo.first_name}!`)
+            sessionStorage.setItem('welcome_shown', 'true')
           }
         } else {
           console.log('👤 No hay usuario logueado')
@@ -74,12 +82,14 @@ export const AuthProvider = ({ children }) => {
       } catch (error) {
         console.error('❌ Error inicializando auth:', error)
         if (isMounted) {
-          toast.error('Error al inicializar autenticación')
+          // ✅ Solo mostrar error si es crítico
+          if (error.message.includes('network') || error.message.includes('connection')) {
+            toast.error('Error de conexión. Verificando...')
+          }
           clearAuthState()
         }
       } finally {
         if (isMounted) {
-          setLoading(false)
           setInitializing(false)
           console.log('✅ Auth inicializado')
         }
@@ -95,32 +105,49 @@ export const AuthProvider = ({ children }) => {
             
             if (!isMounted) return
             
-            if (event === 'SIGNED_IN' && session?.user) {
-              try {
-                if (user?.id !== session.user.id) {
-                  setLoading(true)
-                  const userInfo = await authService.getUserInfo(session.user.id)
-                  
-                  if (isMounted) {
-                    setUser(session.user)
-                    setSession(session)
-                    setUserInfo(userInfo)
-                    setLoading(false)
-                    console.log('✅ Usuario logueado via listener:', userInfo)
+            // ✅ Mejorar manejo de eventos
+            switch (event) {
+              case 'SIGNED_IN':
+                if (session?.user && user?.id !== session.user.id) {
+                  try {
+                    setLoading(true)
+                    const userInfo = await authService.getUserInfo(session.user.id)
+                    
+                    if (isMounted) {
+                      setUser(session.user)
+                      setSession(session)
+                      setUserInfo(userInfo)
+                      console.log('✅ Usuario logueado via listener:', userInfo)
+                    }
+                  } catch (error) {
+                    console.error('❌ Error obteniendo info del usuario:', error)
+                    if (isMounted) {
+                      toast.error('Error al obtener información del usuario')
+                      clearAuthState()
+                    }
+                  } finally {
+                    if (isMounted) setLoading(false)
                   }
                 }
-              } catch (error) {
-                console.error('❌ Error obteniendo info del usuario:', error)
+                break
+                
+              case 'SIGNED_OUT':
+                console.log('👋 Usuario deslogueado via listener')
                 if (isMounted) {
-                  toast.error('Error al obtener información del usuario')
                   clearAuthState()
+                  sessionStorage.removeItem('welcome_shown')
                 }
-              }
-            } else if (event === 'SIGNED_OUT') {
-              console.log('👋 Usuario deslogueado via listener')
-              if (isMounted) {
-                clearAuthState()
-              }
+                break
+                
+              case 'TOKEN_REFRESHED':
+                console.log('🔄 Token renovado')
+                if (session && isMounted) {
+                  setSession(session)
+                }
+                break
+                
+              default:
+                console.log('ℹ️ Evento de auth no manejado:', event)
             }
           }
         )
@@ -144,21 +171,28 @@ export const AuthProvider = ({ children }) => {
         authSubscription = null
       }
     }
-  }, [])
+  }, []) // ✅ Dependencias vacías están correctas
 
-  // Login actualizado
+  // Login mejorado
   const login = async (email, password) => {
     try {
       setLoading(true)
       console.log('🔑 Intentando login con Supabase:', { email })
       
-      const { user: authUser, session: authSession, userInfo: authUserInfo } = await authService.signIn(email, password)
+      // ✅ Validación básica antes de enviar
+      if (!email?.trim() || !password?.trim()) {
+        throw new Error('Email y contraseña son requeridos')
+      }
+      
+      const { user: authUser, session: authSession, userInfo: authUserInfo } = await authService.signIn(email.trim(), password)
       
       setUser(authUser)
       setSession(authSession)
       setUserInfo(authUserInfo)
       
       toast.success(`¡Bienvenido, ${authUserInfo.first_name}!`)
+      sessionStorage.setItem('welcome_shown', 'true')
+      
       console.log('✅ Login exitoso:', {
         email: authUser.email,
         role: authUserInfo.role?.name,
@@ -170,6 +204,7 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('❌ Error en login:', error)
       
+      // ✅ Mejorar mensajes de error
       let errorMessage = 'Error al iniciar sesión'
       
       if (error.message?.includes('Invalid login credentials')) {
@@ -178,6 +213,10 @@ export const AuthProvider = ({ children }) => {
         errorMessage = 'Debes verificar tu email antes de iniciar sesión'
       } else if (error.message?.includes('Too many requests')) {
         errorMessage = 'Demasiados intentos. Intenta más tarde'
+      } else if (error.message?.includes('network') || error.message?.includes('connection')) {
+        errorMessage = 'Error de conexión. Verifica tu internet'
+      } else if (error.message?.includes('requeridos')) {
+        errorMessage = error.message
       }
       
       toast.error(errorMessage)
@@ -187,12 +226,16 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  // Logout corregido
+  // Logout mejorado
   const logout = async () => {
     try {
       console.log('👋 Iniciando cierre de sesión...')
+      setLoading(true)
       
+      // ✅ Limpiar estado primero para UX más rápida
       clearAuthState()
+      sessionStorage.removeItem('welcome_shown')
+      
       await authService.signOut()
       
       toast.success('Sesión cerrada exitosamente')
@@ -201,54 +244,60 @@ export const AuthProvider = ({ children }) => {
       return { success: true }
     } catch (error) {
       console.error('❌ Error en logout:', error)
+      // ✅ Asegurar que el estado se limpie incluso si hay error
       clearAuthState()
-      toast.error('Sesión cerrada (con advertencias)')
-      return { success: false, error: error.message }
+      sessionStorage.removeItem('welcome_shown')
+      toast.success('Sesión cerrada') // No mostrar como error si se limpió el estado
+      return { success: true, warning: error.message }
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Refresh información del usuario
+  // Refresh información del usuario mejorado
   const refreshUserInfo = async () => {
     try {
-      if (!user?.id) return null
+      if (!user?.id) {
+        console.warn('⚠️ No hay usuario para actualizar')
+        return null
+      }
       
       console.log('🔄 Actualizando información del usuario...')
+      setLoading(true)
+      
       const updatedUserInfo = await authService.getUserInfo(user.id)
       setUserInfo(updatedUserInfo)
+      
       console.log('✅ Información actualizada')
       return updatedUserInfo
     } catch (error) {
       console.error('❌ Error actualizando info del usuario:', error)
-      return userInfo
+      toast.error('Error al actualizar información del usuario')
+      return userInfo // Devolver info actual si hay error
+    } finally {
+      setLoading(false)
     }
   }
 
   // =============================================
-  // FUNCIONES DE PERMISOS ACTUALIZADAS
+  // FUNCIONES DE PERMISOS (SIN CAMBIOS - ESTÁN BIEN)
   // =============================================
 
-  // Verificar rol específico
   const hasRole = (roleName) => {
     return userInfo?.role?.name === roleName
   }
 
-  // Verificar permiso específico (ACTUALIZADO)
   const hasPermission = (permission) => {
     if (!userInfo?.role?.permissions) return false
-    
-    // Si tiene permisos de administrador total
     if (userInfo.role.permissions.all) return true
-    
-    // Verificar permiso específico
     return userInfo.role.permissions[permission] === true
   }
 
-  // Roles específicos
   const isAdmin = () => hasRole('administrador')
   const isReception = () => hasRole('recepcion')
 
   // =============================================
-  // FUNCIONES DE SUCURSALES ACTUALIZADAS
+  // FUNCIONES DE SUCURSALES (SIN CAMBIOS - ESTÁN BIEN)
   // =============================================
 
   const getPrimaryBranch = () => {
@@ -261,7 +310,7 @@ export const AuthProvider = ({ children }) => {
   }
 
   // =============================================
-  // INFORMACIÓN COMPUTADA ACTUALIZADA
+  // INFORMACIÓN COMPUTADA
   // =============================================
 
   const userName = userInfo ? `${userInfo.first_name} ${userInfo.last_name}` : ''
@@ -269,6 +318,7 @@ export const AuthProvider = ({ children }) => {
   const userEmail = user?.email || ''
   const primaryBranch = getPrimaryBranch()
 
+  // ✅ Mejorar el objeto value con memoización implícita
   const value = {
     // Estado principal
     user,
@@ -283,7 +333,7 @@ export const AuthProvider = ({ children }) => {
     logout,
     refreshUserInfo,
     
-    // Utilidades de roles ACTUALIZADAS
+    // Utilidades de roles
     hasRole,
     hasPermission,
     isAdmin,
@@ -299,8 +349,8 @@ export const AuthProvider = ({ children }) => {
     userEmail,
     primaryBranch,
     
-    // Para debugging
-    authService
+    // Para debugging (solo en desarrollo)
+    ...(process.env.NODE_ENV === 'development' && { authService })
   }
 
   console.log('🎯 AuthProvider state actualizado:', {
