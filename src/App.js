@@ -1,4 +1,4 @@
-// src/App.js - CON DEBUG PARA VERIFICAR LAYOUT
+// src/App.js - CON RUTA DE RESERVATIONS AGREGADA
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
@@ -17,6 +17,7 @@ import LoginPage from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
+import Reservations from './pages/Reservations.jsx' // ✅ NUEVA IMPORTACIÓN
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 
@@ -83,21 +84,19 @@ function App() {
                 }
               />
               
-              {/* Resto de páginas CON Layout */}
+              {/* ✅ NUEVA RUTA DE RESERVATIONS CON Layout */}
               <Route
                 path="/reservations"
                 element={
                   <ProtectedRoute requireReception>
                     <Layout>
-                      <div className="p-6">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reservaciones</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
+                      <Reservations />
                     </Layout>
                   </ProtectedRoute>
                 }
               />
               
+              {/* Resto de páginas CON Layout - REMOVIDA LA ANTIGUA RUTA PLACEHOLDER */}
               <Route
                 path="/guests"
                 element={
