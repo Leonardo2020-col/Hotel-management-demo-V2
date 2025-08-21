@@ -1,258 +1,258 @@
-import React, { useState } from 'react';
-import { Search, Filter, X, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+// src/components/supplies/SuppliesFilters.jsx
+import React, { useState } from 'react'
+import { Search, Filter, X, RotateCcw, AlertTriangle, Package } from 'lucide-react'
 
-const SuppliesFilters = ({ filters, onFiltersChange, categories, suppliers, loading }) => {
-  const [showFilters, setShowFilters] = useState(false);
+const SuppliesFilters = ({
+  filters,
+  categories,
+  suppliers,
+  onFiltersChange,
+  onClearFilters,
+  loading = false
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false)
 
-  const handleFilterChange = (key, value) => {
-    onFiltersChange(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
-
-  const clearFilters = () => {
-    onFiltersChange({
-      category: 'all',
-      status: 'all',
-      supplier: 'all',
-      search: '',
-      lowStock: false
-    });
-  };
-
-  const hasActiveFilters = Object.entries(filters).some(([key, value]) => {
-    if (key === 'lowStock') return value === true;
-    return value !== '' && value !== 'all';
-  });
-
-  const statusOptions = [
-    { value: 'all', label: 'Todos los estados' },
-    { value: 'ok', label: 'Stock normal' },
-    { value: 'low', label: 'Stock bajo' },
-    { value: 'out', label: 'Sin stock' }
-  ];
-
-  const categoryOptions = [
-    { value: 'all', label: 'Todas las categorías' },
-    ...categories.map(category => ({
-      value: category,
-      label: category
-    }))
-  ];
-
-  const supplierOptions = [
-    { value: 'all', label: 'Todos los proveedores' },
-    ...suppliers.map(supplier => ({
-      value: supplier,
-      label: supplier
-    }))
-  ];
-
-  if (loading) {
-    return (
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 sm:p-6">
-        <div className="animate-pulse">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-10 bg-gray-200 rounded"></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+  const handleInputChange = (field, value) => {
+    onFiltersChange({ [field]: value })
   }
 
+  const hasActiveFilters = Object.values(filters).some(value => 
+    value !== '' && value !== false
+  )
+
+  const quickFilters = [
+    {
+      id: 'all',
+      label: 'Todos',
+      active: !hasActiveFilters,
+      onClick: () => onClearFilters()
+    },
+    {
+      id: 'lowStock',
+      label: 'Stock Bajo',
+      icon: AlertTriangle,
+      active: filters.lowStock,
+      color: 'text-orange-600 bg-orange-50 border-orange-200',
+      onClick: () => handleInputChange('lowStock', !filters.lowStock)
+    }
+  ]
+
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 sm:p-6">
-      {/* Header con botón para mostrar filtros en móvil */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
-          <Filter className="w-5 h-5 text-gray-500" />
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900">Filtros</h3>
-          {hasActiveFilters && (
-            <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full">
-              Activos
-            </span>
-          )}
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          {hasActiveFilters && (
-            <button
-              onClick={clearFilters}
-              className="flex items-center space-x-1 text-sm text-gray-500 hover:text-gray-700"
-            >
-              <X size={16} />
-              <span className="hidden sm:inline">Limpiar filtros</span>
-            </button>
-          )}
-          
-          {/* Botón toggle para móvil */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="lg:hidden flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg transition-colors"
-          >
-            <span>{showFilters ? 'Ocultar' : 'Mostrar'}</span>
-            {showFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Search bar - Siempre visible */}
-      <div className="mb-4 lg:hidden">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder="Buscar insumos..."
-            value={filters.search}
-            onChange={(e) => handleFilterChange('search', e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-          />
-        </div>
-      </div>
-
-      {/* Filtros - Colapsables en móvil */}
-      <div className={`${showFilters ? 'block' : 'hidden'} lg:block`}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-          {/* Search - Desktop */}
-          <div className="relative hidden lg:block">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+      {/* Header siempre visible */}
+      <div className="p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          {/* Búsqueda principal */}
+          <div className="relative flex-1 max-w-md">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-gray-400" />
+            </div>
             <input
               type="text"
-              placeholder="Buscar insumos..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange('search', e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              placeholder="Buscar por nombre o SKU..."
+              value={filters.search || ''}
+              onChange={(e) => handleInputChange('search', e.target.value)}
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
             />
           </div>
 
-          {/* Category Filter */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1 sm:hidden">
-              Categoría
-            </label>
-            <select
-              value={filters.category}
-              onChange={(e) => handleFilterChange('category', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+          {/* Filtros rápidos */}
+          <div className="flex items-center space-x-2">
+            {quickFilters.map((filter) => {
+              const Icon = filter.icon
+              return (
+                <button
+                  key={filter.id}
+                  onClick={filter.onClick}
+                  className={`
+                    inline-flex items-center px-3 py-2 border rounded-md text-sm font-medium transition-colors
+                    ${filter.active 
+                      ? (filter.color || 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100')
+                      : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                    }
+                  `}
+                >
+                  {Icon && <Icon className="h-4 w-4 mr-1" />}
+                  {filter.label}
+                </button>
+              )
+            })}
+
+            {/* Botón de filtros avanzados */}
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className={`
+                inline-flex items-center px-3 py-2 border rounded-md text-sm font-medium transition-colors
+                ${isExpanded || (hasActiveFilters && !filters.lowStock)
+                  ? 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                  : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                }
+              `}
             >
-              {categoryOptions.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+              <Filter className="h-4 w-4 mr-1" />
+              Filtros
+              {(hasActiveFilters && !filters.lowStock) && (
+                <span className="ml-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-blue-600 rounded-full">
+                  {Object.values(filters).filter(v => v !== '' && v !== false).length - (filters.lowStock ? 1 : 0)}
+                </span>
+              )}
+            </button>
 
-          {/* Status Filter */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1 sm:hidden">
-              Estado
-            </label>
-            <select
-              value={filters.status}
-              onChange={(e) => handleFilterChange('status', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            >
-              {statusOptions.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Supplier Filter */}
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1 sm:hidden">
-              Proveedor
-            </label>
-            <select
-              value={filters.supplier}
-              onChange={(e) => handleFilterChange('supplier', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            >
-              {supplierOptions.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Low Stock Toggle */}
-          <div className="flex items-center">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={filters.lowStock}
-                onChange={(e) => handleFilterChange('lowStock', e.target.checked)}
-                className="rounded border-gray-300 text-red-600 focus:ring-red-500"
-              />
-              <span className="text-sm text-gray-700 flex items-center space-x-1">
-                <AlertTriangle size={14} className="text-red-500" />
-                <span>Solo stock bajo</span>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        {/* Botones de acción en móvil */}
-        <div className="flex justify-between items-center mt-4 lg:hidden">
-          <span className="text-sm text-gray-600">
-            {hasActiveFilters ? 'Filtros aplicados' : 'Sin filtros'}
-          </span>
-          <div className="flex space-x-2">
+            {/* Botón limpiar filtros */}
             {hasActiveFilters && (
               <button
-                onClick={clearFilters}
-                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                type="button"
+                onClick={onClearFilters}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                title="Limpiar filtros"
               >
-                Limpiar
+                <RotateCcw className="h-4 w-4" />
               </button>
             )}
-            <button
-              onClick={() => setShowFilters(false)}
-              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              Aplicar
-            </button>
           </div>
         </div>
       </div>
 
-      {/* Resumen de filtros activos en móvil */}
-      {hasActiveFilters && !showFilters && (
-        <div className="mt-3 lg:hidden">
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(filters).map(([key, value]) => {
-              if (!value || value === 'all' || (key === 'lowStock' && !value)) return null;
-              
-              let displayValue = value;
-              if (key === 'lowStock' && value) displayValue = 'Stock bajo';
-              
-              return (
-                <span
-                  key={key}
-                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                >
-                  {displayValue}
-                  <button
-                    onClick={() => handleFilterChange(key, key === 'lowStock' ? false : (key === 'search' ? '' : 'all'))}
-                    className="ml-1 hover:text-blue-600"
-                  >
-                    <X size={12} />
-                  </button>
+      {/* Filtros expandidos */}
+      {isExpanded && (
+        <div className="border-t border-gray-200 p-4 bg-gray-50">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Categoría */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                <Package className="inline h-3 w-3 mr-1" />
+                Categoría
+              </label>
+              <select
+                value={filters.category || ''}
+                onChange={(e) => handleInputChange('category', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Todas las categorías</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Proveedor */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Proveedor
+              </label>
+              <select
+                value={filters.supplier || ''}
+                onChange={(e) => handleInputChange('supplier', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Todos los proveedores</option>
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Estado de stock */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Estado de stock
+              </label>
+              <div className="space-y-2">
+                <label className="inline-flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={filters.lowStock || false}
+                    onChange={(e) => handleInputChange('lowStock', e.target.checked)}
+                    className="form-checkbox text-orange-600"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">Solo stock bajo</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Acciones de filtros */}
+          <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200">
+            <div className="text-xs text-gray-500">
+              {hasActiveFilters && (
+                <span>
+                  {Object.values(filters).filter(v => v !== '' && v !== false).length} filtro(s) activo(s)
                 </span>
-              );
-            })}
+              )}
+            </div>
+            
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={onClearFilters}
+                disabled={!hasActiveFilters}
+                className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Limpiar
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsExpanded(false)}
+                className="px-3 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-300 rounded hover:bg-blue-100 transition-colors"
+              >
+                Colapsar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Indicadores de filtros activos (cuando está colapsado) */}
+      {!isExpanded && hasActiveFilters && !filters.lowStock && (
+        <div className="px-4 pb-4">
+          <div className="flex flex-wrap gap-2">
+            {filters.category && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                Categoría: {categories.find(c => c.id === filters.category)?.name}
+                <button
+                  type="button"
+                  onClick={() => handleInputChange('category', '')}
+                  className="ml-1 inline-flex items-center justify-center w-4 h-4 text-blue-400 hover:text-blue-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            
+            {filters.supplier && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <button
+                  type="button"
+                  onClick={() => handleInputChange('supplier', '')}
+                  className="ml-1 inline-flex items-center justify-center w-4 h-4 text-green-400 hover:text-green-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            
+            {filters.search && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                Búsqueda: {filters.search}
+                <button
+                  type="button"
+                  onClick={() => handleInputChange('search', '')}
+                  className="ml-1 inline-flex items-center justify-center w-4 h-4 text-purple-400 hover:text-purple-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
           </div>
         </div>
       )}
     </div>
-  );
-};
+  )
+}
 
-export default SuppliesFilters;
+export default SuppliesFilters

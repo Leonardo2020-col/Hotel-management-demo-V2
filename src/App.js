@@ -21,6 +21,7 @@ import Reservations from './pages/Reservations.jsx'
 import BranchSwitcher from './pages/BranchSwitcher.jsx' // ✅ NUEVA IMPORTACIÓN
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
+import Supplies from './pages/Supplies.jsx'
 
 function App() {
   console.log('🚀 App rendering...')
@@ -139,18 +140,15 @@ function App() {
               />
               
               <Route
-                path="/supplies"
-                element={
-                  <ProtectedRoute requireReception>
-                    <Layout>
-                      <div className="p-6">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Suministros</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
+  path="/supplies"
+  element={
+    <ProtectedRoute requireReception>
+      <Layout>
+        <Supplies />
+      </Layout>
+    </ProtectedRoute>
+  }
+/>
               
               <Route
                 path="/reports"

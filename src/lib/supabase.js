@@ -1300,3 +1300,424 @@ export const branchService = {
     }
   }
 }
+
+// =====================================================
+// 📦 SERVICIOS DE SUMINISTROS (AGREGAR AL FINAL)
+// =====================================================
+export const suppliesService = {
+  // Obtener todos los suministros con filtros
+  async getSupplies(filters = {}) {
+    try {
+      let query = supabase
+        .from('supplies')
+        .select(`
+          id,
+          name,
+          unit_of_measure,
+          minimum_stock,
+          current_stock,
+          unit_cost,
+          sku,
+          is_active,
+          created_at,
+          updated_at,
+          category:category_id(
+            id,
+            name
+          ),
+          supplier:supplier_id(
+            id,
+            name,
+            contact_person,
+            phone
+          )
+        `)
+        .eq('is_active', true)
+
+      // Aplicar filtros
+      if (filters.category) {
+        query = query.eq('category_id', filters.category)
+      }
+
+      if (filters.supplier) {
+        query = query.eq('supplier_id', filters.supplier)
+      }
+
+      if (filters.lowStock) {
+        query = query.filter('current_stock', 'lte', 'minimum_stock')
+      }
+
+      if (filters.search) {
+        query = query.or(`name.ilike.%${filters.search}%,sku.ilike.%${filters.search}%`)
+      }
+
+      const { data, error } = await query.order('name')
+
+      if (error) throw error
+
+      // Enriquecer datos con campos calculados
+      const enrichedData = data?.map(supply => ({
+        ...supply,
+        stockStatus: this.getStockStatus(supply.current_stock, supply.minimum_stock),
+        totalValue: supply.current_stock * supply.unit_cost,
+        needsRestock: supply.current_stock <= supply.minimum_stock,
+        isOutOfStock: supply.current_stock === 0,
+        stockPercentage: supply.minimum_stock > 0 
+          ? Math.round((supply.current_stock / supply.minimum_stock) * 100)
+          : 100
+      })) || []
+
+      return { data: enrichedData, error: null }
+    } catch (error) {
+      console.error('Error fetching supplies:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Obtener categorías de suministros
+  async getCategories() {
+    try {
+      const { data, error } = await supabase
+        .from('supply_categories')
+        .select(`
+          id,
+          name,
+          parent_category_id,
+          is_active,
+          created_at,
+          parent_category:parent_category_id(name)
+        `)
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching categories:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Obtener proveedores
+  async getSuppliers() {
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select(`
+          id,
+          name,
+          contact_person,
+          email,
+          phone,
+          tax_id,
+          payment_terms,
+          is_active,
+          created_at,
+          updated_at
+        `)
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching suppliers:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Obtener alertas de inventario
+  async getAlerts() {
+    try {
+      const { data, error } = await supabase
+        .from('inventory_alerts')
+        .select(`
+          id,
+          alert_type,
+          message,
+          is_resolved,
+          resolved_at,
+          created_at,
+          supply:supply_id(
+            id,
+            name,
+            current_stock,
+            minimum_stock
+          ),
+          resolved_by_user:resolved_by(
+            first_name,
+            last_name
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching alerts:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Crear nuevo suministro
+  async createSupply(supplyData) {
+    try {
+      const { data, error } = await supabase
+        .from('supplies')
+        .insert({
+          name: supplyData.name,
+          category_id: supplyData.categoryId,
+          unit_of_measure: supplyData.unitOfMeasure,
+          minimum_stock: supplyData.minimumStock || 0,
+          current_stock: supplyData.currentStock || 0,
+          unit_cost: supplyData.unitCost || 0,
+          supplier_id: supplyData.supplierId || null,
+          sku: supplyData.sku || null,
+          is_active: true
+        })
+        .select(`
+          *,
+          category:category_id(name),
+          supplier:supplier_id(name)
+        `)
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error creating supply:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Actualizar suministro
+  async updateSupply(supplyId, updateData) {
+    try {
+      const { data, error } = await supabase
+        .from('supplies')
+        .update({
+          name: updateData.name,
+          category_id: updateData.categoryId,
+          unit_of_measure: updateData.unitOfMeasure,
+          minimum_stock: updateData.minimumStock,
+          unit_cost: updateData.unitCost,
+          supplier_id: updateData.supplierId,
+          sku: updateData.sku,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', supplyId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error updating supply:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Eliminar suministro (soft delete)
+  async deleteSupply(supplyId) {
+    try {
+      const { error } = await supabase
+        .from('supplies')
+        .update({ is_active: false })
+        .eq('id', supplyId)
+
+      if (error) throw error
+      return { error: null }
+    } catch (error) {
+      console.error('Error deleting supply:', error)
+      return { error }
+    }
+  },
+
+  // Agregar movimiento de stock
+  async addMovement(movementData) {
+    try {
+      const { data, error } = await supabase
+        .from('supply_movements')
+        .insert({
+          supply_id: movementData.supplyId,
+          branch_id: movementData.branchId,
+          movement_type: movementData.movementType, // 'in', 'out', 'adjustment'
+          quantity: movementData.quantity,
+          unit_cost: movementData.unitCost || 0,
+          total_cost: (movementData.quantity || 0) * (movementData.unitCost || 0),
+          reference_document: movementData.referenceDocument || null,
+          processed_by: movementData.processedBy
+        })
+        .select(`
+          *,
+          supply:supply_id(name),
+          processed_by_user:processed_by(first_name, last_name)
+        `)
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error adding movement:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Obtener movimientos de un suministro
+  async getMovements(supplyId, limit = 20) {
+    try {
+      const { data, error } = await supabase
+        .from('supply_movements')
+        .select(`
+          id,
+          movement_type,
+          quantity,
+          unit_cost,
+          total_cost,
+          reference_document,
+          created_at,
+          supply:supply_id(name),
+          processed_by_user:processed_by(first_name, last_name)
+        `)
+        .eq('supply_id', supplyId)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error fetching movements:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Resolver alerta
+  async resolveAlert(alertId, userId) {
+    try {
+      const { error } = await supabase
+        .from('inventory_alerts')
+        .update({
+          is_resolved: true,
+          resolved_by: userId,
+          resolved_at: new Date().toISOString()
+        })
+        .eq('id', alertId)
+
+      if (error) throw error
+      return { error: null }
+    } catch (error) {
+      console.error('Error resolving alert:', error)
+      return { error }
+    }
+  },
+
+  // Crear categoría
+  async createCategory(categoryData) {
+    try {
+      const { data, error } = await supabase
+        .from('supply_categories')
+        .insert({
+          name: categoryData.name,
+          parent_category_id: categoryData.parentCategoryId || null,
+          is_active: true
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error creating category:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Crear proveedor
+  async createSupplier(supplierData) {
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .insert({
+          name: supplierData.name,
+          contact_person: supplierData.contactPerson || null,
+          email: supplierData.email || null,
+          phone: supplierData.phone || null,
+          tax_id: supplierData.taxId || null,
+          payment_terms: supplierData.paymentTerms || null,
+          is_active: true
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error creating supplier:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Buscar suministros
+  async searchSupplies(searchTerm, limit = 10) {
+    try {
+      const { data, error } = await supabase
+        .from('supplies')
+        .select(`
+          id,
+          name,
+          sku,
+          current_stock,
+          minimum_stock,
+          category:category_id(name)
+        `)
+        .eq('is_active', true)
+        .or(`name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
+        .order('name')
+        .limit(limit)
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('Error searching supplies:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Utilidades
+  getStockStatus(currentStock, minimumStock) {
+    if (currentStock === 0) return 'out_of_stock'
+    if (currentStock <= minimumStock) return 'low_stock'
+    if (currentStock <= minimumStock * 1.5) return 'medium_stock'
+    return 'good_stock'
+  },
+
+  getStockStatusColor(status) {
+    const colors = {
+      'out_of_stock': 'text-red-800 bg-red-100 border-red-200',
+      'low_stock': 'text-orange-800 bg-orange-100 border-orange-200',
+      'medium_stock': 'text-yellow-800 bg-yellow-100 border-yellow-200',
+      'good_stock': 'text-green-800 bg-green-100 border-green-200'
+    }
+    return colors[status] || colors.good_stock
+  },
+
+  getStockStatusText(status) {
+    const texts = {
+      'out_of_stock': 'Agotado',
+      'low_stock': 'Stock Bajo',
+      'medium_stock': 'Stock Medio',
+      'good_stock': 'Stock Bueno'
+    }
+    return texts[status] || 'Desconocido'
+  },
+
+  formatMovementType(type) {
+    const types = {
+      'in': 'Entrada',
+      'out': 'Salida',
+      'adjustment': 'Ajuste'
+    }
+    return types[type] || type
+  }
+}
