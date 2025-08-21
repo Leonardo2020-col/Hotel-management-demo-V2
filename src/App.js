@@ -1,4 +1,4 @@
-// src/App.js - CON RUTA DE RESERVATIONS AGREGADA
+// src/App.js - ACTUALIZADO CON RUTAS DE SUCURSALES
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
 import Reservations from './pages/Reservations.jsx' 
+import BranchSwitcher from './pages/BranchSwitcher.jsx' // ✅ NUEVA IMPORTACIÓN
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 
@@ -71,6 +72,18 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+
+              {/* ✅ NUEVA RUTA - Cambio de sucursal CON Layout */}
+              <Route
+                path="/admin/branch-switcher"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Layout>
+                      <BranchSwitcher />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
               
               {/* Check-in CON Layout */}
               <Route
@@ -84,7 +97,7 @@ function App() {
                 }
               />
               
-              {/* ✅ NUEVA RUTA DE RESERVATIONS CON Layout */}
+              {/* Reservaciones CON Layout */}
               <Route
                 path="/reservations"
                 element={
@@ -96,7 +109,7 @@ function App() {
                 }
               />
               
-              {/* Resto de páginas CON Layout - REMOVIDA LA ANTIGUA RUTA PLACEHOLDER */}
+              {/* Resto de páginas CON Layout */}
               <Route
                 path="/guests"
                 element={

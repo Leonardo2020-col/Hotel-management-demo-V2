@@ -1,4 +1,4 @@
-// src/layout/Layout.jsx - VERSIÓN OPTIMIZADA
+// src/layout/Layout.jsx - ACTUALIZADO CON SELECTOR DE SUCURSAL
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -18,21 +18,27 @@ import {
   ChevronDown,
   User,
   Bell,
-  Search
+  Search,
+  Building,
+  RefreshCw
 } from 'lucide-react'
+import BranchSwitcherModal from '../components/BranchSwitcherModal'
 
 const Layout = ({ children }) => {
-  const { userName, userRole, logout, isAdmin, getPrimaryBranch } = useAuth()
+  const { userName, userRole, logout, isAdmin, getPrimaryBranch, getUserBranches } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
+  const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false)
   
   // ✅ Refs para manejar clicks fuera del dropdown
   const profileDropdownRef = useRef(null)
   const searchInputRef = useRef(null)
 
   const primaryBranch = getPrimaryBranch()
+  const userBranches = getUserBranches()
+  const canSwitchBranches = isAdmin() && userBranches.length > 1
 
   // ✅ Cerrar dropdown cuando se hace click fuera
   useEffect(() => {
@@ -120,6 +126,13 @@ const Layout = ({ children }) => {
       description: 'Configuración del sistema'
     },
     {
+      name: 'Cambiar Sucursal',
+      href: '/admin/branch-switcher',
+      icon: Building,
+      current: isCurrentPath('/admin/branch-switcher'),
+      description: 'Gestión de sucursales'
+    },
+    {
       name: 'Configuración',
       href: '/settings',
       icon: Settings,
@@ -131,7 +144,6 @@ const Layout = ({ children }) => {
   // ✅ Mejorar manejo de logout con confirmación
   const handleLogout = useCallback(async () => {
     try {
-      // ✅ Agregar confirmación para logout
       if (!window.confirm('¿Estás seguro de que deseas cerrar sesión?')) {
         return
       }
@@ -195,7 +207,6 @@ const Layout = ({ children }) => {
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white shadow-xl">
-          {/* ✅ Botón de cerrar mejorado */}
           <div className="absolute top-0 right-0 -mr-12 pt-2">
             <button
               className="ml-1 flex items-center justify-center h-10 w-10 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors"
@@ -212,6 +223,8 @@ const Layout = ({ children }) => {
             isAdmin={isAdmin}
             onNavigate={handleNavigation}
             primaryBranch={primaryBranch}
+            canSwitchBranches={canSwitchBranches}
+            onBranchSwitcherOpen={() => setBranchSwitcherOpen(true)}
             classNames={classNames}
           />
         </div>
@@ -226,6 +239,8 @@ const Layout = ({ children }) => {
             isAdmin={isAdmin}
             onNavigate={handleNavigation}
             primaryBranch={primaryBranch}
+            canSwitchBranches={canSwitchBranches}
+            onBranchSwitcherOpen={() => setBranchSwitcherOpen(true)}
             classNames={classNames}
           />
         </div>
@@ -265,6 +280,21 @@ const Layout = ({ children }) => {
 
             {/* Perfil de usuario */}
             <div className="ml-4 flex items-center md:ml-6 space-x-4">
+              {/* ✅ Selector rápido de sucursal para admin */}
+              {canSwitchBranches && (
+                <button
+                  onClick={() => setBranchSwitcherOpen(true)}
+                  className="flex items-center px-3 py-1.5 text-sm bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                  title="Cambiar sucursal"
+                >
+                  <Building className="h-4 w-4 mr-2" />
+                  <span className="hidden sm:block">
+                    {primaryBranch?.name?.split(' ').slice(-1)[0] || 'Sucursal'}
+                  </span>
+                  <ChevronDown className="h-3 w-3 ml-1" />
+                </button>
+              )}
+
               {/* Notificaciones */}
               <NotificationBell />
 
@@ -304,6 +334,20 @@ const Layout = ({ children }) => {
                         )}
                       </div>
                       
+                      {/* ✅ Opción de cambio de sucursal en dropdown */}
+                      {canSwitchBranches && (
+                        <button
+                          onClick={() => {
+                            setProfileDropdownOpen(false)
+                            setBranchSwitcherOpen(true)
+                          }}
+                          className="group flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-900 transition-colors"
+                        >
+                          <Building className="h-4 w-4 mr-3 text-gray-400 group-hover:text-blue-500" />
+                          Cambiar Sucursal
+                        </button>
+                      )}
+                      
                       {/* Opciones */}
                       <button
                         onClick={handleLogout}
@@ -327,12 +371,27 @@ const Layout = ({ children }) => {
           </div>
         </main>
       </div>
+
+      {/* ✅ Modal de cambio de sucursal */}
+      <BranchSwitcherModal 
+        isOpen={branchSwitcherOpen}
+        onClose={() => setBranchSwitcherOpen(false)}
+      />
     </div>
   )
 }
 
 // ✅ Componente del sidebar optimizado con React.memo
-const SidebarContent = React.memo(({ navigation, adminNavigation, isAdmin, onNavigate, primaryBranch, classNames }) => {
+const SidebarContent = React.memo(({ 
+  navigation, 
+  adminNavigation, 
+  isAdmin, 
+  onNavigate, 
+  primaryBranch, 
+  canSwitchBranches,
+  onBranchSwitcherOpen,
+  classNames 
+}) => {
   return (
     <div className="flex flex-col h-full bg-white border-r border-gray-200">
       {/* Logo y título */}
@@ -341,15 +400,26 @@ const SidebarContent = React.memo(({ navigation, adminNavigation, isAdmin, onNav
         <span className="ml-2 text-xl font-semibold text-white">Hotel System</span>
       </div>
 
-      {/* ✅ Información de la sucursal mejorada */}
+      {/* ✅ Información de la sucursal mejorada con acción */}
       {primaryBranch && (
-        <div className="px-4 py-3 bg-gradient-to-r from-gray-50 to-indigo-50 border-b border-gray-200">
-          <div className="flex items-center">
-            <div className="h-2 w-2 bg-green-400 rounded-full mr-2"></div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">{primaryBranch.name}</p>
-              <p className="text-xs text-gray-500">Sucursal actual</p>
+        <div className={`px-4 py-3 bg-gradient-to-r from-gray-50 to-indigo-50 border-b border-gray-200 ${
+          canSwitchBranches ? 'cursor-pointer hover:from-blue-50 hover:to-indigo-100 transition-colors' : ''
+        }`}
+        onClick={canSwitchBranches ? onBranchSwitcherOpen : undefined}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="h-2 w-2 bg-green-400 rounded-full mr-2"></div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">{primaryBranch.name}</p>
+                <p className="text-xs text-gray-500">
+                  {canSwitchBranches ? 'Click para cambiar' : 'Sucursal actual'}
+                </p>
+              </div>
             </div>
+            {canSwitchBranches && (
+              <ChevronDown className="h-4 w-4 text-gray-400" />
+            )}
           </div>
         </div>
       )}
