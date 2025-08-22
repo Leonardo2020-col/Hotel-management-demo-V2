@@ -508,60 +508,62 @@ export const snackService = {
     }
   },
 
-  // ✅ FUNCIÓN CORREGIDA: Obtener items de snacks sin description en snack_category
+  
   async getSnackItems() {
-    try {
-      console.log('🍿 Loading snack items from database...')
-      
-      const { data, error } = await supabase
-        .from('snack_items')
-        .select(`
+  try {
+    console.log('🍿 Loading snack items from database...')
+    
+    const { data, error } = await supabase
+      .from('snack_items')
+      .select(`
+        id,
+        name,
+        price,
+        cost,
+        stock,
+        minimum_stock,
+        is_active,
+        category_id,
+        created_at,
+        updated_at,
+        snack_categories!inner(
           id,
-          name,
-          price,
-          cost,
-          stock,
-          minimum_stock,
-          description,
-          is_active,
-          category_id,
-          created_at,
-          updated_at,
-          snack_category:category_id(
-            id,
-            name
-          )
-        `) // ✅ Removed description from snack_category join
-        .eq('is_active', true)
-        .order('name')
+          name
+        )
+      `) // ✅ CORRECTO: snack_categories (plural) con !inner
+      .eq('is_active', true)
+      .order('name')
 
-      if (error) {
-        console.error('❌ Error loading snack items:', error)
-        throw error
-      }
-
-      // Enriquecer datos con campos calculados
-      const enrichedData = (data || []).map(item => ({
-        ...item,
-        category_name: item.snack_category?.name || 'Sin categoría',
-        category_slug: this.generateCategorySlug(item.snack_category?.name),
-        in_stock: item.stock > 0,
-        low_stock: item.stock <= item.minimum_stock,
-        stock_percentage: item.minimum_stock > 0 
-          ? Math.round((item.stock / item.minimum_stock) * 100) 
-          : 100,
-        formatted_price: this.formatPrice(item.price),
-        stock_status: this.getStockStatus(item.stock, item.minimum_stock)
-      }))
-      
-      console.log('✅ Snack items loaded and enriched:', enrichedData.length)
-      return { data: enrichedData, error: null }
-    } catch (error) {
-      console.error('❌ Error fetching snack items:', error)
-      return { data: [], error }
+    if (error) {
+      console.error('❌ Error loading snack items:', error)
+      throw error
     }
-  },
 
+    console.log('🔍 Raw data from Supabase:', data?.slice(0, 2)) // Debug
+
+    // Enriquecer datos con campos calculados
+    const enrichedData = (data || []).map(item => ({
+      ...item,
+      category_name: item.snack_categories?.name || 'Sin categoría',
+      category_slug: this.generateCategorySlug(item.snack_categories?.name),
+      in_stock: item.stock > 0,
+      low_stock: item.stock <= item.minimum_stock,
+      stock_percentage: item.minimum_stock > 0 
+        ? Math.round((item.stock / item.minimum_stock) * 100) 
+        : 100,
+      formatted_price: this.formatPrice(item.price),
+      stock_status: this.getStockStatus(item.stock, item.minimum_stock)
+    }))
+    
+    console.log('✅ Snack items loaded and enriched:', enrichedData.length)
+    console.log('🔍 Sample enriched item:', enrichedData[0])
+    
+    return { data: enrichedData, error: null }
+  } catch (error) {
+    console.error('❌ Error fetching snack items:', error)
+    return { data: [], error }
+  }
+},
   // Obtener items de snacks agrupados por categoría
   async getSnackItemsGrouped() {
     try {
