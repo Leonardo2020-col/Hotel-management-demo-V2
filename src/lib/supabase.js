@@ -1178,7 +1178,7 @@ export const suppliesService = {
         `)
         .eq('is_active', true)
 
-      // Aplicar filtros
+      // ✅ FILTROS CORREGIDOS
       if (filters.category) {
         query = query.eq('category_id', filters.category)
       }
@@ -1187,25 +1187,33 @@ export const suppliesService = {
         query = query.eq('supplier_id', filters.supplier)
       }
 
-      if (filters.lowStock) {
-        query = query.filter('current_stock', 'lte', 'minimum_stock')
-      }
-
       if (filters.search) {
         query = query.or(`name.ilike.%${filters.search}%,sku.ilike.%${filters.search}%`)
       }
 
-      const { data, error } = await query.order('name')
+      // ✅ CORRECCIÓN PRINCIPAL: Filtro de stock bajo
+      // Primero obtenemos todos los datos, luego filtramos en JavaScript
+      const { data: rawData, error } = await query.order('name')
 
       if (error) {
         console.error('❌ Error fetching supplies:', error)
         throw error
       }
 
-      console.log('✅ Supplies fetched successfully:', data?.length || 0)
+      console.log('✅ Supplies fetched successfully:', rawData?.length || 0)
+
+      // ✅ Aplicar filtro de stock bajo en JavaScript (más confiable)
+      let filteredData = rawData || []
+      
+      if (filters.lowStock) {
+        filteredData = filteredData.filter(supply => 
+          supply.current_stock <= supply.minimum_stock
+        )
+        console.log('🔍 Low stock filter applied:', filteredData.length, 'items')
+      }
 
       // Enriquecer datos con campos calculados
-      const enrichedData = data?.map(supply => ({
+      const enrichedData = filteredData.map(supply => ({
         ...supply,
         category: supply.supply_categories,
         supplier: supply.suppliers,
@@ -1216,7 +1224,7 @@ export const suppliesService = {
         stockPercentage: supply.minimum_stock > 0 
           ? Math.round((supply.current_stock / supply.minimum_stock) * 100)
           : 100
-      })) || []
+      }))
 
       return { data: enrichedData, error: null }
     } catch (error) {
