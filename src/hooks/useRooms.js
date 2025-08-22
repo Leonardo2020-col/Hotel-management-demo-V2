@@ -1,10 +1,10 @@
 // hooks/useRooms.js
 import { useState, useEffect, useCallback } from 'react'
-import { supabase, roomService, realtimeService } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 
-export const useRooms = (options = {}) => {
+const useRooms = (options = {}) => {
   const { getPrimaryBranch, isAuthenticated } = useAuth()
   const primaryBranch = getPrimaryBranch()
   
@@ -90,15 +90,6 @@ export const useRooms = (options = {}) => {
           branch:branch_id(
             id,
             name
-          ),
-          current_checkin:checkin_orders!left(
-            id,
-            check_in_time,
-            expected_checkout,
-            guest:guest_id(
-              full_name,
-              phone
-            )
           )
         `)
         .eq('branch_id', primaryBranch.id)
@@ -109,7 +100,6 @@ export const useRooms = (options = {}) => {
 
       // Enriquecer datos con información adicional
       const enrichedRooms = (data || []).map(room => {
-        const currentCheckin = room.current_checkin?.[0]
         const isOccupied = room.room_status?.status === 'ocupada'
         
         return {
@@ -122,10 +112,10 @@ export const useRooms = (options = {}) => {
           
           // Información de ocupación
           isOccupied,
-          currentGuest: currentCheckin?.guest?.full_name || null,
-          currentGuestPhone: currentCheckin?.guest?.phone || null,
-          checkInTime: currentCheckin?.check_in_time || null,
-          expectedCheckout: currentCheckin?.expected_checkout || null,
+          currentGuest: null, // Se puede agregar más tarde
+          currentGuestPhone: null,
+          checkInTime: null,
+          expectedCheckout: null,
           
           // Campos calculados
           floorLabel: `Piso ${room.floor}`,
@@ -210,7 +200,22 @@ export const useRooms = (options = {}) => {
       
       const loadingToast = toast.loading('Actualizando habitación...')
       
-      const { data, error } = await roomService.updateRoomStatus(roomId, newStatus)
+      // Obtener el ID del nuevo estado
+      const { data: statusData, error: statusError } = await supabase
+        .from('room_status')
+        .select('id')
+        .eq('status', newStatus)
+        .single()
+
+      if (statusError) throw statusError
+
+      // Actualizar la habitación
+      const { data, error } = await supabase
+        .from('rooms')
+        .update({ status_id: statusData.id })
+        .eq('id', roomId)
+        .select()
+        .single()
       
       if (error) throw error
       
@@ -302,11 +307,18 @@ export const useRooms = (options = {}) => {
     if (!primaryBranch?.id) return { data: [], error: 'No branch selected' }
 
     try {
-      const { data, error } = await roomService.getAvailableRooms(
-        primaryBranch.id, 
-        startDate, 
-        endDate
-      )
+      // Simplificada: solo habitaciones disponibles
+      const { data, error } = await supabase
+        .from('rooms')
+        .select(`
+          id,
+          room_number,
+          base_price,
+          room_status:status_id(status, is_available)
+        `)
+        .eq('branch_id', primaryBranch.id)
+        .eq('is_active', true)
+        .eq('room_status.is_available', true)
       
       if (error) throw error
       return { data: data || [], error: null }
@@ -350,24 +362,26 @@ export const useRooms = (options = {}) => {
     return rooms.find(room => room.id === roomId)
   }, [rooms])
 
-  // ✅ Suscripción a cambios en tiempo real
+  // ✅ Suscripción a cambios en tiempo real (simplificada)
   useEffect(() => {
     if (!primaryBranch?.id) return
 
-    const subscription = realtimeService.subscribeToRoomChanges(
-      primaryBranch.id,
-      (payload) => {
-        console.log('🔄 Real-time room update:', payload)
-        
-        if (payload.eventType === 'UPDATE' && payload.table === 'rooms') {
+    const subscription = supabase
+      .channel('room-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rooms',
+          filter: `branch_id=eq.${primaryBranch.id}`
+        },
+        (payload) => {
+          console.log('🔄 Real-time room update:', payload)
           fetchRooms(false)
         }
-        
-        if (payload.table === 'quick_checkins' || payload.table === 'checkin_orders') {
-          fetchRooms(false)
-        }
-      }
-    )
+      )
+      .subscribe()
 
     return () => {
       if (subscription) {
@@ -386,7 +400,7 @@ export const useRooms = (options = {}) => {
     }
   }, [primaryBranch?.id, isAuthenticated, fetchRoomStatuses, fetchRooms])
 
-  // ✅ Return del hook
+  // Export default
   return {
     // Estados
     rooms: filteredRooms(),
@@ -421,3 +435,5 @@ export const useRooms = (options = {}) => {
     currentBranch: primaryBranch
   }
 }
+
+export default useRooms

@@ -145,6 +145,45 @@ export const RoomStatusIndicator = ({ status, animated = false, pulse = false })
 
 // ✅ Componente de estado con progreso (para limpieza)
 export const RoomStatusProgress = ({ status, progress = 0, showProgress = false }) => {
+  const statusConfig = {
+    disponible: {
+      icon: CheckCircle,
+      label: 'Disponible',
+      color: 'bg-green-100 text-green-800 border-green-200',
+      dotColor: 'bg-green-500'
+    },
+    ocupada: {
+      icon: User,
+      label: 'Ocupada',
+      color: 'bg-red-100 text-red-800 border-red-200',
+      dotColor: 'bg-red-500'
+    },
+    limpieza: {
+      icon: Sparkles,
+      label: 'Limpieza',
+      color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      dotColor: 'bg-yellow-500'
+    },
+    mantenimiento: {
+      icon: Wrench,
+      label: 'Mantenimiento',
+      color: 'bg-blue-100 text-blue-800 border-blue-200',
+      dotColor: 'bg-blue-500'
+    },
+    fuera_servicio: {
+      icon: AlertTriangle,
+      label: 'Fuera de servicio',
+      color: 'bg-gray-100 text-gray-800 border-gray-200',
+      dotColor: 'bg-gray-500'
+    },
+    reservada: {
+      icon: Clock,
+      label: 'Reservada',
+      color: 'bg-purple-100 text-purple-800 border-purple-200',
+      dotColor: 'bg-purple-500'
+    }
+  }
+  
   const config = statusConfig[status] || statusConfig.disponible
   
   return (
