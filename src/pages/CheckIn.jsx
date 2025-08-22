@@ -1,6 +1,6 @@
-// src/pages/CheckIn/CheckIn.jsx - VERSIÓN CORREGIDA
+// src/pages/CheckIn.jsx - VERSIÓN COMPLETA CORREGIDA SIN DUPLICADOS
 import React, { useState, useEffect } from 'react'
-import { RefreshCw, Sparkles, User, CreditCard, AlertTriangle } from 'lucide-react'
+import { RefreshCw, AlertTriangle, Users, Bed, Clock } from 'lucide-react'
 import Button from '../components/common/Button'
 import RoomGrid from '../components/checkin/RoomGrid'
 import SnackSelection from '../components/checkin/SnackSelection'
@@ -38,27 +38,55 @@ const CheckIn = () => {
     processQuickCheckIn,
     processQuickCheckOut,
     cleanRoom,
-    refreshData
+    refreshData,
+    totalRooms,
+    availableRooms,
+    occupiedRooms,
+    cleaningRooms,
+    activeCheckinsCount,
+    debugData
   } = useQuickCheckins()
+
+  // ✅ DEBUG INFO EN DESARROLLO
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🐛 CheckIn Page Debug:', {
+        roomsByFloor,
+        activeCheckins,
+        snackTypes: snackTypes?.length,
+        snackItems: snackItems?.length,
+        totalRooms,
+        availableRooms,
+        occupiedRooms,
+        cleaningRooms,
+        activeCheckinsCount
+      })
+    }
+  }, [roomsByFloor, activeCheckins, snackTypes, snackItems, totalRooms, availableRooms, occupiedRooms, cleaningRooms, activeCheckinsCount])
 
   // Auto-refresh cada 30 segundos
   useEffect(() => {
     const interval = setInterval(() => {
-      if (orderStep === 0) {
+      if (orderStep === 0 && !loading) {
         refreshData()
       }
     }, 30000)
     
     return () => clearInterval(interval)
-  }, [orderStep, refreshData])
+  }, [orderStep, loading, refreshData])
 
   // Seleccionar piso automáticamente
   useEffect(() => {
     if (roomsByFloor && typeof roomsByFloor === 'object') {
-      const availableFloors = Object.keys(roomsByFloor).map(f => parseInt(f)).filter(f => !isNaN(f))
+      const availableFloors = Object.keys(roomsByFloor)
+        .map(f => parseInt(f))
+        .filter(f => !isNaN(f))
+        .sort()
+      
       if (availableFloors.length > 0 && !availableFloors.includes(selectedFloor)) {
-        const firstFloor = Math.min(...availableFloors)
+        const firstFloor = availableFloors[0]
         setSelectedFloor(firstFloor)
+        console.log('🔄 Auto-selecting floor:', firstFloor)
       }
     }
   }, [roomsByFloor, selectedFloor])
@@ -70,52 +98,55 @@ const CheckIn = () => {
 
   // ✅ FUNCIÓN PRINCIPAL CORREGIDA: Manejo inteligente de clicks
   const handleRoomClick = async (room) => {
-    if (loading || processingRoom === room.number) {
+    if (loading || processingRoom === (room.number || room.room_number)) {
       return
     }
 
-    setProcessingRoom(room.number)
-    console.log('🔘 Room clicked:', room)
+    const roomNumber = room.number || room.room_number
+    setProcessingRoom(roomNumber)
+    console.log('🔘 Room clicked:', roomNumber, room)
 
     try {
       // ✅ Determinar estado real de la habitación
       const roomStatus = room.room_status?.status || room.status || 'disponible'
-      const roomAvailable = room.room_status?.is_available !== false && roomStatus === 'disponible'
+      const roomAvailable = room.room_status?.is_available !== false && 
+                          (roomStatus === 'disponible' || roomStatus === 'available')
       const isOccupied = roomStatus === 'ocupada' || roomStatus === 'occupied'
-      const needsCleaning = roomStatus === 'limpieza' || roomStatus === 'cleaning' || room.cleaning_status === 'dirty'
+      const needsCleaning = roomStatus === 'limpieza' || roomStatus === 'cleaning' || 
+                           room.cleaning_status === 'dirty'
       const inMaintenance = roomStatus === 'mantenimiento' || roomStatus === 'maintenance'
 
       console.log('🔍 Room analysis:', {
-        number: room.room_number || room.number,
+        roomNumber,
         roomStatus,
         roomAvailable,
         isOccupied,
         needsCleaning,
         inMaintenance,
-        quickCheckin: !!room.quickCheckin,
-        activeCheckin: !!activeCheckins[room.room_number || room.number]
+        hasQuickCheckin: !!room.quickCheckin,
+        hasActiveCheckin: !!activeCheckins[roomNumber]
       })
 
       if (roomAvailable && !needsCleaning && !inMaintenance) {
         // ✅ HABITACIÓN DISPONIBLE - INICIAR WALK-IN CHECK-IN
         await handleWalkInCheckIn(room)
         
-      } else if (isOccupied && (room.quickCheckin || activeCheckins[room.room_number || room.number])) {
+      } else if ((isOccupied || room.quickCheckin || activeCheckins[roomNumber])) {
         // 🚪 HABITACIÓN OCUPADA - PROCESAR CHECK-OUT
         await handleQuickCheckOutFlow(room)
         
       } else if (needsCleaning) {
         // 🧹 HABITACIÓN NECESITA LIMPIEZA
-        await handleQuickClean(room.id || room.room_id)
+        await handleQuickClean(room.id || room.room_id, roomNumber)
         
       } else if (inMaintenance) {
         // ⚠️ HABITACIÓN EN MANTENIMIENTO
-        toast.warning(`Habitación ${room.room_number || room.number} está en mantenimiento`)
+        toast.warning(`Habitación ${roomNumber} está en mantenimiento`)
         
       } else {
         // ⚠️ OTROS ESTADOS
         console.warn('⚠️ Room not available:', { roomStatus, room })
-        toast.warning(`Habitación ${room.room_number || room.number} no disponible (${roomStatus})`)
+        toast.warning(`Habitación ${roomNumber} no disponible (${roomStatus})`)
       }
       
     } catch (error) {
@@ -128,12 +159,12 @@ const CheckIn = () => {
 
   // ✅ WALK-IN CHECK-IN CORREGIDO
   const handleWalkInCheckIn = async (room) => {
-    console.log('🚶‍♂️ Starting walk-in check-in for room:', room.room_number || room.number)
+    const roomNumber = room.room_number || room.number
+    console.log('🚶‍♂️ Starting walk-in check-in for room:', roomNumber)
     
     try {
-      const roomNumber = room.room_number || room.number
-      const floor = room.floor || Math.floor(parseInt(roomNumber) / 100)
-      const roomPrice = room.base_price || roomPrices?.[floor] || 100
+      const floor = room.floor || Math.floor(parseInt(roomNumber) / 100) || 1
+      const roomPrice = room.base_price || room.rate || roomPrices?.[floor] || 100
       
       // Resetear datos del huésped
       setGuestData({
@@ -147,10 +178,11 @@ const CheckIn = () => {
       setSelectedRoom(room)
       setCurrentOrder({
         room: {
-          id: room.id,
+          id: room.id || room.room_id,
           number: roomNumber,
           room_number: roomNumber,
-          description: room.description || 'Habitación Estándar'
+          description: room.description || 'Habitación Estándar',
+          floor: floor
         },
         roomPrice: roomPrice,
         snacks: [],
@@ -176,10 +208,10 @@ const CheckIn = () => {
 
   // ✅ QUICK CHECK-OUT FLOW CORREGIDO
   const handleQuickCheckOutFlow = async (room) => {
-    console.log('🚪 Starting quick check-out for room:', room.room_number || room.number)
+    const roomNumber = room.room_number || room.number
+    console.log('🚪 Starting quick check-out for room:', roomNumber)
     
     try {
-      const roomNumber = room.room_number || room.number
       const activeCheckin = room.quickCheckin || activeCheckins[roomNumber]
       
       if (!activeCheckin) {
@@ -205,7 +237,7 @@ const CheckIn = () => {
       setCurrentOrder({
         id: activeCheckin.id,
         room: {
-          id: room.id,
+          id: room.id || room.room_id,
           number: roomNumber,
           room_number: roomNumber,
           description: room.description || 'Habitación Estándar'
@@ -234,14 +266,8 @@ const CheckIn = () => {
   }
 
   // ✅ LIMPIEZA RÁPIDA CORREGIDA
-  const handleQuickClean = async (roomId) => {
+  const handleQuickClean = async (roomId, roomNumber) => {
     try {
-      const roomData = Object.values(roomsByFloor)
-        .flat()
-        .find(room => room.id === roomId || room.room_id === roomId)
-      
-      const roomNumber = roomData?.room_number || roomData?.number || 'desconocida'
-      
       console.log('🧹 Cleaning room:', { roomId, roomNumber })
       
       const { data, error } = await cleanRoom(roomId)
@@ -251,7 +277,9 @@ const CheckIn = () => {
         return
       }
       
-      toast.success(`Habitación ${roomNumber} limpia y disponible`, {
+      const finalRoomNumber = roomNumber || data?.roomNumber || 'desconocida'
+      
+      toast.success(`Habitación ${finalRoomNumber} limpia y disponible`, {
         icon: '✨',
         duration: 3000
       })
@@ -482,29 +510,51 @@ const CheckIn = () => {
     setQuickCheckoutData(null)
   }
 
-  // Manejo de errores
+  // ✅ MANEJO DE ERRORES MEJORADO
   if (error) {
     return (
       <div className="min-h-screen bg-gray-100 p-6">
         <div className="max-w-6xl mx-auto">
           <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-red-600 mb-4">Error al cargar datos</h2>
             <p className="text-gray-600 mb-6">{error}</p>
-            <Button
-              variant="primary"
-              onClick={refreshData}
-              icon={RefreshCw}
-              disabled={loading}
-            >
-              {loading ? 'Recargando...' : 'Reintentar'}
-            </Button>
+            <div className="space-x-4">
+              <Button
+                variant="primary"
+                onClick={refreshData}
+                icon={RefreshCw}
+                disabled={loading}
+              >
+                {loading ? 'Recargando...' : 'Reintentar'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={debugData}
+              >
+                Ver Debug Info
+              </Button>
+            </div>
+            
+            {/* ✅ INFO DE DEBUG EN CASO DE ERROR */}
+            <div className="mt-6 p-4 bg-gray-50 rounded-lg text-left">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Información de Debug:</h3>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p><strong>Total Rooms:</strong> {totalRooms}</p>
+                <p><strong>Available Rooms:</strong> {availableRooms}</p>
+                <p><strong>Active Check-ins:</strong> {activeCheckinsCount}</p>
+                <p><strong>Snack Types:</strong> {snackTypes?.length || 0}</p>
+                <p><strong>Snack Items:</strong> {snackItems?.length || 0}</p>
+                <p><strong>Floors:</strong> {Object.keys(roomsByFloor || {}).join(', ')}</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     )
   }
 
-  // Loading inicial
+  // ✅ LOADING INICIAL MEJORADO
   if (loading && orderStep === 0) {
     return (
       <div className="min-h-screen bg-gray-100 p-6">
@@ -516,20 +566,73 @@ const CheckIn = () => {
           
           <div className="bg-white rounded-lg shadow-lg p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Cargando panel de recepción...</p>
+            <p className="text-gray-600 mb-2">Cargando panel de recepción...</p>
+            <div className="text-sm text-gray-500">
+              Conectando con la base de datos • Verificando habitaciones
+            </div>
           </div>
         </div>
       </div>
     )
   }
 
-  const needsCleaningCount = Object.values(roomsByFloor).flat()
-    .filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length
+  // ✅ VERIFICAR SI HAY HABITACIONES
+  const hasRooms = totalRooms > 0
+  if (!hasRooms && !loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 p-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-gray-800 mb-2">Panel de Recepción</h1>
+            <p className="text-gray-600">Sistema de check-in rápido para huéspedes walk-in</p>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <Bed className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-700 mb-4">No hay habitaciones configuradas</h2>
+            <p className="text-gray-600 mb-6">
+              Parece que tu hotel no tiene habitaciones configuradas en la base de datos.
+            </p>
+            
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+                <h3 className="text-sm font-semibold text-blue-800 mb-2">🔧 Para solucionar esto:</h3>
+                <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                  <li>Ve a Supabase → SQL Editor</li>
+                  <li>Ejecuta el script "Corregir Habitaciones Duplicadas"</li>
+                  <li>El script creará habitaciones estándar automáticamente</li>
+                  <li>Refresca esta página</li>
+                </ol>
+              </div>
+              
+              <div className="flex justify-center space-x-4">
+                <Button
+                  variant="primary"
+                  onClick={refreshData}
+                  icon={RefreshCw}
+                  disabled={loading}
+                >
+                  {loading ? 'Verificando...' : 'Verificar de nuevo'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={debugData}
+                >
+                  Debug Info
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
       <div className="max-w-6xl mx-auto">
         
+        {/* ✅ HEADER MEJORADO */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-800 mb-2">Panel de Recepción</h1>
           <div className="flex items-center justify-center space-x-3 mb-2">
@@ -551,6 +654,7 @@ const CheckIn = () => {
           </p>
         </div>
 
+        {/* ✅ ADVERTENCIA SISTEMA SEPARADO */}
         <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-start space-x-3">
             <AlertTriangle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -564,6 +668,7 @@ const CheckIn = () => {
           </div>
         </div>
 
+        {/* ✅ BOTÓN DE REFRESH FLOTANTE */}
         <div className="fixed top-4 right-4 z-50">
           <Button
             variant="outline"
@@ -576,6 +681,7 @@ const CheckIn = () => {
           </Button>
         </div>
 
+        {/* ✅ CONTENIDO PRINCIPAL */}
         <div className="bg-white rounded-lg shadow-lg p-6">
 
           {orderStep === 0 && (
@@ -615,6 +721,7 @@ const CheckIn = () => {
 
         </div>
 
+        {/* ✅ MODAL DE QUICK CHECKOUT */}
         <QuickCheckoutModal
           isOpen={showQuickCheckout}
           onClose={handleCloseQuickCheckout}
@@ -630,21 +737,35 @@ const CheckIn = () => {
           }}
         />
 
+        {/* ✅ ESTADÍSTICAS Y RESUMEN MEJORADO */}
         {orderStep === 0 && (
           <div className="mt-6 bg-white rounded-lg shadow p-4">
-            <div className="flex justify-between items-center text-sm text-gray-600">
+            <div className="flex justify-between items-center text-sm text-gray-600 mb-3">
               <div className="flex space-x-6">
-                <span>📊 Total: {Object.values(roomsByFloor).flat().length} habitaciones</span>
-                <span>🟢 Disponibles: {Object.values(roomsByFloor).flat().filter(r => r.status === 'available' && r.cleaning_status === 'clean').length}</span>
-                <span>🔴 Ocupadas (Walk-in): {Object.values(roomsByFloor).flat().filter(r => r.status === 'occupied' && r.quickCheckin).length}</span>
-                <span>🟡 Por limpiar: {needsCleaningCount}</span>
+                <span className="flex items-center">
+                  <Bed className="w-4 h-4 mr-1" />
+                  Total: {totalRooms} habitaciones
+                </span>
+                <span className="flex items-center text-green-600">
+                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                  Disponibles: {availableRooms}
+                </span>
+                <span className="flex items-center text-red-600">
+                  <div className="w-2 h-2 bg-red-500 rounded-full mr-2"></div>
+                  Ocupadas: {occupiedRooms}
+                </span>
+                <span className="flex items-center text-yellow-600">
+                  <div className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></div>
+                  Por limpiar: {cleaningRooms}
+                </span>
               </div>
-              <div className="text-xs text-gray-400">
+              <div className="text-xs text-gray-400 flex items-center">
+                <Clock className="w-3 h-3 mr-1" />
                 Quick Check-ins • Actualización automática cada 30s
               </div>
             </div>
             
-            <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-600">
+            <div className="pt-3 border-t border-gray-200 text-xs text-gray-600">
               <div className="flex justify-between items-center">
                 <div>
                   💡 <strong>Sistema Walk-in:</strong> 
@@ -660,29 +781,111 @@ const CheckIn = () => {
               </div>
             </div>
 
-            <div className="mt-3 pt-3 border-t border-gray-200">
+            {/* ✅ TARJETAS DE ESTADÍSTICAS MEJORADAS */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                <div className="bg-blue-50 rounded p-2 text-center">
-                  <div className="font-bold text-blue-600">{Object.keys(activeCheckins || {}).length}</div>
-                  <div className="text-blue-700">Check-ins Activos</div>
-                </div>
-                <div className="bg-green-50 rounded p-2 text-center">
-                  <div className="font-bold text-green-600">
-                    {Object.values(roomsByFloor).flat().filter(r => r.status === 'available').length}
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 text-center border border-blue-200">
+                  <div className="flex items-center justify-center mb-1">
+                    <Users className="w-4 h-4 text-blue-600 mr-1" />
+                    <div className="font-bold text-lg text-blue-600">{activeCheckinsCount}</div>
                   </div>
-                  <div className="text-green-700">Disponibles para Walk-in</div>
+                  <div className="text-blue-700 font-medium">Check-ins Activos</div>
                 </div>
-                <div className="bg-yellow-50 rounded p-2 text-center">
-                  <div className="font-bold text-yellow-600">{needsCleaningCount}</div>
-                  <div className="text-yellow-700">Necesitan Limpieza</div>
-                </div>
-                <div className="bg-purple-50 rounded p-2 text-center">
-                  <div className="font-bold text-purple-600">
-                    S/ {Object.values(activeCheckins || {})
-                      .reduce((sum, checkin) => sum + (checkin.total_amount || 0), 0)
-                      .toFixed(0)}
+                
+                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 text-center border border-green-200">
+                  <div className="flex items-center justify-center mb-1">
+                    <Bed className="w-4 h-4 text-green-600 mr-1" />
+                    <div className="font-bold text-lg text-green-600">{availableRooms}</div>
                   </div>
-                  <div className="text-purple-700">Ingresos Pendientes</div>
+                  <div className="text-green-700 font-medium">Disponibles para Walk-in</div>
+                </div>
+                
+                <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 text-center border border-yellow-200">
+                  <div className="flex items-center justify-center mb-1">
+                    <RefreshCw className="w-4 h-4 text-yellow-600 mr-1" />
+                    <div className="font-bold text-lg text-yellow-600">{cleaningRooms}</div>
+                  </div>
+                  <div className="text-yellow-700 font-medium">Necesitan Limpieza</div>
+                </div>
+                
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 text-center border border-purple-200">
+                  <div className="flex items-center justify-center mb-1">
+                    <span className="text-lg mr-1">💰</span>
+                    <div className="font-bold text-lg text-purple-600">
+                      S/ {Object.values(activeCheckins || {})
+                        .reduce((sum, checkin) => sum + (checkin.total_amount || 0), 0)
+                        .toFixed(0)}
+                    </div>
+                  </div>
+                  <div className="text-purple-700 font-medium">Ingresos Pendientes</div>
+                </div>
+              </div>
+            </div>
+
+            {/* ✅ DEBUG INFO (SOLO EN DESARROLLO) */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <details className="text-xs text-gray-500">
+                  <summary className="cursor-pointer font-medium">🐛 Debug Info (Development)</summary>
+                  <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
+                    <p><strong>Floors:</strong> {Object.keys(roomsByFloor).join(', ')}</p>
+                    <p><strong>Selected Floor:</strong> {selectedFloor}</p>
+                    <p><strong>Active Checkins Keys:</strong> {Object.keys(activeCheckins).join(', ')}</p>
+                    <p><strong>Snack Types:</strong> {snackTypes?.length} types</p>
+                    <p><strong>Snack Items:</strong> {snackItems?.length} items</p>
+                    <p><strong>Processing Room:</strong> {processingRoom || 'None'}</p>
+                    <p><strong>Order Step:</strong> {orderStep}</p>
+                    <p><strong>Total Rooms Calculation:</strong> {Object.values(roomsByFloor).flat().length} rooms</p>
+                    <p><strong>Available Rooms Calculation:</strong> {Object.values(roomsByFloor).flat().filter(r => r.status === 'available').length} available</p>
+                  </div>
+                </details>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ✅ INFORMACIÓN ADICIONAL DEL SISTEMA */}
+        {orderStep === 0 && (
+          <div className="mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">ℹ️</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-blue-900">Sistema de Check-in Rápido</h3>
+                  <p className="text-xs text-blue-700">
+                    Para huéspedes walk-in sin reserva previa • Separado del módulo de Reservaciones
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-blue-600">
+                  <strong>Estado del Sistema:</strong>
+                </div>
+                <div className="flex items-center space-x-1 text-xs">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-green-700 font-medium">Operativo</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Acciones rápidas */}
+            <div className="mt-4 pt-4 border-t border-blue-200">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex space-x-4">
+                  <span className="text-blue-700">
+                    <strong>Acciones:</strong> Click en habitación verde = Check-in • Click en roja = Check-out • Click en amarilla = Limpiar
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-blue-600">Última actualización:</span>
+                  <span className="text-blue-800 font-medium">
+                    {new Date().toLocaleTimeString('es-PE', { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </span>
                 </div>
               </div>
             </div>
