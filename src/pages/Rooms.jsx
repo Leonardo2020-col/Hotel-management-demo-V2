@@ -12,7 +12,7 @@ import {
   Bell,
   Zap
 } from 'lucide-react'
-import { useRooms } from '../hooks/useRooms'
+import useRooms from '../hooks/useRooms' // ✅ IMPORTACIÓN CORREGIDA
 import { useAuth } from '../context/AuthContext'
 import RoomsGrid from '../components/rooms/RoomsGrid'
 import toast from 'react-hot-toast'
