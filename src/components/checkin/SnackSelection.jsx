@@ -1,6 +1,6 @@
-// src/components/checkin/SnackSelection.jsx - VERSIÓN COMPLETA ACTUALIZADA
+// src/components/checkin/SnackSelection.jsx - VERSIÓN SIMPLIFICADA
 import React from 'react';
-import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X, LogOut, LogIn, User } from 'lucide-react';
+import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X, LogOut, LogIn, User, ArrowRight } from 'lucide-react';
 import Button from '../common/Button';
 import GuestRegistrationForm from './GuestRegistrationForm';
 
@@ -18,7 +18,7 @@ const SnackSelection = ({
   onSnackRemove,
   onQuantityUpdate,
   onConfirmOrder,
-  onConfirmRoomOnly,
+  onConfirmRoomOnly, // Ya no se usará para walk-ins
   onCancelOrder,
   loading = false,
   isCheckout = false
@@ -29,12 +29,8 @@ const SnackSelection = ({
     console.log('🍿 SnackSelection Debug Info:', {
       snackTypes: snackTypes,
       snackTypesLength: snackTypes?.length,
-      snackTypesType: typeof snackTypes,
-      snackTypesIsArray: Array.isArray(snackTypes),
       snackItems: snackItems,
       snackItemsLength: snackItems?.length,
-      snackItemsType: typeof snackItems,
-      snackItemsIsArray: Array.isArray(snackItems),
       selectedSnackType,
       selectedSnacks,
       selectedSnacksLength: selectedSnacks?.length,
@@ -42,15 +38,6 @@ const SnackSelection = ({
       guestData,
       isCheckout
     })
-
-    // Debug de sample data
-    if (snackItems && Array.isArray(snackItems) && snackItems.length > 0) {
-      console.log('🔍 Sample snack items:', snackItems.slice(0, 3))
-    }
-
-    if (snackTypes && Array.isArray(snackTypes) && snackTypes.length > 0) {
-      console.log('🔍 Sample snack types:', snackTypes.slice(0, 3))
-    }
   }, [snackTypes, snackItems, selectedSnackType, selectedSnacks, currentOrder, guestData, isCheckout])
 
   // ✅ FUNCIÓN MEJORADA: Procesar snack items con mejor mapeo
@@ -62,24 +49,13 @@ const SnackSelection = ({
       snackTypesLength: snackTypes?.length 
     })
     
-    // Validaciones básicas
-    if (!snackItems || !Array.isArray(snackItems)) {
-      console.warn('⚠️ No snack items or not an array:', snackItems)
+    if (!snackItems || !Array.isArray(snackItems) || !snackTypes || !Array.isArray(snackTypes)) {
+      console.warn('⚠️ Missing snack data:', { snackItems, snackTypes })
       return {}
     }
 
-    if (!snackTypes || !Array.isArray(snackTypes)) {
-      console.warn('⚠️ No snack types or not an array:', snackTypes)
-      return {}
-    }
-
-    if (snackItems.length === 0) {
-      console.warn('⚠️ Snack items array is empty')
-      return {}
-    }
-
-    if (snackTypes.length === 0) {
-      console.warn('⚠️ Snack types array is empty')
+    if (snackItems.length === 0 || snackTypes.length === 0) {
+      console.warn('⚠️ Empty snack data')
       return {}
     }
 
@@ -106,20 +82,16 @@ const SnackSelection = ({
         
         // Mapeo específico de categorías a tipos
         const categoryMappings = {
-          'bebidas frías': ['bebidas-frias', 'bebidas frias'],
-          'bebidas calientes': ['bebidas-calientes', 'bebidas calientes'],
-          'snacks dulces': ['snacks-dulces', 'snacks dulces'],
-          'snacks salados': ['snacks-salados', 'snacks salados'],
-          'productos lácteos': ['productos-lacteos', 'productos lacteos'],
-          'frutas y saludables': ['frutas-saludables', 'frutas saludables'],
-          'servicios extras': ['servicios-extras', 'servicios extras'],
+          'bebidas': ['bebidas', 'bebidas-frias', 'bebidas-calientes'],
+          'snacks': ['snacks', 'snacks-dulces', 'snacks-salados'],
+          'servicios': ['servicios', 'servicios-extras', 'servicios extra'],
           'alcohol': ['alcohol']
         }
         
         // Buscar en el mapeo
-        for (const [dbCategory, typeVariants] of Object.entries(categoryMappings)) {
-          if (categoryName.includes(dbCategory) || dbCategory.includes(categoryName)) {
-            return typeVariants.some(variant => 
+        for (const [key, variants] of Object.entries(categoryMappings)) {
+          if (categoryName.includes(key) || key.includes(categoryName)) {
+            return variants.some(variant => 
               type.id === variant || typeName.includes(variant) || variant.includes(typeName)
             )
           }
@@ -135,36 +107,22 @@ const SnackSelection = ({
 
     // Procesar cada item y asignarlo al grupo correcto
     snackItems.forEach((item, index) => {
-      console.log(`📦 Processing item ${index + 1}:`, {
-        name: item.name,
-        category_name: item.category_name,
-        category_slug: item.category_slug,
-        price: item.price,
-        stock: item.stock
-      })
-      
       const matchingType = findMatchingType(item)
       
       if (matchingType) {
         grouped[matchingType.id].push(item)
-        console.log(`✅ Item "${item.name}" assigned to type "${matchingType.name}"`)
       } else {
         // Fallback: asignar al primer tipo disponible
         if (snackTypes.length > 0) {
           grouped[snackTypes[0].id].push(item)
-          console.log(`⚠️ Item "${item.name}" assigned to fallback type "${snackTypes[0].name}"`)
-        } else {
-          console.error(`❌ No types available for item "${item.name}"`)
         }
       }
     })
 
-    // Log del resultado final
     console.log('✅ Final grouped snack items:', Object.keys(grouped).map(key => ({
       type: key,
       typeName: snackTypes.find(t => t.id === key)?.name,
-      itemCount: grouped[key].length,
-      items: grouped[key].map(item => item.name)
+      itemCount: grouped[key].length
     })))
 
     return grouped
@@ -190,6 +148,10 @@ const SnackSelection = ({
     return guestData?.fullName?.trim() && guestData?.documentNumber?.trim()
   }
 
+  // ✅ DETERMINAR TIPO DE OPERACIÓN
+  const isWalkInCheckIn = !isCheckout && currentOrder?.isWalkIn
+  const isCheckoutWithSnacks = isCheckout
+
   // ✅ VERIFICACIÓN DE DATOS
   if (!currentOrder) {
     return (
@@ -204,10 +166,7 @@ const SnackSelection = ({
     )
   }
 
-  // ✅ Obtener número de habitación
   const roomNumber = currentOrder?.room?.number || currentOrder?.room?.room_number || 'N/A'
-
-  // ✅ DEBUG: Mostrar información de debug en desarrollo
   const showDebugInfo = process.env.NODE_ENV === 'development'
 
   return (
@@ -217,49 +176,11 @@ const SnackSelection = ({
         <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
           <h4 className="font-bold text-yellow-800 mb-2">🐛 Debug Info (Development)</h4>
           <div className="text-sm text-yellow-700 space-y-1">
-            <p><strong>Snack Types:</strong> {snackTypes?.length || 0} tipos disponibles</p>
-            <p><strong>Snack Items:</strong> {snackItems?.length || 0} items disponibles</p>
-            <p><strong>Processed Groups:</strong> {Object.keys(processedSnackItems).length} grupos procesados</p>
-            <p><strong>Selected Type:</strong> {selectedSnackType || 'Ninguno'}</p>
+            <p><strong>Is Walk-in Check-in:</strong> {isWalkInCheckIn ? 'Sí' : 'No'}</p>
+            <p><strong>Is Checkout with Snacks:</strong> {isCheckoutWithSnacks ? 'Sí' : 'No'}</p>
             <p><strong>Selected Snacks:</strong> {selectedSnacks?.length || 0}</p>
-            <p><strong>Is Checkout:</strong> {isCheckout ? 'Sí' : 'No'}</p>
             <p><strong>Guest Data Valid:</strong> {isGuestDataValid() ? 'Sí' : 'No'}</p>
-            
-            {Object.keys(processedSnackItems).length > 0 && (
-              <details className="mt-2">
-                <summary className="cursor-pointer font-medium">Ver agrupación detallada</summary>
-                <div className="mt-2 text-xs bg-yellow-100 p-2 rounded overflow-auto max-h-32">
-                  {Object.entries(processedSnackItems).map(([typeId, items]) => (
-                    <div key={typeId} className="mb-1">
-                      <strong>{snackTypes?.find(t => t.id === typeId)?.name || typeId}:</strong> {items.length} items
-                      {items.length > 0 && (
-                        <div className="ml-2 text-gray-600">
-                          {items.slice(0, 3).map(item => item.name).join(', ')}
-                          {items.length > 3 && '...'}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </details>
-            )}
-            
-            <details className="mt-2">
-              <summary className="cursor-pointer font-medium">Ver datos raw</summary>
-              <pre className="mt-2 text-xs bg-yellow-100 p-2 rounded overflow-auto max-h-32">
-                {JSON.stringify({
-                  snackTypesCount: snackTypes?.length,
-                  snackItemsCount: snackItems?.length,
-                  snackTypesSample: snackTypes?.slice(0, 2),
-                  snackItemsSample: snackItems?.slice(0, 2),
-                  processedKeys: Object.keys(processedSnackItems),
-                  currentOrder: {
-                    room: currentOrder?.room?.number,
-                    price: currentOrder?.roomPrice
-                  }
-                }, null, 2)}
-              </pre>
-            </details>
+            <p><strong>Total Order:</strong> S/ {getTotalOrder().toFixed(2)}</p>
           </div>
         </div>
       )}
@@ -285,7 +206,7 @@ const SnackSelection = ({
               ? 'bg-red-100 text-red-700' 
               : 'bg-green-100 text-green-700'
           }`}>
-            {isCheckout ? '🚪 Procesando Check-out' : '⚡ Solo 2 campos obligatorios'}
+            {isCheckout ? '🚪 Procesando Check-out' : '⚡ Registro Rápido'}
           </div>
           <Button
             variant="outline"
@@ -377,18 +298,8 @@ const SnackSelection = ({
                   ⚠️ <strong>Tipos de snacks no disponibles.</strong>
                 </p>
                 <p className="text-orange-700 text-sm mt-1">
-                  Verifica que el hook useQuickCheckins esté cargando los snackTypes correctamente.
+                  Los snacks son opcionales. Puedes continuar sin seleccionar servicios adicionales.
                 </p>
-                {showDebugInfo && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs">Ver diagnóstico</summary>
-                    <div className="mt-2 text-xs bg-orange-100 p-2 rounded">
-                      <p><strong>snackTypes:</strong> {JSON.stringify(snackTypes)}</p>
-                      <p><strong>typeof:</strong> {typeof snackTypes}</p>
-                      <p><strong>isArray:</strong> {Array.isArray(snackTypes) ? 'Sí' : 'No'}</p>
-                    </div>
-                  </details>
-                )}
               </div>
             )}
 
@@ -398,29 +309,8 @@ const SnackSelection = ({
                   ⚠️ <strong>Items de snacks no disponibles.</strong>
                 </p>
                 <p className="text-orange-700 text-sm mt-1">
-                  Ejecuta el script de la base de datos para agregar productos o verifica la conexión a Supabase.
+                  Los servicios adicionales no están configurados. Puedes continuar solo con la habitación.
                 </p>
-                {showDebugInfo && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs">Ver solución paso a paso</summary>
-                    <div className="mt-2 text-xs bg-orange-100 p-2 rounded">
-                      <p><strong>Pasos para solucionar:</strong></p>
-                      <ol className="list-decimal list-inside space-y-1 mt-1">
-                        <li>Ve a Supabase → SQL Editor</li>
-                        <li>Ejecuta el script "Completar Base de Datos - Snacks"</li>
-                        <li>Verifica que las tablas snack_categories y snack_items tengan datos</li>
-                        <li>Recarga la página</li>
-                        <li>Verifica en la consola que no haya errores de API</li>
-                      </ol>
-                      <div className="mt-2 p-1 bg-orange-200 rounded">
-                        <p><strong>Debug info:</strong></p>
-                        <p>snackItems: {JSON.stringify(snackItems)}</p>
-                        <p>typeof: {typeof snackItems}</p>
-                        <p>isArray: {Array.isArray(snackItems) ? 'Sí' : 'No'}</p>
-                      </div>
-                    </div>
-                  </details>
-                )}
               </div>
             )}
 
@@ -455,9 +345,7 @@ const SnackSelection = ({
                   ) : (
                     <div className="text-center text-gray-500 py-8">
                       <p className="text-sm font-medium">No hay tipos de servicios disponibles</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {showDebugInfo ? 'Verifica el hook useQuickCheckins' : 'Contacta al administrador'}
-                      </p>
+                      <p className="text-xs text-gray-400 mt-1">Puedes continuar sin servicios adicionales</p>
                     </div>
                   )}
                 </div>
@@ -504,9 +392,6 @@ const SnackSelection = ({
                                 {item.stock === 0 && (
                                   <span className="text-xs text-red-600 font-medium">Agotado</span>
                                 )}
-                                {item.low_stock && item.stock > 0 && (
-                                  <span className="text-xs text-orange-600 font-medium">Stock Bajo</span>
-                                )}
                               </div>
                             </div>
                             {selectedSnacks.find(s => s.id === item.id) && (
@@ -523,15 +408,6 @@ const SnackSelection = ({
                       <div className="text-center">
                         <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                         <p className="text-sm font-medium">No hay productos disponibles en esta categoría</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Categoría: {snackTypes?.find(t => t.id === selectedSnackType)?.name}
-                        </p>
-                        {showDebugInfo && (
-                          <div className="mt-2 text-xs text-gray-600">
-                            <p>Items procesados para este tipo: {processedSnackItems[selectedSnackType]?.length || 0}</p>
-                            <p>Total items disponibles: {snackItems?.length || 0}</p>
-                          </div>
-                        )}
                       </div>
                     </div>
                   )
@@ -596,13 +472,6 @@ const SnackSelection = ({
                         📞 {guestData.phone}
                       </p>
                     )}
-                    {guestData?.email && (
-                      <p className={`text-xs ${
-                        isCheckout ? 'text-red-600' : 'text-green-600'
-                      }`}>
-                        ✉️ {guestData.email}
-                      </p>
-                    )}
                   </div>
 
                   {/* Precio de la habitación */}
@@ -641,7 +510,6 @@ const SnackSelection = ({
                                   onClick={() => onQuantityUpdate(snack.id, Math.max(1, snack.quantity - 1))}
                                   disabled={loading}
                                   className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600 disabled:opacity-50"
-                                  title="Reducir cantidad"
                                 >
                                   <Minus size={12} />
                                 </button>
@@ -650,7 +518,6 @@ const SnackSelection = ({
                                   onClick={() => onQuantityUpdate(snack.id, snack.quantity + 1)}
                                   disabled={loading}
                                   className="w-6 h-6 bg-green-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-green-600 disabled:opacity-50"
-                                  title="Aumentar cantidad"
                                 >
                                   <Plus size={12} />
                                 </button>
@@ -685,47 +552,56 @@ const SnackSelection = ({
                     )}
                   </div>
 
-                  {/* Botones de acción */}
+                  {/* ✅ BOTONES DE ACCIÓN SIMPLIFICADOS */}
                   <div className="space-y-2">
-                    {isCheckout ? (
-                      <Button
-                        variant="danger"
-                        onClick={onConfirmOrder}
-                        disabled={loading || !isGuestDataValid()}
-                        className="w-full text-sm py-3"
-                        icon={LogOut}
-                      >
-                        ✅ Procesar Check-out
-                        <div className="text-xs opacity-90">
-                          S/ {getTotalOrder().toFixed(2)}
-                          {selectedSnacks.length > 0 && " (incluye servicios)"}
-                        </div>
-                      </Button>
-                    ) : (
+                    {isCheckoutWithSnacks ? (
+                      // CASO 1: CHECK-OUT CON SNACKS ADICIONALES
                       <>
                         <Button
                           variant="success"
-                          onClick={onConfirmRoomOnly}
+                          onClick={() => {
+                            // Continuar con los snacks seleccionados pero sin hacer checkout
+                            // Volver al grid de habitaciones
+                            onBack()
+                          }}
                           disabled={loading || !isGuestDataValid()}
                           className="w-full text-sm py-3"
+                          icon={ArrowRight}
                         >
-                          ✅ Confirmar Solo Habitación
-                          <div className="text-xs opacity-90">S/ {(currentOrder?.roomPrice || 0).toFixed(2)}</div>
+                          ✅ Continuar en la Habitación
+                          <div className="text-xs opacity-90">
+                            Con servicios adicionales
+                          </div>
                         </Button>
                         
-                        {selectedSnacks && selectedSnacks.length > 0 && (
-                          <Button
-                            variant="primary"
-                            onClick={onConfirmOrder}
-                            icon={Check}
-                            disabled={loading || !isGuestDataValid()}
-                            className="w-full text-sm py-3"
-                          >
-                            🛒 Confirmar con Snacks
-                            <div className="text-xs opacity-90">S/ {getTotalOrder().toFixed(2)} total</div>
-                          </Button>
-                        )}
+                        <Button
+                          variant="danger"
+                          onClick={onConfirmOrder}
+                          disabled={loading || !isGuestDataValid()}
+                          className="w-full text-sm py-3"
+                          icon={LogOut}
+                        >
+                          🚪 Procesar Check-out
+                          <div className="text-xs opacity-90">
+                            S/ {getTotalOrder().toFixed(2)}
+                          </div>
+                        </Button>
                       </>
+                    ) : (
+                      // CASO 2: WALK-IN CHECK-IN (UN SOLO BOTÓN)
+                      <Button
+                        variant="success"
+                        onClick={onConfirmOrder}
+                        disabled={loading || !isGuestDataValid()}
+                        className="w-full text-sm py-3"
+                        icon={Check}
+                      >
+                        ✅ Confirmar Check-in
+                        <div className="text-xs opacity-90">
+                          S/ {getTotalOrder().toFixed(2)}
+                          {selectedSnacks.length > 0 ? " (incluye servicios)" : " (solo habitación)"}
+                        </div>
+                      </Button>
                     )}
                     
                     <Button
@@ -742,11 +618,10 @@ const SnackSelection = ({
                   {showDebugInfo && (
                     <div className="mt-4 p-2 bg-gray-100 rounded text-xs">
                       <p><strong>Debug Resumen:</strong></p>
-                      <p>Room Price: S/ {currentOrder?.roomPrice || 0}</p>
-                      <p>Snacks Total: S/ {getTotalSnacks()}</p>
-                      <p>Order Total: S/ {getTotalOrder()}</p>
+                      <p>Is Walk-in: {isWalkInCheckIn ? 'Sí' : 'No'}</p>
+                      <p>Is Checkout: {isCheckoutWithSnacks ? 'Sí' : 'No'}</p>
                       <p>Selected Snacks: {selectedSnacks?.length || 0}</p>
-                      <p>Guest Valid: {isGuestDataValid() ? 'Sí' : 'No'}</p>
+                      <p>Total: S/ {getTotalOrder()}</p>
                     </div>
                   )}
                 </div>
