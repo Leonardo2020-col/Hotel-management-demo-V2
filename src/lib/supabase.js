@@ -1,4 +1,4 @@
-// src/lib/supabase.js - VERSIÓN COMPLETA ACTUALIZADA
+// src/lib/supabase.js - VERSIÓN COMPLETAMENTE CORREGIDA
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -481,7 +481,7 @@ export const paymentService = {
 }
 
 // =====================================================
-// 🍿 SERVICIOS DE SNACKS (NUEVO Y COMPLETO)
+// 🍿 SERVICIOS DE SNACKS (CORREGIDO)
 // =====================================================
 export const snackService = {
   // Obtener categorías de snacks
@@ -491,7 +491,7 @@ export const snackService = {
       
       const { data, error } = await supabase
         .from('snack_categories')
-        .select('*')
+        .select('id, name, is_active, created_at') // ✅ Solo campos que existen
         .eq('is_active', true)
         .order('name')
 
@@ -508,7 +508,7 @@ export const snackService = {
     }
   },
 
-  // Obtener items de snacks con categorías
+  // ✅ FUNCIÓN CORREGIDA: Obtener items de snacks sin description en snack_category
   async getSnackItems() {
     try {
       console.log('🍿 Loading snack items from database...')
@@ -529,10 +529,9 @@ export const snackService = {
           updated_at,
           snack_category:category_id(
             id,
-            name,
-            description
+            name
           )
-        `)
+        `) // ✅ Removed description from snack_category join
         .eq('is_active', true)
         .order('name')
 
@@ -738,7 +737,7 @@ export const snackService = {
     }
   },
 
-  // Utilidades
+  // ✅ Utilidades corregidas
   generateCategorySlug(categoryName) {
     if (!categoryName) return 'sin-categoria'
     
@@ -1143,110 +1142,8 @@ export const branchService = {
 }
 
 // =====================================================
-// 📦 OBJETO DB PRINCIPAL PARA COMPATIBILIDAD
+// 📦 SERVICIOS DE SUMINISTROS (COMPLETO)
 // =====================================================
-
-// ✅ Objeto db mejorado con todas las funciones necesarias
-export const db = {
-  // Importar todas las funciones existentes
-  ...roomService,
-  ...reservationService,
-  ...guestService,
-  ...paymentService,
-  ...reportService,
-  ...quickCheckinService,
-  ...snackService,
-  ...utilityService,
-  ...realtimeService,
-  ...branchService,
-  
-  // ✅ Funciones específicas para el hook useCheckInData/useQuickCheckins
-  async getRooms() {
-    return await quickCheckinService.getRoomsWithStatus()
-  },
-
-  async getReservations(filters = {}) {
-    return await reservationService.getReservationsByBranch('default-branch', filters)
-  },
-
-  async getSnackItems() {
-    const result = await snackService.getSnackItems()
-    return { data: result.data, error: result.error }
-  },
-
-  async getSnackCategories() {
-    return await snackService.getSnackCategories()
-  },
-
-  async createGuest(guestData) {
-    return await guestService.createGuest(guestData)
-  },
-
-  async createReservation(reservationData) {
-    return await quickCheckinService.createQuickCheckin(reservationData, reservationData.guest, reservationData.snacks)
-  },
-
-  async updateReservation(reservationId, updateData) {
-    try {
-      const { data, error } = await supabase
-        .from('reservations')
-        .update(updateData)
-        .eq('id', reservationId)
-        .select()
-        .single()
-
-      return { data, error }
-    } catch (error) {
-      return { data: null, error }
-    }
-  },
-
-  async updateRoomStatus(roomId, status, cleaningStatus = null) {
-    try {
-      const { data: statusData, error: statusError } = await supabase
-        .from('room_status')
-        .select('id')
-        .eq('status', status)
-        .single()
-
-      if (statusError) return { data: null, error: statusError }
-
-      const { data, error } = await supabase
-        .from('rooms')
-        .update({ status_id: statusData.id })
-        .eq('id', roomId)
-        .select()
-        .single()
-
-      return { data, error }
-    } catch (error) {
-      return { data: null, error }
-    }
-  },
-
-  async cleanRoomWithClick(roomId) {
-    return await this.updateRoomStatus(roomId, 'disponible')
-  },
-
-  async deleteGuest(guestId) {
-    try {
-      const { error } = await supabase
-        .from('guests')
-        .delete()
-        .eq('id', guestId)
-
-      return { error }
-    } catch (error) {
-      return { error }
-    }
-  }
-}
-
-// =====================================================
-// 📦 SERVICIOS DE SUMINISTROS - AGREGAR AL FINAL DE supabase.js
-// Agregar antes del export default final
-// =====================================================
-
 export const suppliesService = {
   // Obtener todos los suministros con filtros
   async getSupplies(filters = {}) {
@@ -1369,264 +1266,6 @@ export const suppliesService = {
     }
   },
 
-  // Obtener alertas de inventario
-  async getAlerts() {
-    try {
-      const { data, error } = await supabase
-        .from('inventory_alerts')
-        .select(`
-          id,
-          alert_type,
-          message,
-          is_resolved,
-          resolved_at,
-          created_at,
-          supply:supply_id(
-            id,
-            name,
-            current_stock,
-            minimum_stock
-          ),
-          resolved_by_user:resolved_by(
-            first_name,
-            last_name
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching alerts:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Crear nuevo suministro
-  async createSupply(supplyData) {
-    try {
-      const { data, error } = await supabase
-        .from('supplies')
-        .insert({
-          name: supplyData.name,
-          category_id: supplyData.categoryId,
-          unit_of_measure: supplyData.unitOfMeasure,
-          minimum_stock: supplyData.minimumStock || 0,
-          current_stock: supplyData.currentStock || 0,
-          unit_cost: supplyData.unitCost || 0,
-          supplier_id: supplyData.supplierId || null,
-          sku: supplyData.sku || null,
-          is_active: true
-        })
-        .select(`
-          *,
-          category:category_id(name),
-          supplier:supplier_id(name)
-        `)
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error creating supply:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Actualizar suministro
-  async updateSupply(supplyId, updateData) {
-    try {
-      const { data, error } = await supabase
-        .from('supplies')
-        .update({
-          name: updateData.name,
-          category_id: updateData.categoryId,
-          unit_of_measure: updateData.unitOfMeasure,
-          minimum_stock: updateData.minimumStock,
-          unit_cost: updateData.unitCost,
-          supplier_id: updateData.supplierId,
-          sku: updateData.sku,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', supplyId)
-        .select()
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error updating supply:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Eliminar suministro (soft delete)
-  async deleteSupply(supplyId) {
-    try {
-      const { error } = await supabase
-        .from('supplies')
-        .update({ is_active: false })
-        .eq('id', supplyId)
-
-      if (error) throw error
-      return { error: null }
-    } catch (error) {
-      console.error('Error deleting supply:', error)
-      return { error }
-    }
-  },
-
-  // Agregar movimiento de stock
-  async addMovement(movementData) {
-    try {
-      const { data, error } = await supabase
-        .from('supply_movements')
-        .insert({
-          supply_id: movementData.supplyId,
-          branch_id: movementData.branchId,
-          movement_type: movementData.movementType, // 'in', 'out', 'adjustment'
-          quantity: movementData.quantity,
-          unit_cost: movementData.unitCost || 0,
-          total_cost: (movementData.quantity || 0) * (movementData.unitCost || 0),
-          reference_document: movementData.referenceDocument || null,
-          processed_by: movementData.processedBy
-        })
-        .select(`
-          *,
-          supply:supply_id(name),
-          processed_by_user:processed_by(first_name, last_name)
-        `)
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error adding movement:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Obtener movimientos de un suministro
-  async getMovements(supplyId, limit = 20) {
-    try {
-      const { data, error } = await supabase
-        .from('supply_movements')
-        .select(`
-          id,
-          movement_type,
-          quantity,
-          unit_cost,
-          total_cost,
-          reference_document,
-          created_at,
-          supply:supply_id(name),
-          processed_by_user:processed_by(first_name, last_name)
-        `)
-        .eq('supply_id', supplyId)
-        .order('created_at', { ascending: false })
-        .limit(limit)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching movements:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Resolver alerta
-  async resolveAlert(alertId, userId) {
-    try {
-      const { error } = await supabase
-        .from('inventory_alerts')
-        .update({
-          is_resolved: true,
-          resolved_by: userId,
-          resolved_at: new Date().toISOString()
-        })
-        .eq('id', alertId)
-
-      if (error) throw error
-      return { error: null }
-    } catch (error) {
-      console.error('Error resolving alert:', error)
-      return { error }
-    }
-  },
-
-  // Crear categoría
-  async createCategory(categoryData) {
-    try {
-      const { data, error } = await supabase
-        .from('supply_categories')
-        .insert({
-          name: categoryData.name,
-          parent_category_id: categoryData.parentCategoryId || null,
-          is_active: true
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error creating category:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Crear proveedor
-  async createSupplier(supplierData) {
-    try {
-      const { data, error } = await supabase
-        .from('suppliers')
-        .insert({
-          name: supplierData.name,
-          contact_person: supplierData.contactPerson || null,
-          email: supplierData.email || null,
-          phone: supplierData.phone || null,
-          tax_id: supplierData.taxId || null,
-          payment_terms: supplierData.paymentTerms || null,
-          is_active: true
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error creating supplier:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Buscar suministros
-  async searchSupplies(searchTerm, limit = 10) {
-    try {
-      const { data, error } = await supabase
-        .from('supplies')
-        .select(`
-          id,
-          name,
-          sku,
-          current_stock,
-          minimum_stock,
-          category:category_id(name)
-        `)
-        .eq('is_active', true)
-        .or(`name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
-        .order('name')
-        .limit(limit)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error searching supplies:', error)
-      return { data: [], error }
-    }
-  },
-
   // Utilidades
   getStockStatus(currentStock, minimumStock) {
     if (currentStock === 0) return 'out_of_stock'
@@ -1666,7 +1305,108 @@ export const suppliesService = {
 }
 
 // =====================================================
-// 🔄 EXPORT PRINCIPAL
+// 📦 OBJETO DB PRINCIPAL PARA COMPATIBILIDAD
+// =====================================================
+
+// ✅ Objeto db mejorado con todas las funciones necesarias
+export const db = {
+  // Importar todas las funciones existentes
+  ...roomService,
+  ...reservationService,
+  ...guestService,
+  ...paymentService,
+  ...reportService,
+  ...quickCheckinService,
+  ...snackService,
+  ...suppliesService, // ✅ AGREGADO
+  ...utilityService,
+  ...realtimeService,
+  ...branchService,
+  
+  // ✅ Funciones específicas para el hook useCheckInData/useQuickCheckins
+  async getRooms() {
+    return await quickCheckinService.getRoomsWithStatus()
+  },
+
+  async getReservations(filters = {}) {
+    return await reservationService.getReservationsByBranch('default-branch', filters)
+  },
+
+  async getSnackItems() {
+    const result = await snackService.getSnackItems()
+    return { data: result.data, error: result.error }
+  },
+
+  async getSnackCategories() {
+    return await snackService.getSnackCategories()
+  },
+
+  async createGuest(guestData) {
+    return await guestService.createGuest(guestData)
+  },
+
+  async createReservation(reservationData) {
+    return await quickCheckinService.createQuickCheckin(reservationData, reservationData.guest, reservationData.snacks)
+  },
+
+  async updateReservation(reservationId, updateData) {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .update(updateData)
+        .eq('id', reservationId)
+        .select()
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      return { data: null, error }
+    }
+  },
+
+  async updateRoomStatus(roomId, status, cleaningStatus = null) {
+    try {
+      const { data: statusData, error: statusError } = await supabase
+        .from('room_status')
+        .select('id')
+        .eq('status', status)
+        .single()
+
+      if (statusError) return { data: null, error: statusError }
+
+      const { data, error } = await supabase
+        .from('rooms')
+        .update({ status_id: statusData.id })
+        .eq('id', roomId)
+        .select()
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      return { data: null, error }
+    }
+  },
+
+  async cleanRoomWithClick(roomId) {
+    return await this.updateRoomStatus(roomId, 'disponible')
+  },
+
+  async deleteGuest(guestId) {
+    try {
+      const { error } = await supabase
+        .from('guests')
+        .delete()
+        .eq('id', guestId)
+
+      return { error }
+    } catch (error) {
+      return { error }
+    }
+  }
+}
+
+// =====================================================
+// 🔄 EXPORT PRINCIPAL ACTUALIZADO
 // =====================================================
 export default {
   supabase,
@@ -1677,7 +1417,8 @@ export default {
   paymentService,
   reportService,
   quickCheckinService,
-  snackService, // ✅ Nuevo servicio de snacks
+  snackService, // ✅ Servicio de snacks corregido
+  suppliesService, // ✅ Servicio de suministros agregado
   utilityService,
   realtimeService,
   branchService,
