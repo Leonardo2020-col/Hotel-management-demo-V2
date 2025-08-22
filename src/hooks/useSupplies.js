@@ -1,4 +1,4 @@
-// src/hooks/useSupplies.js
+// src/hooks/useSupplies.js - VERSIÓN CORREGIDA
 import { useState, useEffect, useCallback } from 'react'
 import { suppliesService } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -31,15 +31,8 @@ export const useSupplies = () => {
   const [showMovementModal, setShowMovementModal] = useState(false)
   const [selectedSupply, setSelectedSupply] = useState(null)
 
-  // Cargar datos iniciales
-  useEffect(() => {
-    if (primaryBranch?.id) {
-      loadAllData()
-    }
-  }, [primaryBranch?.id])
-
   // =====================================================
-  // 📊 FUNCIONES DE CARGA DE DATOS
+  // 📊 FUNCIONES DE CARGA DE DATOS - CORREGIDAS
   // =====================================================
 
   const loadAllData = useCallback(async () => {
@@ -49,36 +42,56 @@ export const useSupplies = () => {
 
       console.log('🔄 Cargando datos de suministros para:', primaryBranch?.name)
 
+      // ✅ Cargar datos en paralelo con manejo de errores individual
       const [
         suppliesResult,
         categoriesResult,
         suppliersResult,
         alertsResult
-      ] = await Promise.all([
+      ] = await Promise.allSettled([
         suppliesService.getSupplies(filters),
         suppliesService.getCategories(),
         suppliesService.getSuppliers(),
         suppliesService.getAlerts()
       ])
 
-      if (suppliesResult.error) throw suppliesResult.error
-      if (categoriesResult.error) throw categoriesResult.error
-      if (suppliersResult.error) throw suppliersResult.error
+      // ✅ Procesar resultados con manejo de errores mejorado
+      if (suppliesResult.status === 'fulfilled' && !suppliesResult.value.error) {
+        setSupplies(suppliesResult.value.data || [])
+        console.log('✅ Supplies loaded:', suppliesResult.value.data?.length || 0)
+      } else {
+        console.warn('⚠️ Error loading supplies:', suppliesResult.reason || suppliesResult.value?.error)
+        setSupplies([])
+      }
 
-      setSupplies(suppliesResult.data || [])
-      setCategories(categoriesResult.data || [])
-      setSuppliers(suppliersResult.data || [])
-      setAlerts(alertsResult.data || [])
+      if (categoriesResult.status === 'fulfilled' && !categoriesResult.value.error) {
+        setCategories(categoriesResult.value.data || [])
+        console.log('✅ Categories loaded:', categoriesResult.value.data?.length || 0)
+      } else {
+        console.warn('⚠️ Error loading categories:', categoriesResult.reason || categoriesResult.value?.error)
+        setCategories([])
+      }
 
-      console.log('✅ Datos cargados:', {
-        supplies: suppliesResult.data?.length || 0,
-        categories: categoriesResult.data?.length || 0,
-        suppliers: suppliersResult.data?.length || 0,
-        alerts: alertsResult.data?.length || 0
-      })
+      if (suppliersResult.status === 'fulfilled' && !suppliersResult.value.error) {
+        setSuppliers(suppliersResult.value.data || [])
+        console.log('✅ Suppliers loaded:', suppliersResult.value.data?.length || 0)
+      } else {
+        console.warn('⚠️ Error loading suppliers:', suppliersResult.reason || suppliersResult.value?.error)
+        setSuppliers([])
+      }
+
+      if (alertsResult.status === 'fulfilled' && !alertsResult.value.error) {
+        setAlerts(alertsResult.value.data || [])
+        console.log('✅ Alerts loaded:', alertsResult.value.data?.length || 0)
+      } else {
+        console.warn('⚠️ Error loading alerts:', alertsResult.reason || alertsResult.value?.error)
+        setAlerts([])
+      }
+
+      console.log('✅ Datos de suministros cargados exitosamente')
 
     } catch (err) {
-      console.error('❌ Error cargando datos de suministros:', err)
+      console.error('❌ Error crítico cargando datos de suministros:', err)
       setError(err.message || 'Error al cargar suministros')
       toast.error('Error al cargar datos de suministros')
     } finally {
@@ -86,13 +99,36 @@ export const useSupplies = () => {
     }
   }, [primaryBranch?.id, filters])
 
+  // Cargar datos iniciales cuando cambie la sucursal
+  useEffect(() => {
+    if (primaryBranch?.id) {
+      loadAllData()
+    }
+  }, [primaryBranch?.id])
+
+  // Recargar cuando cambien los filtros (con debounce)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (primaryBranch?.id) {
+        loadSupplies()
+      }
+    }, 500)
+
+    return () => clearTimeout(timeoutId)
+  }, [filters])
+
   const loadSupplies = async () => {
     try {
+      console.log('🔄 Recargando suministros con filtros:', filters)
       const { data, error } = await suppliesService.getSupplies(filters)
-      if (error) throw error
+      if (error) {
+        console.warn('⚠️ Error cargando suministros:', error)
+        toast.error('Error al cargar suministros')
+        return
+      }
       setSupplies(data || [])
     } catch (err) {
-      console.error('❌ Error cargando suministros:', err)
+      console.error('❌ Error en loadSupplies:', err)
       toast.error('Error al cargar suministros')
     }
   }
@@ -100,11 +136,15 @@ export const useSupplies = () => {
   const loadMovements = async (supplyId, limit = 20) => {
     try {
       const { data, error } = await suppliesService.getMovements(supplyId, limit)
-      if (error) throw error
+      if (error) {
+        console.warn('⚠️ Error cargando movimientos:', error)
+        toast.error('Error al cargar movimientos')
+        return []
+      }
       setMovements(data || [])
       return data || []
     } catch (err) {
-      console.error('❌ Error cargando movimientos:', err)
+      console.error('❌ Error en loadMovements:', err)
       toast.error('Error al cargar movimientos')
       return []
     }
@@ -117,7 +157,7 @@ export const useSupplies = () => {
   const createSupply = async (supplyData) => {
     if (!userInfo?.id) {
       toast.error('Error de autenticación')
-      return { success: false }
+      return { success: false, error: 'No autenticado' }
     }
 
     try {
@@ -129,7 +169,9 @@ export const useSupplies = () => {
         createdBy: userInfo.id
       })
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       await loadSupplies()
       toast.success(`Suministro "${data.name}" creado exitosamente`)
@@ -138,8 +180,9 @@ export const useSupplies = () => {
 
     } catch (err) {
       console.error('❌ Error creando suministro:', err)
-      toast.error('Error al crear el suministro')
-      return { success: false, error: err.message }
+      const errorMessage = err.message || 'Error al crear el suministro'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     } finally {
       setCreating(false)
     }
@@ -148,7 +191,7 @@ export const useSupplies = () => {
   const updateSupply = async (supplyId, updateData) => {
     if (!userInfo?.id) {
       toast.error('Error de autenticación')
-      return { success: false }
+      return { success: false, error: 'No autenticado' }
     }
 
     try {
@@ -156,7 +199,9 @@ export const useSupplies = () => {
       console.log('🔄 Actualizando suministro:', { supplyId, updateData })
 
       const { data, error } = await suppliesService.updateSupply(supplyId, updateData)
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       // Actualizar en el estado local
       setSupplies(prev => prev.map(supply => 
@@ -168,8 +213,9 @@ export const useSupplies = () => {
 
     } catch (err) {
       console.error('❌ Error actualizando suministro:', err)
-      toast.error('Error al actualizar el suministro')
-      return { success: false, error: err.message }
+      const errorMessage = err.message || 'Error al actualizar el suministro'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     } finally {
       setUpdating(false)
     }
@@ -178,7 +224,7 @@ export const useSupplies = () => {
   const deleteSupply = async (supplyId) => {
     if (!userInfo?.id) {
       toast.error('Error de autenticación')
-      return { success: false }
+      return { success: false, error: 'No autenticado' }
     }
 
     try {
@@ -186,10 +232,12 @@ export const useSupplies = () => {
         '¿Estás seguro de que deseas eliminar este suministro? Esta acción no se puede deshacer.'
       )
       
-      if (!confirmed) return { success: false }
+      if (!confirmed) return { success: false, error: 'Cancelado por el usuario' }
 
       const { error } = await suppliesService.deleteSupply(supplyId)
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       // Remover del estado local
       setSupplies(prev => prev.filter(supply => supply.id !== supplyId))
@@ -199,8 +247,9 @@ export const useSupplies = () => {
 
     } catch (err) {
       console.error('❌ Error eliminando suministro:', err)
-      toast.error('Error al eliminar el suministro')
-      return { success: false, error: err.message }
+      const errorMessage = err.message || 'Error al eliminar el suministro'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     }
   }
 
@@ -211,7 +260,7 @@ export const useSupplies = () => {
   const addMovement = async (movementData) => {
     if (!userInfo?.id || !primaryBranch?.id) {
       toast.error('Error de autenticación')
-      return { success: false }
+      return { success: false, error: 'No autenticado' }
     }
 
     try {
@@ -223,15 +272,21 @@ export const useSupplies = () => {
         processedBy: userInfo.id
       })
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       // Recargar suministros para actualizar stock
       await loadSupplies()
       
       // Recargar alertas por si cambió el estado de stock
-      const alertsResult = await suppliesService.getAlerts()
-      if (!alertsResult.error) {
-        setAlerts(alertsResult.data || [])
+      try {
+        const alertsResult = await suppliesService.getAlerts()
+        if (!alertsResult.error) {
+          setAlerts(alertsResult.data || [])
+        }
+      } catch (alertError) {
+        console.warn('⚠️ Error recargando alertas:', alertError)
       }
 
       const movementTypes = {
@@ -246,8 +301,9 @@ export const useSupplies = () => {
 
     } catch (err) {
       console.error('❌ Error agregando movimiento:', err)
-      toast.error('Error al registrar el movimiento')
-      return { success: false, error: err.message }
+      const errorMessage = err.message || 'Error al registrar el movimiento'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     }
   }
 
@@ -267,12 +323,14 @@ export const useSupplies = () => {
   const resolveAlert = async (alertId) => {
     if (!userInfo?.id) {
       toast.error('Error de autenticación')
-      return { success: false }
+      return { success: false, error: 'No autenticado' }
     }
 
     try {
       const { error } = await suppliesService.resolveAlert(alertId, userInfo.id)
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       // Actualizar en el estado local
       setAlerts(prev => prev.map(alert => 
@@ -286,13 +344,13 @@ export const useSupplies = () => {
 
     } catch (err) {
       console.error('❌ Error resolviendo alerta:', err)
-      toast.error('Error al resolver la alerta')
-      return { success: false, error: err.message }
+      const errorMessage = err.message || 'Error al resolver la alerta'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     }
   }
 
   const dismissAlert = async (alertId) => {
-    // Similar a resolveAlert pero sin mostrar como resuelto
     return resolveAlert(alertId)
   }
 
@@ -303,7 +361,9 @@ export const useSupplies = () => {
   const createCategory = async (categoryData) => {
     try {
       const { data, error } = await suppliesService.createCategory(categoryData)
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       setCategories(prev => [...prev, data])
       toast.success(`Categoría "${data.name}" creada exitosamente`)
@@ -312,15 +372,18 @@ export const useSupplies = () => {
 
     } catch (err) {
       console.error('❌ Error creando categoría:', err)
-      toast.error('Error al crear la categoría')
-      return { success: false, error: err.message }
+      const errorMessage = err.message || 'Error al crear la categoría'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     }
   }
 
   const createSupplier = async (supplierData) => {
     try {
       const { data, error } = await suppliesService.createSupplier(supplierData)
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       setSuppliers(prev => [...prev, data])
       toast.success(`Proveedor "${data.name}" creado exitosamente`)
@@ -329,8 +392,9 @@ export const useSupplies = () => {
 
     } catch (err) {
       console.error('❌ Error creando proveedor:', err)
-      toast.error('Error al crear el proveedor')
-      return { success: false, error: err.message }
+      const errorMessage = err.message || 'Error al crear el proveedor'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
     }
   }
 
@@ -354,7 +418,9 @@ export const useSupplies = () => {
   const searchSupplies = async (searchTerm) => {
     try {
       const { data, error } = await suppliesService.searchSupplies(searchTerm)
-      if (error) throw error
+      if (error) {
+        throw error
+      }
       return data || []
     } catch (err) {
       console.error('❌ Error buscando suministros:', err)
@@ -372,8 +438,8 @@ export const useSupplies = () => {
       lowStock: supplies.filter(s => s.current_stock <= s.minimum_stock).length,
       outOfStock: supplies.filter(s => s.current_stock === 0).length,
       totalValue: supplies.reduce((sum, s) => sum + (s.current_stock * s.unit_cost), 0),
-      categories: [...new Set(supplies.map(s => s.category?.name))].length,
-      suppliers: [...new Set(supplies.map(s => s.supplier?.name))].length,
+      categories: [...new Set(supplies.map(s => s.category?.name).filter(Boolean))].length,
+      suppliers: [...new Set(supplies.map(s => s.supplier?.name).filter(Boolean))].length,
       alertsCount: alerts.filter(a => !a.is_resolved).length
     }
 

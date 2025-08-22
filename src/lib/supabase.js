@@ -1147,9 +1147,11 @@ export const branchService = {
 // 📦 SERVICIOS DE SUMINISTROS (COMPLETO)
 // =====================================================
 export const suppliesService = {
-  // Obtener todos los suministros con filtros
+  // ✅ Obtener todos los suministros con filtros
   async getSupplies(filters = {}) {
     try {
+      console.log('📦 Fetching supplies with filters:', filters)
+      
       let query = supabase
         .from('supplies')
         .select(`
@@ -1163,11 +1165,11 @@ export const suppliesService = {
           is_active,
           created_at,
           updated_at,
-          category:category_id(
+          supply_categories!inner(
             id,
             name
           ),
-          supplier:supplier_id(
+          suppliers(
             id,
             name,
             contact_person,
@@ -1195,11 +1197,18 @@ export const suppliesService = {
 
       const { data, error } = await query.order('name')
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error fetching supplies:', error)
+        throw error
+      }
+
+      console.log('✅ Supplies fetched successfully:', data?.length || 0)
 
       // Enriquecer datos con campos calculados
       const enrichedData = data?.map(supply => ({
         ...supply,
+        category: supply.supply_categories,
+        supplier: supply.suppliers,
         stockStatus: this.getStockStatus(supply.current_stock, supply.minimum_stock),
         totalValue: supply.current_stock * supply.unit_cost,
         needsRestock: supply.current_stock <= supply.minimum_stock,
@@ -1211,14 +1220,16 @@ export const suppliesService = {
 
       return { data: enrichedData, error: null }
     } catch (error) {
-      console.error('Error fetching supplies:', error)
+      console.error('❌ Error in getSupplies:', error)
       return { data: [], error }
     }
   },
 
-  // Obtener categorías de suministros
+  // ✅ Obtener categorías de suministros
   async getCategories() {
     try {
+      console.log('🏷️ Fetching supply categories...')
+      
       const { data, error } = await supabase
         .from('supply_categories')
         .select(`
@@ -1226,23 +1237,29 @@ export const suppliesService = {
           name,
           parent_category_id,
           is_active,
-          created_at,
-          parent_category:parent_category_id(name)
+          created_at
         `)
         .eq('is_active', true)
         .order('name')
 
-      if (error) throw error
-      return { data, error: null }
+      if (error) {
+        console.error('❌ Error fetching categories:', error)
+        throw error
+      }
+
+      console.log('✅ Categories fetched successfully:', data?.length || 0)
+      return { data: data || [], error: null }
     } catch (error) {
-      console.error('Error fetching categories:', error)
+      console.error('❌ Error in getCategories:', error)
       return { data: [], error }
     }
   },
 
-  // Obtener proveedores
+  // ✅ Obtener proveedores
   async getSuppliers() {
     try {
+      console.log('🏢 Fetching suppliers...')
+      
       const { data, error } = await supabase
         .from('suppliers')
         .select(`
@@ -1260,15 +1277,357 @@ export const suppliesService = {
         .eq('is_active', true)
         .order('name')
 
-      if (error) throw error
-      return { data, error: null }
+      if (error) {
+        console.error('❌ Error fetching suppliers:', error)
+        throw error
+      }
+
+      console.log('✅ Suppliers fetched successfully:', data?.length || 0)
+      return { data: data || [], error: null }
     } catch (error) {
-      console.error('Error fetching suppliers:', error)
+      console.error('❌ Error in getSuppliers:', error)
       return { data: [], error }
     }
   },
 
-  // Utilidades
+  // ✅ Obtener alertas de inventario - FUNCIÓN FALTANTE AGREGADA
+  async getAlerts() {
+    try {
+      console.log('🚨 Fetching inventory alerts...')
+      
+      const { data, error } = await supabase
+        .from('inventory_alerts')
+        .select(`
+          id,
+          alert_type,
+          message,
+          is_resolved,
+          resolved_by,
+          resolved_at,
+          created_at,
+          supply_id,
+          supplies!inner(
+            id,
+            name,
+            current_stock,
+            minimum_stock,
+            supply_categories(name)
+          )
+        `)
+        .eq('is_resolved', false)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) {
+        console.error('❌ Error fetching alerts:', error)
+        throw error
+      }
+
+      console.log('✅ Alerts fetched successfully:', data?.length || 0)
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error in getAlerts:', error)
+      return { data: [], error }
+    }
+  },
+
+  // ✅ Obtener movimientos de stock
+  async getMovements(supplyId = null, limit = 20) {
+    try {
+      console.log('📈 Fetching supply movements...', { supplyId, limit })
+      
+      let query = supabase
+        .from('supply_movements')
+        .select(`
+          id,
+          movement_type,
+          quantity,
+          unit_cost,
+          total_cost,
+          reference_document,
+          created_at,
+          supplies!inner(
+            id,
+            name,
+            supply_categories(name)
+          ),
+          users(
+            first_name,
+            last_name
+          )
+        `)
+
+      if (supplyId) {
+        query = query.eq('supply_id', supplyId)
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (error) {
+        console.error('❌ Error fetching movements:', error)
+        throw error
+      }
+
+      console.log('✅ Movements fetched successfully:', data?.length || 0)
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error in getMovements:', error)
+      return { data: [], error }
+    }
+  },
+
+  // ✅ Crear nuevo suministro
+  async createSupply(supplyData) {
+    try {
+      console.log('➕ Creating new supply:', supplyData)
+      
+      const { data, error } = await supabase
+        .from('supplies')
+        .insert({
+          name: supplyData.name,
+          category_id: supplyData.categoryId,
+          unit_of_measure: supplyData.unitOfMeasure,
+          minimum_stock: supplyData.minimumStock || 0,
+          current_stock: supplyData.currentStock || 0,
+          unit_cost: supplyData.unitCost || 0,
+          supplier_id: supplyData.supplierId || null,
+          sku: supplyData.sku || null,
+          is_active: true
+        })
+        .select(`
+          *,
+          supply_categories!inner(name),
+          suppliers(name)
+        `)
+        .single()
+
+      if (error) {
+        console.error('❌ Error creating supply:', error)
+        throw error
+      }
+
+      console.log('✅ Supply created successfully:', data.name)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in createSupply:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ Actualizar suministro
+  async updateSupply(supplyId, updateData) {
+    try {
+      console.log('🔄 Updating supply:', { supplyId, updateData })
+      
+      const { data, error } = await supabase
+        .from('supplies')
+        .update({
+          ...updateData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', supplyId)
+        .select(`
+          *,
+          supply_categories!inner(name),
+          suppliers(name)
+        `)
+        .single()
+
+      if (error) {
+        console.error('❌ Error updating supply:', error)
+        throw error
+      }
+
+      console.log('✅ Supply updated successfully:', data.name)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in updateSupply:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ Eliminar suministro
+  async deleteSupply(supplyId) {
+    try {
+      console.log('🗑️ Deleting supply:', supplyId)
+      
+      const { error } = await supabase
+        .from('supplies')
+        .update({ is_active: false })
+        .eq('id', supplyId)
+
+      if (error) {
+        console.error('❌ Error deleting supply:', error)
+        throw error
+      }
+
+      console.log('✅ Supply deleted successfully')
+      return { error: null }
+    } catch (error) {
+      console.error('❌ Error in deleteSupply:', error)
+      return { error }
+    }
+  },
+
+  // ✅ Agregar movimiento de stock
+  async addMovement(movementData) {
+    try {
+      console.log('📊 Adding stock movement:', movementData)
+      
+      const { data, error } = await supabase
+        .from('supply_movements')
+        .insert({
+          supply_id: movementData.supplyId,
+          branch_id: movementData.branchId,
+          movement_type: movementData.movementType, // 'in', 'out', 'adjustment'
+          quantity: movementData.quantity,
+          unit_cost: movementData.unitCost || 0,
+          total_cost: movementData.totalCost || (movementData.quantity * (movementData.unitCost || 0)),
+          reference_document: movementData.referenceDocument || null,
+          processed_by: movementData.processedBy
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('❌ Error adding movement:', error)
+        throw error
+      }
+
+      console.log('✅ Movement added successfully:', data.id)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in addMovement:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ Resolver alerta
+  async resolveAlert(alertId, userId) {
+    try {
+      console.log('✅ Resolving alert:', { alertId, userId })
+      
+      const { data, error } = await supabase
+        .from('inventory_alerts')
+        .update({
+          is_resolved: true,
+          resolved_by: userId,
+          resolved_at: new Date().toISOString()
+        })
+        .eq('id', alertId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('❌ Error resolving alert:', error)
+        throw error
+      }
+
+      console.log('✅ Alert resolved successfully')
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in resolveAlert:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ Crear categoría
+  async createCategory(categoryData) {
+    try {
+      console.log('➕ Creating category:', categoryData)
+      
+      const { data, error } = await supabase
+        .from('supply_categories')
+        .insert({
+          name: categoryData.name,
+          parent_category_id: categoryData.parentCategoryId || null,
+          is_active: true
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('❌ Error creating category:', error)
+        throw error
+      }
+
+      console.log('✅ Category created successfully:', data.name)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in createCategory:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ Crear proveedor
+  async createSupplier(supplierData) {
+    try {
+      console.log('➕ Creating supplier:', supplierData)
+      
+      const { data, error } = await supabase
+        .from('suppliers')
+        .insert({
+          name: supplierData.name,
+          contact_person: supplierData.contactPerson || null,
+          email: supplierData.email || null,
+          phone: supplierData.phone || null,
+          tax_id: supplierData.taxId || null,
+          payment_terms: supplierData.paymentTerms || null,
+          is_active: true
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('❌ Error creating supplier:', error)
+        throw error
+      }
+
+      console.log('✅ Supplier created successfully:', data.name)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in createSupplier:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ Buscar suministros
+  async searchSupplies(searchTerm) {
+    try {
+      console.log('🔍 Searching supplies:', searchTerm)
+      
+      const { data, error } = await supabase
+        .from('supplies')
+        .select(`
+          id,
+          name,
+          sku,
+          current_stock,
+          minimum_stock,
+          unit_cost,
+          supply_categories!inner(name)
+        `)
+        .eq('is_active', true)
+        .or(`name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
+        .order('name')
+        .limit(20)
+
+      if (error) {
+        console.error('❌ Error searching supplies:', error)
+        throw error
+      }
+
+      console.log('✅ Search completed:', data?.length || 0, 'results')
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error in searchSupplies:', error)
+      return { data: [], error }
+    }
+  },
+
+  // ✅ Utilidades
   getStockStatus(currentStock, minimumStock) {
     if (currentStock === 0) return 'out_of_stock'
     if (currentStock <= minimumStock) return 'low_stock'
@@ -1303,6 +1662,13 @@ export const suppliesService = {
       'adjustment': 'Ajuste'
     }
     return types[type] || type
+  },
+
+  formatPrice(amount) {
+    return new Intl.NumberFormat('es-PE', {
+      style: 'currency',
+      currency: 'PEN'
+    }).format(amount)
   }
 }
 
