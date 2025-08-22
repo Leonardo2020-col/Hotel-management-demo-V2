@@ -1,4 +1,4 @@
-// src/App.js - ACTUALIZADO CON RUTAS DE SUCURSALES
+// src/App.js - ACTUALIZADO CON RUTA DE HABITACIONES
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
@@ -18,7 +18,8 @@ import Dashboard from './pages/Dashboard.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
 import Reservations from './pages/Reservations.jsx' 
-import BranchSwitcher from './pages/BranchSwitcher.jsx' // ✅ NUEVA IMPORTACIÓN
+import Rooms from './pages/Rooms.jsx' // ✅ NUEVA IMPORTACIÓN
+import BranchSwitcher from './pages/BranchSwitcher.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 import Supplies from './pages/Supplies.jsx'
@@ -74,7 +75,7 @@ function App() {
                 }
               />
 
-              {/* ✅ NUEVA RUTA - Cambio de sucursal CON Layout */}
+              {/* Cambio de sucursal CON Layout */}
               <Route
                 path="/admin/branch-switcher"
                 element={
@@ -110,7 +111,19 @@ function App() {
                 }
               />
               
-              {/* Resto de páginas CON Layout */}
+              {/* ✅ NUEVA RUTA - Habitaciones CON Layout */}
+              <Route
+                path="/rooms"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <Rooms />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Huéspedes CON Layout */}
               <Route
                 path="/guests"
                 element={
@@ -125,31 +138,19 @@ function App() {
                 }
               />
               
+              {/* Suministros CON Layout */}
               <Route
-                path="/rooms"
+                path="/supplies"
                 element={
                   <ProtectedRoute requireReception>
                     <Layout>
-                      <div className="p-6">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Habitaciones</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
+                      <Supplies />
                     </Layout>
                   </ProtectedRoute>
                 }
               />
               
-              <Route
-  path="/supplies"
-  element={
-    <ProtectedRoute requireReception>
-      <Layout>
-        <Supplies />
-      </Layout>
-    </ProtectedRoute>
-  }
-/>
-              
+              {/* Reportes CON Layout */}
               <Route
                 path="/reports"
                 element={
@@ -164,6 +165,7 @@ function App() {
                 }
               />
               
+              {/* Configuración CON Layout */}
               <Route
                 path="/settings"
                 element={
