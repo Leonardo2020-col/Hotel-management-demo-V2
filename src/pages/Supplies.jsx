@@ -1,6 +1,6 @@
-// src/pages/Supplies.jsx - PÁGINA BÁSICA CORREGIDA
+// src/pages/Supplies.jsx - VERSIÓN CORREGIDA SIN ERRORES DE ROUTER
 import React, { useState } from 'react'
-import { RefreshCw, Package, AlertTriangle, Plus, Search, Filter } from 'lucide-react'
+import { RefreshCw, Package, AlertTriangle, Plus, Search, Filter, Edit, TrendingUp } from 'lucide-react'
 import { useSupplies } from '../hooks/useSupplies'
 import Button from '../components/common/Button'
 import toast from 'react-hot-toast'
@@ -22,6 +22,8 @@ const Supplies = () => {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [selectedSupply, setSelectedSupply] = useState(null)
 
   const stats = getSuppliesStats()
 
@@ -38,6 +40,36 @@ const Supplies = () => {
   const handleClearFilters = () => {
     setSearchTerm('')
     clearFilters()
+  }
+
+  // ✅ FUNCIÓN CORREGIDA - Sin navegación de router
+  const handleNewSupply = () => {
+    console.log('📦 Abriendo modal de nuevo suministro...')
+    setSelectedSupply(null)
+    setShowCreateModal(true)
+    toast.success('Modal de crear suministro abierto')
+  }
+
+  // ✅ FUNCIÓN PARA EDITAR SUMINISTRO
+  const handleEditSupply = (supply) => {
+    console.log('✏️ Editando suministro:', supply.name)
+    setSelectedSupply(supply)
+    setShowCreateModal(true)
+    toast.success(`Editando: ${supply.name}`)
+  }
+
+  // ✅ FUNCIÓN PARA VER DETALLES
+  const handleViewDetails = (supply) => {
+    console.log('👁️ Viendo detalles de:', supply.name)
+    setSelectedSupply(supply)
+    toast.info(`Mostrando detalles de: ${supply.name}`)
+  }
+
+  // ✅ FUNCIÓN PARA MOVIMIENTOS DE STOCK
+  const handleStockMovement = (supply) => {
+    console.log('📈 Movimiento de stock para:', supply.name)
+    setSelectedSupply(supply)
+    toast.info(`Gestionar stock de: ${supply.name}`)
   }
 
   // Error State
@@ -227,10 +259,11 @@ const Supplies = () => {
                 Actualizar
               </Button>
 
+              {/* ✅ BOTÓN CORREGIDO - Sin navegación */}
               <Button
                 variant="primary"
                 icon={Plus}
-                onClick={() => toast.info('Funcionalidad en desarrollo')}
+                onClick={handleNewSupply}
               >
                 Nuevo Suministro
               </Button>
@@ -350,7 +383,7 @@ const Supplies = () => {
                 <Button
                   variant="primary"
                   icon={Plus}
-                  onClick={() => toast.info('Funcionalidad en desarrollo')}
+                  onClick={handleNewSupply}
                 >
                   Agregar Primer Suministro
                 </Button>
@@ -453,23 +486,25 @@ const Supplies = () => {
                       </div>
                     )}
 
-                    {/* Botones de Acción */}
+                    {/* ✅ BOTONES DE ACCIÓN CORREGIDOS */}
                     <div className="flex space-x-2">
                       <Button
                         variant="outline"
                         size="sm"
+                        icon={Edit}
                         className="flex-1"
-                        onClick={() => toast.info('Funcionalidad en desarrollo')}
+                        onClick={() => handleEditSupply(supply)}
                       >
-                        Ver Detalles
+                        Editar
                       </Button>
                       <Button
                         variant="primary"
                         size="sm"
+                        icon={TrendingUp}
                         className="flex-1"
-                        onClick={() => toast.info('Funcionalidad en desarrollo')}
+                        onClick={() => handleStockMovement(supply)}
                       >
-                        Actualizar Stock
+                        Stock
                       </Button>
                     </div>
                   </div>
@@ -478,6 +513,71 @@ const Supplies = () => {
             </div>
           )}
         </div>
+
+        {/* ✅ MODAL SIMPLE DE CREAR/EDITAR */}
+        {showCreateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+              <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-bold">
+                    {selectedSupply ? 'Editar Suministro' : 'Nuevo Suministro'}
+                  </h3>
+                  <button
+                    onClick={() => setShowCreateModal(false)}
+                    className="text-blue-100 hover:text-white text-2xl"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6">
+                <div className="text-center">
+                  <Package className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+                  <h4 className="text-lg font-semibold text-gray-800 mb-2">
+                    {selectedSupply ? `Editando: ${selectedSupply.name}` : 'Crear Nuevo Suministro'}
+                  </h4>
+                  <p className="text-gray-600 mb-6">
+                    Esta funcionalidad estará disponible próximamente. Por ahora, puedes visualizar el inventario existente.
+                  </p>
+                  
+                  {selectedSupply && (
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
+                      <h5 className="font-medium text-gray-800 mb-2">Información Actual:</h5>
+                      <div className="text-sm space-y-1">
+                        <p><strong>Nombre:</strong> {selectedSupply.name}</p>
+                        <p><strong>Categoría:</strong> {selectedSupply.category?.name || 'Sin categoría'}</p>
+                        <p><strong>Stock:</strong> {selectedSupply.current_stock} {selectedSupply.unit_of_measure}</p>
+                        <p><strong>Costo:</strong> S/ {selectedSupply.unit_cost.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex space-x-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setShowCreateModal(false)}
+                    >
+                      Cerrar
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={() => {
+                        setShowCreateModal(false)
+                        toast.success('Funcionalidad en desarrollo')
+                      }}
+                    >
+                      Entendido
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Debug Info - Solo en desarrollo */}
         {process.env.NODE_ENV === 'development' && (
@@ -494,6 +594,8 @@ const Supplies = () => {
                 <p><strong>Current filters:</strong> {JSON.stringify(filters)}</p>
                 <p><strong>Loading state:</strong> {loading ? 'True' : 'False'}</p>
                 <p><strong>Error state:</strong> {error || 'None'}</p>
+                <p><strong>Show Create Modal:</strong> {showCreateModal ? 'True' : 'False'}</p>
+                <p><strong>Selected Supply:</strong> {selectedSupply?.name || 'None'}</p>
               </div>
             </details>
           </div>
