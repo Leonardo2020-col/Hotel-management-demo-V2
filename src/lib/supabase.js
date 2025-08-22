@@ -1,4 +1,4 @@
-
+// src/lib/supabase.js - VERSIÓN COMPLETA ACTUALIZADA
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
@@ -7,7 +7,7 @@ const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // =====================================================
-// 🔐 SERVICIOS DE AUTENTICACIÓN (CORREGIDO)
+// 🔐 SERVICIOS DE AUTENTICACIÓN
 // =====================================================
 export const authService = {
   supabase,
@@ -55,7 +55,6 @@ export const authService = {
     }
   },
 
-  // ⚠️ CORREGIDO: Usar auth_id en lugar de id para buscar el usuario
   async getUserInfo(authUserId) {
     try {
       console.log('📋 Obteniendo info del usuario desde DB:', authUserId)
@@ -71,7 +70,7 @@ export const authService = {
             branch:branch_id(id, name, is_active)
           )
         `)
-        .eq('auth_id', authUserId) // ✅ CORREGIDO: Usar auth_id
+        .eq('auth_id', authUserId)
         .eq('is_active', true)
         .single()
 
@@ -139,7 +138,7 @@ export const authService = {
 }
 
 // =====================================================
-// 🏨 SERVICIOS DE HABITACIONES (CORREGIDO)
+// 🏨 SERVICIOS DE HABITACIONES
 // =====================================================
 export const roomService = {
   async getRoomsWithStatus(branchId) {
@@ -197,7 +196,6 @@ export const roomService = {
     }
   },
 
-  // ✅ Usar la función SQL que creaste
   async getAvailableRooms(branchId, startDate, endDate) {
     try {
       const { data, error } = await supabase.rpc('get_available_rooms', {
@@ -216,10 +214,9 @@ export const roomService = {
 }
 
 // =====================================================
-// 📅 SERVICIOS DE RESERVACIONES (CORREGIDO)
+// 📅 SERVICIOS DE RESERVACIONES
 // =====================================================
 export const reservationService = {
-  // Crear nueva reservación
   async createReservation(reservationData, guestData) {
     try {
       console.log('🎫 Creando nueva reservación...', reservationData)
@@ -227,10 +224,8 @@ export const reservationService = {
       // 1. Crear o encontrar huésped
       let guest = null
       if (guestData.id) {
-        // Huésped existente
         guest = { id: guestData.id }
       } else {
-        // Crear nuevo huésped
         const { data: newGuest, error: guestError } = await supabase
           .from('guests')
           .insert({
@@ -255,7 +250,7 @@ export const reservationService = {
 
       if (statusError) throw statusError
 
-      // 3. Crear reservación (el código se genera automáticamente por trigger)
+      // 3. Crear reservación
       const { data: reservation, error: reservationError } = await supabase
         .from('reservations')
         .insert({
@@ -287,7 +282,6 @@ export const reservationService = {
     }
   },
 
-  // Obtener reservaciones por sucursal
   async getReservationsByBranch(branchId, filters = {}) {
     try {
       let query = supabase
@@ -326,7 +320,6 @@ export const reservationService = {
         `)
         .eq('branch_id', branchId)
 
-      // Aplicar filtros
       if (filters.status) {
         const { data: statusData } = await supabase
           .from('reservation_status')
@@ -348,7 +341,6 @@ export const reservationService = {
       }
 
       if (filters.guestName) {
-        // Buscar por nombre de huésped
         const { data: guests } = await supabase
           .from('guests')
           .select('id')
@@ -368,7 +360,6 @@ export const reservationService = {
 
       if (error) throw error
 
-      // Agregar campos calculados
       const enrichedData = data?.map(reservation => {
         const checkIn = new Date(reservation.check_in_date);
         const checkOut = new Date(reservation.check_out_date);
@@ -393,38 +384,8 @@ export const reservationService = {
     }
   },
 
-  // Buscar reservaciones
-  async searchReservations(branchId, searchTerm) {
-    try {
-      const { data, error } = await supabase
-        .from('reservations')
-        .select(`
-          id,
-          reservation_code,
-          check_in_date,
-          check_out_date,
-          total_amount,
-          guest:guest_id(full_name, phone),
-          room:room_id(room_number),
-          status:status_id(status, color)
-        `)
-        .eq('branch_id', branchId)
-        .or(`reservation_code.ilike.%${searchTerm}%`)
-        .order('created_at', { ascending: false })
-        .limit(10)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('❌ Error buscando reservaciones:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Actualizar estado de reservación
   async updateReservationStatus(reservationId, newStatus, userId) {
     try {
-      // Obtener ID del nuevo estado
       const { data: statusData, error: statusError } = await supabase
         .from('reservation_status')
         .select('id')
@@ -452,86 +413,11 @@ export const reservationService = {
       console.error('❌ Error actualizando estado de reservación:', error)
       return { data: null, error }
     }
-  },
-
-  // Confirmar reservación
-  async confirmReservation(reservationId, userId) {
-    return this.updateReservationStatus(reservationId, 'confirmada', userId)
-  },
-
-  // Cancelar reservación
-  async cancelReservation(reservationId, userId, reason = '') {
-    try {
-      const result = await this.updateReservationStatus(reservationId, 'cancelada', userId)
-      
-      if (result.data && reason) {
-        console.log(`Reservación ${reservationId} cancelada. Razón: ${reason}`)
-      }
-      
-      return result
-    } catch (error) {
-      console.error('❌ Error cancelando reservación:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Agregar pago a reservación
-  async addPayment(reservationId, paymentData) {
-    try {
-      const { data: payment, error: paymentError } = await supabase
-        .from('reservation_payments')
-        .insert({
-          reservation_id: reservationId,
-          payment_method_id: paymentData.paymentMethodId,
-          amount: paymentData.amount,
-          payment_reference: paymentData.reference || null,
-          payment_date: paymentData.paymentDate || new Date().toISOString(),
-          processed_by: paymentData.processedBy
-        })
-        .select(`
-          *,
-          payment_method:payment_method_id(name, requires_reference)
-        `)
-        .single()
-
-      if (paymentError) throw paymentError
-
-      console.log('✅ Pago agregado exitosamente:', payment.amount)
-      return { data: payment, error: null }
-    } catch (error) {
-      console.error('❌ Error agregando pago:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Obtener pagos de una reservación
-  async getReservationPayments(reservationId) {
-    try {
-      const { data, error } = await supabase
-        .from('reservation_payments')
-        .select(`
-          id,
-          amount,
-          payment_reference,
-          payment_date,
-          created_at,
-          payment_method:payment_method_id(name),
-          processed_by_user:processed_by(first_name, last_name)
-        `)
-        .eq('reservation_id', reservationId)
-        .order('payment_date', { ascending: false })
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('❌ Error obteniendo pagos:', error)
-      return { data: [], error }
-    }
   }
 }
 
 // =====================================================
-// 👥 SERVICIOS DE HUÉSPEDES (CORREGIDO)
+// 👥 SERVICIOS DE HUÉSPEDES
 // =====================================================
 export const guestService = {
   async searchGuests(searchTerm, limit = 10) {
@@ -573,40 +459,6 @@ export const guestService = {
   }
 }
 
-// Servicios extendidos de huéspedes
-export const extendedGuestService = {
-  ...guestService,
-
-  // Obtener huésped por ID con reservaciones
-  async getGuestById(guestId) {
-    try {
-      const { data, error } = await supabase
-        .from('guests')
-        .select(`
-          *,
-          reservations:reservations(
-            id,
-            reservation_code,
-            check_in_date,
-            check_out_date,
-            total_amount,
-            paid_amount,
-            status:status_id(status, color),
-            room:room_id(room_number)
-          )
-        `)
-        .eq('id', guestId)
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('❌ Error obteniendo huésped:', error)
-      return { data: null, error }
-    }
-  }
-}
-
 // =====================================================
 // 💳 SERVICIOS DE PAGOS
 // =====================================================
@@ -629,71 +481,396 @@ export const paymentService = {
 }
 
 // =====================================================
-// 📊 SERVICIOS DE REPORTES Y ESTADÍSTICAS
+// 🍿 SERVICIOS DE SNACKS (NUEVO Y COMPLETO)
 // =====================================================
-export const reportService = {
-  async getDashboardStats(branchId) {
+export const snackService = {
+  // Obtener categorías de snacks
+  async getSnackCategories() {
     try {
-      const { data, error } = await supabase.rpc('get_dashboard_stats', {
-        branch_uuid: branchId
+      console.log('🏷️ Loading snack categories from database...')
+      
+      const { data, error } = await supabase
+        .from('snack_categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) {
+        console.error('❌ Error loading snack categories:', error)
+        throw error
+      }
+      
+      console.log('✅ Snack categories loaded:', data?.length || 0)
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error fetching snack categories:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Obtener items de snacks con categorías
+  async getSnackItems() {
+    try {
+      console.log('🍿 Loading snack items from database...')
+      
+      const { data, error } = await supabase
+        .from('snack_items')
+        .select(`
+          id,
+          name,
+          price,
+          cost,
+          stock,
+          minimum_stock,
+          description,
+          is_active,
+          category_id,
+          created_at,
+          updated_at,
+          snack_category:category_id(
+            id,
+            name,
+            description
+          )
+        `)
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) {
+        console.error('❌ Error loading snack items:', error)
+        throw error
+      }
+
+      // Enriquecer datos con campos calculados
+      const enrichedData = (data || []).map(item => ({
+        ...item,
+        category_name: item.snack_category?.name || 'Sin categoría',
+        category_slug: this.generateCategorySlug(item.snack_category?.name),
+        in_stock: item.stock > 0,
+        low_stock: item.stock <= item.minimum_stock,
+        stock_percentage: item.minimum_stock > 0 
+          ? Math.round((item.stock / item.minimum_stock) * 100) 
+          : 100,
+        formatted_price: this.formatPrice(item.price),
+        stock_status: this.getStockStatus(item.stock, item.minimum_stock)
+      }))
+      
+      console.log('✅ Snack items loaded and enriched:', enrichedData.length)
+      return { data: enrichedData, error: null }
+    } catch (error) {
+      console.error('❌ Error fetching snack items:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Obtener items de snacks agrupados por categoría
+  async getSnackItemsGrouped() {
+    try {
+      const { data: items, error } = await this.getSnackItems()
+      
+      if (error) return { data: {}, error }
+
+      // Agrupar por category_slug para compatibilidad con el frontend
+      const grouped = {}
+      
+      items.forEach(item => {
+        const categorySlug = item.category_slug
+        if (!grouped[categorySlug]) {
+          grouped[categorySlug] = []
+        }
+        grouped[categorySlug].push(item)
       })
 
-      if (error) throw error
-      return { data: data[0] || {}, error: null }
+      console.log('✅ Snack items grouped by category:', Object.keys(grouped).length)
+      return { data: grouped, error: null }
     } catch (error) {
-      console.error('Error fetching dashboard stats:', error)
-      return { data: null, error }
+      console.error('❌ Error grouping snack items:', error)
+      return { data: {}, error }
     }
-  }
-}
+  },
 
-// =====================================================
-// 🚀 SERVICIOS DE QUICK CHECK-INS
-// =====================================================
-export const quickCheckinService = {
-  async createQuickCheckin(quickCheckinData, guestData, snacksData = []) {
+  // Crear nuevo item de snack
+  async createSnackItem(itemData) {
     try {
-      const { data: quickCheckin, error: quickCheckinError } = await supabase
-        .from('quick_checkins')
+      const { data, error } = await supabase
+        .from('snack_items')
         .insert({
-          branch_id: quickCheckinData.branchId,
-          room_id: quickCheckinData.roomId,
-          guest_name: guestData.fullName,
-          guest_document: `${guestData.documentType}:${guestData.documentNumber}`,
-          guest_phone: guestData.phone,
-          check_in_date: quickCheckinData.checkInDate,
-          check_out_date: quickCheckinData.checkOutDate,
-          amount: quickCheckinData.totalAmount,
-          payment_method_id: quickCheckinData.paymentMethodId,
-          created_by: quickCheckinData.createdBy
+          name: itemData.name,
+          category_id: itemData.categoryId,
+          price: itemData.price,
+          cost: itemData.cost || 0,
+          stock: itemData.stock || 0,
+          minimum_stock: itemData.minimumStock || 0,
+          description: itemData.description || null,
+          is_active: true
         })
-        .select()
+        .select(`
+          *,
+          snack_category:category_id(name)
+        `)
         .single()
 
-      if (quickCheckinError) throw quickCheckinError
-
-      const { data: checkinOrder, error: checkinOrderError } = await supabase
-        .from('checkin_orders')
-        .insert({
-          quick_checkin_id: quickCheckin.id,
-          room_id: quickCheckinData.roomId,
-          check_in_time: new Date().toISOString(),
-          expected_checkout: quickCheckinData.checkOutDate,
-          processed_by: quickCheckinData.createdBy
-        })
-        .select()
-        .single()
-
-      if (checkinOrderError) throw checkinOrderError
-
-      return { data: { quickCheckin, checkinOrder }, error: null }
+      if (error) throw error
+      return { data, error: null }
     } catch (error) {
-      console.error('Error creating quick checkin:', error)
+      console.error('❌ Error creating snack item:', error)
       return { data: null, error }
     }
   },
 
-  async getActiveQuickCheckins(branchId) {
+  // Actualizar stock de snack
+  async updateSnackStock(snackId, newStock) {
+    try {
+      const { data, error } = await supabase
+        .from('snack_items')
+        .update({ 
+          stock: newStock,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', snackId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error updating snack stock:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Procesar consumo de snacks (reducir stock)
+  async processSnackConsumption(snacksConsumed) {
+    try {
+      console.log('🔄 Processing snack consumption for', snacksConsumed.length, 'items')
+      
+      const updates = []
+      
+      for (const snack of snacksConsumed) {
+        // Obtener stock actual
+        const { data: currentItem, error: fetchError } = await supabase
+          .from('snack_items')
+          .select('stock')
+          .eq('id', snack.id)
+          .single()
+
+        if (fetchError) {
+          console.warn(`⚠️ Error fetching stock for snack ${snack.id}:`, fetchError)
+          continue
+        }
+
+        // Calcular nuevo stock
+        const newStock = Math.max(0, (currentItem.stock || 0) - snack.quantity)
+        
+        // Actualizar stock
+        const { data, error } = await supabase
+          .from('snack_items')
+          .update({ 
+            stock: newStock,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', snack.id)
+          .select()
+          .single()
+
+        if (error) {
+          console.warn(`⚠️ Error updating stock for snack ${snack.id}:`, error)
+          continue
+        }
+
+        updates.push(data)
+      }
+
+      console.log('✅ Snack consumption processed:', updates.length, 'items updated')
+      return { data: updates, error: null }
+    } catch (error) {
+      console.error('❌ Error processing snack consumption:', error)
+      return { data: null, error }
+    }
+  },
+
+  // Buscar snacks
+  async searchSnacks(searchTerm, limit = 10) {
+    try {
+      const { data, error } = await supabase
+        .from('snack_items')
+        .select(`
+          id,
+          name,
+          price,
+          stock,
+          snack_category:category_id(name)
+        `)
+        .eq('is_active', true)
+        .ilike('name', `%${searchTerm}%`)
+        .order('name')
+        .limit(limit)
+
+      if (error) throw error
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error searching snacks:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Obtener snacks con stock bajo
+  async getLowStockSnacks() {
+    try {
+      const { data, error } = await supabase
+        .from('snack_items')
+        .select(`
+          id,
+          name,
+          stock,
+          minimum_stock,
+          snack_category:category_id(name)
+        `)
+        .eq('is_active', true)
+        .filter('stock', 'lte', 'minimum_stock')
+        .order('stock')
+
+      if (error) throw error
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error fetching low stock snacks:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Utilidades
+  generateCategorySlug(categoryName) {
+    if (!categoryName) return 'sin-categoria'
+    
+    return categoryName
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[áéíóúñ]/g, match => {
+        const accents = { 'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ñ': 'n' }
+        return accents[match] || match
+      })
+      .replace(/[^a-z0-9-]/g, '')
+  },
+
+  formatPrice(price) {
+    return new Intl.NumberFormat('es-PE', {
+      style: 'currency',
+      currency: 'PEN'
+    }).format(price)
+  },
+
+  getStockStatus(currentStock, minimumStock) {
+    if (currentStock === 0) return 'out_of_stock'
+    if (currentStock <= minimumStock) return 'low_stock'
+    if (currentStock <= minimumStock * 1.5) return 'medium_stock'
+    return 'good_stock'
+  },
+
+  getStockStatusColor(status) {
+    const colors = {
+      'out_of_stock': 'text-red-800 bg-red-100 border-red-200',
+      'low_stock': 'text-orange-800 bg-orange-100 border-orange-200',
+      'medium_stock': 'text-yellow-800 bg-yellow-100 border-yellow-200',
+      'good_stock': 'text-green-800 bg-green-100 border-green-200'
+    }
+    return colors[status] || colors.good_stock
+  },
+
+  getStockStatusText(status) {
+    const texts = {
+      'out_of_stock': 'Agotado',
+      'low_stock': 'Stock Bajo',
+      'medium_stock': 'Stock Medio',
+      'good_stock': 'Stock Bueno'
+    }
+    return texts[status] || 'Desconocido'
+  }
+}
+
+// =====================================================
+// 🚀 SERVICIOS DE QUICK CHECK-INS (ACTUALIZADO)
+// =====================================================
+export const quickCheckinService = {
+  // Obtener todos los datos necesarios para el dashboard de check-in
+  async getQuickCheckinDashboardData() {
+    try {
+      console.log('🔄 Loading quick checkin dashboard data...')
+      
+      const [
+        roomsResult,
+        quickCheckinsResult,
+        snackCategoriesResult,
+        snackItemsResult,
+        paymentMethodsResult
+      ] = await Promise.all([
+        this.getRoomsWithStatus(),
+        this.getActiveQuickCheckins(),
+        snackService.getSnackCategories(),
+        snackService.getSnackItems(),
+        paymentService.getPaymentMethods()
+      ])
+
+      console.log('📊 Dashboard data loaded:', {
+        rooms: roomsResult.data?.length || 0,
+        quickCheckins: quickCheckinsResult.data?.length || 0,
+        snackCategories: snackCategoriesResult.data?.length || 0,
+        snackItems: snackItemsResult.data?.length || 0,
+        paymentMethods: paymentMethodsResult.data?.length || 0
+      })
+
+      return {
+        rooms: roomsResult.data || [],
+        quickCheckins: quickCheckinsResult.data || [],
+        snackCategories: snackCategoriesResult.data || [],
+        snackItems: snackItemsResult.data || [],
+        paymentMethods: paymentMethodsResult.data || [],
+        error: null
+      }
+    } catch (error) {
+      console.error('❌ Error loading quick checkin dashboard data:', error)
+      return {
+        rooms: [],
+        quickCheckins: [],
+        snackCategories: [],
+        snackItems: [],
+        paymentMethods: [],
+        error
+      }
+    }
+  },
+
+  // Obtener habitaciones con estado
+  async getRoomsWithStatus() {
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select(`
+          id,
+          room_number,
+          floor,
+          base_price,
+          description,
+          is_active,
+          room_status:status_id(
+            id,
+            status,
+            color,
+            is_available
+          )
+        `)
+        .eq('is_active', true)
+        .order('room_number')
+
+      if (error) throw error
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error fetching rooms:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Obtener quick checkins activos
+  async getActiveQuickCheckins() {
     try {
       const { data, error } = await supabase
         .from('quick_checkins')
@@ -710,70 +887,88 @@ export const quickCheckinService = {
           room:room_id(room_number),
           payment_method:payment_method_id(name)
         `)
-        .eq('branch_id', branchId)
         .gte('check_out_date', new Date().toISOString().split('T')[0])
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      return { data, error: null }
+      return { data: data || [], error: null }
     } catch (error) {
-      console.error('Error fetching active quick checkins:', error)
+      console.error('❌ Error fetching active quick checkins:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Crear quick checkin
+  async createQuickCheckin(quickCheckinData, guestData, snacksData = []) {
+    try {
+      console.log('🎯 Creating quick checkin...', {
+        room: quickCheckinData.roomId,
+        guest: guestData.fullName,
+        snacks: snacksData.length
+      })
+
+      // Obtener método de pago
+      let paymentMethodId = null
+      if (quickCheckinData.paymentMethod) {
+        const { data: paymentMethod } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .eq('name', quickCheckinData.paymentMethod)
+          .single()
+        
+        paymentMethodId = paymentMethod?.id
+      }
+
+      const snacksTotal = snacksData.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
+      const totalAmount = quickCheckinData.roomPrice + snacksTotal
+
+      // Crear quick checkin
+      const { data: quickCheckin, error: quickCheckinError } = await supabase
+        .from('quick_checkins')
+        .insert({
+          room_id: quickCheckinData.roomId,
+          guest_name: guestData.fullName,
+          guest_document: `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`,
+          guest_phone: guestData.phone || '',
+          check_in_date: quickCheckinData.checkInDate || new Date().toISOString().split('T')[0],
+          check_out_date: quickCheckinData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          amount: totalAmount,
+          payment_method_id: paymentMethodId
+        })
+        .select()
+        .single()
+
+      if (quickCheckinError) throw quickCheckinError
+
+      // Procesar consumo de snacks si hay
+      if (snacksData.length > 0) {
+        await snackService.processSnackConsumption(snacksData)
+      }
+
+      console.log('✅ Quick checkin created successfully:', quickCheckin.id)
+      return { data: quickCheckin, error: null }
+    } catch (error) {
+      console.error('❌ Error creating quick checkin:', error)
       return { data: null, error }
     }
   }
 }
 
 // =====================================================
-// 🛠️ SERVICIOS COMBINADOS PARA EL HOOK
+// 📊 SERVICIOS DE REPORTES
 // =====================================================
-export const hotelService = {
-  async getCheckinDashboardData(branchId) {
+export const reportService = {
+  async getDashboardStats(branchId) {
     try {
-      console.log('🔄 Getting dashboard data for branch:', branchId)
-      
-      if (!branchId || typeof branchId !== 'string') {
-        throw new Error('Branch ID inválido')
-      }
-
-      const [
-        roomsResult,
-        quickCheckinsResult,
-        paymentMethodsResult
-      ] = await Promise.all([
-        roomService.getRoomsWithStatus(branchId),
-        quickCheckinService.getActiveQuickCheckins(branchId),
-        paymentService.getPaymentMethods()
-      ])
-
-      console.log('📊 Results received:', {
-        rooms: roomsResult.data?.length || 0,
-        quickCheckins: quickCheckinsResult.data?.length || 0,
-        paymentMethods: paymentMethodsResult.data?.length || 0
+      const { data, error } = await supabase.rpc('get_dashboard_stats', {
+        branch_uuid: branchId
       })
 
-      if (roomsResult.error) {
-        console.error('❌ Error fetching rooms:', roomsResult.error)
-        throw new Error(`Error al cargar habitaciones: ${roomsResult.error.message}`)
-      }
-
-      return {
-        rooms: roomsResult.data || [],
-        quickCheckins: quickCheckinsResult.data || [],
-        snackCategories: [], // Para compatibilidad
-        snackItems: [], // Para compatibilidad
-        paymentMethods: paymentMethodsResult.data || [],
-        error: null
-      }
+      if (error) throw error
+      return { data: data[0] || {}, error: null }
     } catch (error) {
-      console.error('❌ Error fetching checkin dashboard data:', error)
-      return {
-        rooms: [],
-        quickCheckins: [],
-        snackCategories: [],
-        snackItems: [],
-        paymentMethods: [],
-        error
-      }
+      console.error('Error fetching dashboard stats:', error)
+      return { data: null, error }
     }
   }
 }
@@ -883,271 +1078,13 @@ export const realtimeService = {
         callback
       )
       .subscribe()
-  },
-
-  subscribeToReservationChanges(branchId, callback) {
-    return supabase
-      .channel('reservation-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'reservations',
-          filter: `branch_id=eq.${branchId}`
-        },
-        callback
-      )
-      .subscribe()
   }
 }
 
 // =====================================================
-// 🔄 SERVICIOS DE SINCRONIZACIÓN
-// =====================================================
-export const syncService = {
-  // Sincronizar datos después de operaciones importantes
-  async syncReservationData(reservationId) {
-    try {
-      // Recargar datos completos de la reservación
-      const { data, error } = await supabase
-        .from('reservations')
-        .select(`
-          *,
-          guest:guest_id(*),
-          room:room_id(*),
-          status:status_id(*),
-          payments:reservation_payments(*),
-          checkin_orders(*)
-        `)
-        .eq('id', reservationId)
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('❌ Error sincronizando datos de reservación:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Verificar disponibilidad en tiempo real
-  async verifyRoomAvailability(roomId, checkInDate, checkOutDate, excludeReservationId = null) {
-    try {
-      let query = supabase
-        .from('reservations')
-        .select('id, reservation_code, check_in_date, check_out_date')
-        .eq('room_id', roomId)
-        .not('check_out_date', 'lte', checkInDate)
-        .not('check_in_date', 'gte', checkOutDate)
-
-      if (excludeReservationId) {
-        query = query.neq('id', excludeReservationId)
-      }
-
-      const { data, error } = await query
-
-      if (error) throw error
-
-      const isAvailable = data.length === 0
-      return { 
-        data: { 
-          isAvailable, 
-          conflictingReservations: data 
-        }, 
-        error: null 
-      }
-    } catch (error) {
-      console.error('❌ Error verificando disponibilidad:', error)
-      return { data: { isAvailable: false, conflictingReservations: [] }, error }
-    }
-  }
-}
-
-// =====================================================
-// 📊 SERVICIOS DE ANÁLISIS ADICIONALES
-// =====================================================
-export const analyticsService = {
-  // Análisis de ocupación por período
-  async getOccupancyAnalysis(branchId, startDate, endDate) {
-    try {
-      const { data, error } = await supabase
-        .from('daily_reports')
-        .select(`
-          report_date,
-          occupancy_rate,
-          total_revenue,
-          occupied_rooms,
-          available_rooms
-        `)
-        .eq('branch_id', branchId)
-        .gte('report_date', startDate)
-        .lte('report_date', endDate)
-        .order('report_date')
-
-      if (error) throw error
-
-      const analysis = {
-        averageOccupancy: data.length > 0 ? 
-          data.reduce((sum, day) => sum + day.occupancy_rate, 0) / data.length : 0,
-        totalRevenue: data.reduce((sum, day) => sum + day.total_revenue, 0),
-        peakOccupancy: Math.max(...data.map(day => day.occupancy_rate), 0),
-        dailyData: data
-      }
-
-      return { data: analysis, error: null }
-    } catch (error) {
-      console.error('❌ Error en análisis de ocupación:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Análisis de huéspedes frecuentes
-  async getFrequentGuests(branchId, limit = 10) {
-    try {
-      const { data, error } = await supabase
-        .from('guests')
-        .select(`
-          id,
-          full_name,
-          phone,
-          reservations!inner(
-            branch_id,
-            total_amount,
-            status:status_id(status)
-          )
-        `)
-        .eq('reservations.branch_id', branchId)
-
-      if (error) throw error
-
-      // Procesar datos para obtener estadísticas por huésped
-      const guestStats = data.reduce((acc, guest) => {
-        const completedReservations = guest.reservations.filter(r => 
-          ['completada', 'en_uso'].includes(r.status.status)
-        )
-        
-        if (completedReservations.length > 0) {
-          acc.push({
-            id: guest.id,
-            name: guest.full_name,
-            phone: guest.phone,
-            totalVisits: completedReservations.length,
-            totalSpent: completedReservations.reduce((sum, r) => sum + r.total_amount, 0),
-            averageSpending: completedReservations.reduce((sum, r) => sum + r.total_amount, 0) / completedReservations.length
-          })
-        }
-        
-        return acc
-      }, [])
-
-      // Ordenar por número de visitas
-      const sortedGuests = guestStats
-        .sort((a, b) => b.totalVisits - a.totalVisits)
-        .slice(0, limit)
-
-      return { data: sortedGuests, error: null }
-    } catch (error) {
-      console.error('❌ Error obteniendo huéspedes frecuentes:', error)
-      return { data: [], error }
-    }
-  }
-}
-
-// =====================================================
-// 🍿 SERVICIOS DE SNACKS (COMPATIBILIDAD)
-// =====================================================
-export const snackService = {
-  async getSnackCategories() {
-    try {
-      const { data, error } = await supabase
-        .from('snack_categories')
-        .select('*')
-        .eq('is_active', true)
-        .order('name')
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching snack categories:', error)
-      return { data: [], error }
-    }
-  },
-
-  async getSnackItems() {
-    try {
-      const { data, error } = await supabase
-        .from('snack_items')
-        .select(`
-          id,
-          name,
-          price,
-          cost,
-          stock,
-          minimum_stock,
-          category_id,
-          is_active,
-          snack_category:category_id(name)
-        `)
-        .eq('is_active', true)
-        .order('name')
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching snack items:', error)
-      return { data: [], error }
-    }
-  },
-
-  async updateSnackStock(snackId, newStock) {
-    try {
-      const { data, error } = await supabase
-        .from('snack_items')
-        .update({ stock: newStock })
-        .eq('id', snackId)
-        .select()
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error updating snack stock:', error)
-      return { data: null, error }
-    }
-  },
-
-  async processSnackConsumption(snacksConsumed) {
-    try {
-      const updates = []
-      
-      for (const snack of snacksConsumed) {
-        const { data, error } = await supabase
-          .from('snack_items')
-          .update({ 
-            stock: Math.max(0, snack.currentStock - snack.quantity) 
-          })
-          .eq('id', snack.id)
-          .select()
-          .single()
-
-        if (error) throw error
-        updates.push(data)
-      }
-
-      return { data: updates, error: null }
-    } catch (error) {
-      console.error('Error processing snack consumption:', error)
-      return { data: null, error }
-    }
-  }
-}
-
-// =====================================================
-// 🏢 SERVICIOS DE SUCURSALES (NUEVO)
+// 🏢 SERVICIOS DE SUCURSALES
 // =====================================================
 export const branchService = {
-  // ✅ Obtener todas las sucursales disponibles
   async getAllBranches() {
     try {
       const { data, error } = await supabase
@@ -1164,17 +1101,14 @@ export const branchService = {
     }
   },
 
-  // ✅ Obtener estadísticas básicas de una sucursal
   async getBranchStats(branchId) {
     try {
-      // Usar la función SQL existente get_dashboard_stats
       const { data, error } = await supabase.rpc('get_dashboard_stats', {
         branch_uuid: branchId
       })
 
       if (error) throw error
 
-      // Si no hay datos, devolver estructura básica
       const stats = data?.[0] || {
         total_rooms: 0,
         occupied_rooms: 0,
@@ -1205,519 +1139,124 @@ export const branchService = {
       console.error(`Error fetching stats for branch ${branchId}:`, error)
       return { data: null, error }
     }
+  }
+}
+
+// =====================================================
+// 📦 OBJETO DB PRINCIPAL PARA COMPATIBILIDAD
+// =====================================================
+
+// ✅ Objeto db mejorado con todas las funciones necesarias
+export const db = {
+  // Importar todas las funciones existentes
+  ...roomService,
+  ...reservationService,
+  ...guestService,
+  ...paymentService,
+  ...reportService,
+  ...quickCheckinService,
+  ...snackService,
+  ...utilityService,
+  ...realtimeService,
+  ...branchService,
+  
+  // ✅ Funciones específicas para el hook useCheckInData/useQuickCheckins
+  async getRooms() {
+    return await quickCheckinService.getRoomsWithStatus()
   },
 
-  // ✅ Cambiar sucursal primaria del usuario
-  async setPrimaryBranch(userId, newBranchId) {
-    try {
-      console.log('🔄 Cambiando sucursal primaria:', { userId, newBranchId })
+  async getReservations(filters = {}) {
+    return await reservationService.getReservationsByBranch('default-branch', filters)
+  },
 
-      // Primero verificar que el usuario tenga acceso a esa sucursal
-      const { data: userBranch, error: checkError } = await supabase
-        .from('user_branches')
+  async getSnackItems() {
+    const result = await snackService.getSnackItems()
+    return { data: result.data, error: result.error }
+  },
+
+  async getSnackCategories() {
+    return await snackService.getSnackCategories()
+  },
+
+  async createGuest(guestData) {
+    return await guestService.createGuest(guestData)
+  },
+
+  async createReservation(reservationData) {
+    return await quickCheckinService.createQuickCheckin(reservationData, reservationData.guest, reservationData.snacks)
+  },
+
+  async updateReservation(reservationId, updateData) {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .update(updateData)
+        .eq('id', reservationId)
+        .select()
+        .single()
+
+      return { data, error }
+    } catch (error) {
+      return { data: null, error }
+    }
+  },
+
+  async updateRoomStatus(roomId, status, cleaningStatus = null) {
+    try {
+      const { data: statusData, error: statusError } = await supabase
+        .from('room_status')
         .select('id')
-        .eq('user_id', userId)
-        .eq('branch_id', newBranchId)
+        .eq('status', status)
         .single()
 
-      if (checkError || !userBranch) {
-        throw new Error('Usuario no tiene acceso a esa sucursal')
-      }
+      if (statusError) return { data: null, error: statusError }
 
-      // Remover flag primary de todas las sucursales del usuario
-      const { error: resetError } = await supabase
-        .from('user_branches')
-        .update({ is_primary: false })
-        .eq('user_id', userId)
-
-      if (resetError) throw resetError
-
-      // Establecer la nueva sucursal como primaria
-      const { data, error: setPrimaryError } = await supabase
-        .from('user_branches')
-        .update({ is_primary: true })
-        .eq('user_id', userId)
-        .eq('branch_id', newBranchId)
-        .select(`
-          *,
-          branch:branch_id(id, name, address, is_active)
-        `)
+      const { data, error } = await supabase
+        .from('rooms')
+        .update({ status_id: statusData.id })
+        .eq('id', roomId)
+        .select()
         .single()
 
-      if (setPrimaryError) throw setPrimaryError
-
-      console.log('✅ Sucursal primaria actualizada:', data)
-      return { data, error: null }
+      return { data, error }
     } catch (error) {
-      console.error('❌ Error setting primary branch:', error)
       return { data: null, error }
     }
   },
 
-  // ✅ Obtener información detallada de una sucursal
-  async getBranchDetails(branchId) {
-    try {
-      const { data, error } = await supabase
-        .from('branches')
-        .select(`
-          *,
-          rooms(count),
-          users:user_branches!inner(
-            user:user_id(id, first_name, last_name, email)
-          )
-        `)
-        .eq('id', branchId)
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching branch details:', error)
-      return { data: null, error }
-    }
+  async cleanRoomWithClick(roomId) {
+    return await this.updateRoomStatus(roomId, 'disponible')
   },
 
-  // ✅ Validar acceso a sucursal
-  async validateBranchAccess(userId, branchId) {
+  async deleteGuest(guestId) {
     try {
-      const { data, error } = await supabase
-        .from('user_branches')
-        .select('id, is_primary')
-        .eq('user_id', userId)
-        .eq('branch_id', branchId)
-        .single()
+      const { error } = await supabase
+        .from('guests')
+        .delete()
+        .eq('id', guestId)
 
-      if (error) return { hasAccess: false, isPrimary: false }
-      
-      return { 
-        hasAccess: true, 
-        isPrimary: data.is_primary,
-        userBranchId: data.id 
-      }
+      return { error }
     } catch (error) {
-      console.error('Error validating branch access:', error)
-      return { hasAccess: false, isPrimary: false }
+      return { error }
     }
   }
 }
 
 // =====================================================
-// 📦 SERVICIOS DE SUMINISTROS (AGREGAR AL FINAL)
+// 🔄 EXPORT PRINCIPAL
 // =====================================================
-export const suppliesService = {
-  // Obtener todos los suministros con filtros
-  async getSupplies(filters = {}) {
-    try {
-      let query = supabase
-        .from('supplies')
-        .select(`
-          id,
-          name,
-          unit_of_measure,
-          minimum_stock,
-          current_stock,
-          unit_cost,
-          sku,
-          is_active,
-          created_at,
-          updated_at,
-          category:category_id(
-            id,
-            name
-          ),
-          supplier:supplier_id(
-            id,
-            name,
-            contact_person,
-            phone
-          )
-        `)
-        .eq('is_active', true)
-
-      // Aplicar filtros
-      if (filters.category) {
-        query = query.eq('category_id', filters.category)
-      }
-
-      if (filters.supplier) {
-        query = query.eq('supplier_id', filters.supplier)
-      }
-
-      if (filters.lowStock) {
-        query = query.filter('current_stock', 'lte', 'minimum_stock')
-      }
-
-      if (filters.search) {
-        query = query.or(`name.ilike.%${filters.search}%,sku.ilike.%${filters.search}%`)
-      }
-
-      const { data, error } = await query.order('name')
-
-      if (error) throw error
-
-      // Enriquecer datos con campos calculados
-      const enrichedData = data?.map(supply => ({
-        ...supply,
-        stockStatus: this.getStockStatus(supply.current_stock, supply.minimum_stock),
-        totalValue: supply.current_stock * supply.unit_cost,
-        needsRestock: supply.current_stock <= supply.minimum_stock,
-        isOutOfStock: supply.current_stock === 0,
-        stockPercentage: supply.minimum_stock > 0 
-          ? Math.round((supply.current_stock / supply.minimum_stock) * 100)
-          : 100
-      })) || []
-
-      return { data: enrichedData, error: null }
-    } catch (error) {
-      console.error('Error fetching supplies:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Obtener categorías de suministros
-  async getCategories() {
-    try {
-      const { data, error } = await supabase
-        .from('supply_categories')
-        .select(`
-          id,
-          name,
-          parent_category_id,
-          is_active,
-          created_at,
-          parent_category:parent_category_id(name)
-        `)
-        .eq('is_active', true)
-        .order('name')
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching categories:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Obtener proveedores
-  async getSuppliers() {
-    try {
-      const { data, error } = await supabase
-        .from('suppliers')
-        .select(`
-          id,
-          name,
-          contact_person,
-          email,
-          phone,
-          tax_id,
-          payment_terms,
-          is_active,
-          created_at,
-          updated_at
-        `)
-        .eq('is_active', true)
-        .order('name')
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching suppliers:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Obtener alertas de inventario
-  async getAlerts() {
-    try {
-      const { data, error } = await supabase
-        .from('inventory_alerts')
-        .select(`
-          id,
-          alert_type,
-          message,
-          is_resolved,
-          resolved_at,
-          created_at,
-          supply:supply_id(
-            id,
-            name,
-            current_stock,
-            minimum_stock
-          ),
-          resolved_by_user:resolved_by(
-            first_name,
-            last_name
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching alerts:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Crear nuevo suministro
-  async createSupply(supplyData) {
-    try {
-      const { data, error } = await supabase
-        .from('supplies')
-        .insert({
-          name: supplyData.name,
-          category_id: supplyData.categoryId,
-          unit_of_measure: supplyData.unitOfMeasure,
-          minimum_stock: supplyData.minimumStock || 0,
-          current_stock: supplyData.currentStock || 0,
-          unit_cost: supplyData.unitCost || 0,
-          supplier_id: supplyData.supplierId || null,
-          sku: supplyData.sku || null,
-          is_active: true
-        })
-        .select(`
-          *,
-          category:category_id(name),
-          supplier:supplier_id(name)
-        `)
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error creating supply:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Actualizar suministro
-  async updateSupply(supplyId, updateData) {
-    try {
-      const { data, error } = await supabase
-        .from('supplies')
-        .update({
-          name: updateData.name,
-          category_id: updateData.categoryId,
-          unit_of_measure: updateData.unitOfMeasure,
-          minimum_stock: updateData.minimumStock,
-          unit_cost: updateData.unitCost,
-          supplier_id: updateData.supplierId,
-          sku: updateData.sku,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', supplyId)
-        .select()
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error updating supply:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Eliminar suministro (soft delete)
-  async deleteSupply(supplyId) {
-    try {
-      const { error } = await supabase
-        .from('supplies')
-        .update({ is_active: false })
-        .eq('id', supplyId)
-
-      if (error) throw error
-      return { error: null }
-    } catch (error) {
-      console.error('Error deleting supply:', error)
-      return { error }
-    }
-  },
-
-  // Agregar movimiento de stock
-  async addMovement(movementData) {
-    try {
-      const { data, error } = await supabase
-        .from('supply_movements')
-        .insert({
-          supply_id: movementData.supplyId,
-          branch_id: movementData.branchId,
-          movement_type: movementData.movementType, // 'in', 'out', 'adjustment'
-          quantity: movementData.quantity,
-          unit_cost: movementData.unitCost || 0,
-          total_cost: (movementData.quantity || 0) * (movementData.unitCost || 0),
-          reference_document: movementData.referenceDocument || null,
-          processed_by: movementData.processedBy
-        })
-        .select(`
-          *,
-          supply:supply_id(name),
-          processed_by_user:processed_by(first_name, last_name)
-        `)
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error adding movement:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Obtener movimientos de un suministro
-  async getMovements(supplyId, limit = 20) {
-    try {
-      const { data, error } = await supabase
-        .from('supply_movements')
-        .select(`
-          id,
-          movement_type,
-          quantity,
-          unit_cost,
-          total_cost,
-          reference_document,
-          created_at,
-          supply:supply_id(name),
-          processed_by_user:processed_by(first_name, last_name)
-        `)
-        .eq('supply_id', supplyId)
-        .order('created_at', { ascending: false })
-        .limit(limit)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error fetching movements:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Resolver alerta
-  async resolveAlert(alertId, userId) {
-    try {
-      const { error } = await supabase
-        .from('inventory_alerts')
-        .update({
-          is_resolved: true,
-          resolved_by: userId,
-          resolved_at: new Date().toISOString()
-        })
-        .eq('id', alertId)
-
-      if (error) throw error
-      return { error: null }
-    } catch (error) {
-      console.error('Error resolving alert:', error)
-      return { error }
-    }
-  },
-
-  // Crear categoría
-  async createCategory(categoryData) {
-    try {
-      const { data, error } = await supabase
-        .from('supply_categories')
-        .insert({
-          name: categoryData.name,
-          parent_category_id: categoryData.parentCategoryId || null,
-          is_active: true
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error creating category:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Crear proveedor
-  async createSupplier(supplierData) {
-    try {
-      const { data, error } = await supabase
-        .from('suppliers')
-        .insert({
-          name: supplierData.name,
-          contact_person: supplierData.contactPerson || null,
-          email: supplierData.email || null,
-          phone: supplierData.phone || null,
-          tax_id: supplierData.taxId || null,
-          payment_terms: supplierData.paymentTerms || null,
-          is_active: true
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error creating supplier:', error)
-      return { data: null, error }
-    }
-  },
-
-  // Buscar suministros
-  async searchSupplies(searchTerm, limit = 10) {
-    try {
-      const { data, error } = await supabase
-        .from('supplies')
-        .select(`
-          id,
-          name,
-          sku,
-          current_stock,
-          minimum_stock,
-          category:category_id(name)
-        `)
-        .eq('is_active', true)
-        .or(`name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
-        .order('name')
-        .limit(limit)
-
-      if (error) throw error
-      return { data, error: null }
-    } catch (error) {
-      console.error('Error searching supplies:', error)
-      return { data: [], error }
-    }
-  },
-
-  // Utilidades
-  getStockStatus(currentStock, minimumStock) {
-    if (currentStock === 0) return 'out_of_stock'
-    if (currentStock <= minimumStock) return 'low_stock'
-    if (currentStock <= minimumStock * 1.5) return 'medium_stock'
-    return 'good_stock'
-  },
-
-  getStockStatusColor(status) {
-    const colors = {
-      'out_of_stock': 'text-red-800 bg-red-100 border-red-200',
-      'low_stock': 'text-orange-800 bg-orange-100 border-orange-200',
-      'medium_stock': 'text-yellow-800 bg-yellow-100 border-yellow-200',
-      'good_stock': 'text-green-800 bg-green-100 border-green-200'
-    }
-    return colors[status] || colors.good_stock
-  },
-
-  getStockStatusText(status) {
-    const texts = {
-      'out_of_stock': 'Agotado',
-      'low_stock': 'Stock Bajo',
-      'medium_stock': 'Stock Medio',
-      'good_stock': 'Stock Bueno'
-    }
-    return texts[status] || 'Desconocido'
-  },
-
-  formatMovementType(type) {
-    const types = {
-      'in': 'Entrada',
-      'out': 'Salida',
-      'adjustment': 'Ajuste'
-    }
-    return types[type] || type
-  }
+export default {
+  supabase,
+  authService,
+  roomService,
+  reservationService,
+  guestService,
+  paymentService,
+  reportService,
+  quickCheckinService,
+  snackService, // ✅ Nuevo servicio de snacks
+  utilityService,
+  realtimeService,
+  branchService,
+  db
 }

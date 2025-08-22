@@ -1,3 +1,4 @@
+// src/components/checkin/SnackSelection.jsx - VERSIÓN COMPLETA ACTUALIZADA
 import React from 'react';
 import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X, LogOut, LogIn, User } from 'lucide-react';
 import Button from '../common/Button';
@@ -23,6 +24,153 @@ const SnackSelection = ({
   isCheckout = false
 }) => {
 
+  // ✅ DEBUG: Agregar debug completo
+  React.useEffect(() => {
+    console.log('🍿 SnackSelection Debug Info:', {
+      snackTypes: snackTypes,
+      snackTypesLength: snackTypes?.length,
+      snackTypesType: typeof snackTypes,
+      snackTypesIsArray: Array.isArray(snackTypes),
+      snackItems: snackItems,
+      snackItemsLength: snackItems?.length,
+      snackItemsType: typeof snackItems,
+      snackItemsIsArray: Array.isArray(snackItems),
+      selectedSnackType,
+      selectedSnacks,
+      selectedSnacksLength: selectedSnacks?.length,
+      currentOrder,
+      guestData,
+      isCheckout
+    })
+
+    // Debug de sample data
+    if (snackItems && Array.isArray(snackItems) && snackItems.length > 0) {
+      console.log('🔍 Sample snack items:', snackItems.slice(0, 3))
+    }
+
+    if (snackTypes && Array.isArray(snackTypes) && snackTypes.length > 0) {
+      console.log('🔍 Sample snack types:', snackTypes.slice(0, 3))
+    }
+  }, [snackTypes, snackItems, selectedSnackType, selectedSnacks, currentOrder, guestData, isCheckout])
+
+  // ✅ FUNCIÓN MEJORADA: Procesar snack items con mejor mapeo
+  const processedSnackItems = React.useMemo(() => {
+    console.log('🔄 Processing snack items...', { 
+      snackItems, 
+      snackTypes,
+      snackItemsLength: snackItems?.length,
+      snackTypesLength: snackTypes?.length 
+    })
+    
+    // Validaciones básicas
+    if (!snackItems || !Array.isArray(snackItems)) {
+      console.warn('⚠️ No snack items or not an array:', snackItems)
+      return {}
+    }
+
+    if (!snackTypes || !Array.isArray(snackTypes)) {
+      console.warn('⚠️ No snack types or not an array:', snackTypes)
+      return {}
+    }
+
+    if (snackItems.length === 0) {
+      console.warn('⚠️ Snack items array is empty')
+      return {}
+    }
+
+    if (snackTypes.length === 0) {
+      console.warn('⚠️ Snack types array is empty')
+      return {}
+    }
+
+    // Agrupar items por tipo usando mapeo inteligente
+    const grouped = {}
+    
+    // Inicializar grupos vacíos para todos los tipos
+    snackTypes.forEach(type => {
+      grouped[type.id] = []
+    })
+
+    // Función para encontrar coincidencias entre categorías y tipos
+    const findMatchingType = (item) => {
+      const categoryName = (item.category_name || '').toLowerCase()
+      const categorySlug = item.category_slug || ''
+      
+      // 1. Coincidencia exacta por slug
+      let matchingType = snackTypes.find(type => type.id === categorySlug)
+      if (matchingType) return matchingType
+      
+      // 2. Coincidencia por nombres similares
+      matchingType = snackTypes.find(type => {
+        const typeName = type.name.toLowerCase()
+        
+        // Mapeo específico de categorías a tipos
+        const categoryMappings = {
+          'bebidas frías': ['bebidas-frias', 'bebidas frias'],
+          'bebidas calientes': ['bebidas-calientes', 'bebidas calientes'],
+          'snacks dulces': ['snacks-dulces', 'snacks dulces'],
+          'snacks salados': ['snacks-salados', 'snacks salados'],
+          'productos lácteos': ['productos-lacteos', 'productos lacteos'],
+          'frutas y saludables': ['frutas-saludables', 'frutas saludables'],
+          'servicios extras': ['servicios-extras', 'servicios extras'],
+          'alcohol': ['alcohol']
+        }
+        
+        // Buscar en el mapeo
+        for (const [dbCategory, typeVariants] of Object.entries(categoryMappings)) {
+          if (categoryName.includes(dbCategory) || dbCategory.includes(categoryName)) {
+            return typeVariants.some(variant => 
+              type.id === variant || typeName.includes(variant) || variant.includes(typeName)
+            )
+          }
+        }
+        
+        // Coincidencia parcial como fallback
+        return typeName.includes(categoryName.split(' ')[0]) || 
+               categoryName.includes(typeName.split(' ')[0])
+      })
+      
+      return matchingType
+    }
+
+    // Procesar cada item y asignarlo al grupo correcto
+    snackItems.forEach((item, index) => {
+      console.log(`📦 Processing item ${index + 1}:`, {
+        name: item.name,
+        category_name: item.category_name,
+        category_slug: item.category_slug,
+        price: item.price,
+        stock: item.stock
+      })
+      
+      const matchingType = findMatchingType(item)
+      
+      if (matchingType) {
+        grouped[matchingType.id].push(item)
+        console.log(`✅ Item "${item.name}" assigned to type "${matchingType.name}"`)
+      } else {
+        // Fallback: asignar al primer tipo disponible
+        if (snackTypes.length > 0) {
+          grouped[snackTypes[0].id].push(item)
+          console.log(`⚠️ Item "${item.name}" assigned to fallback type "${snackTypes[0].name}"`)
+        } else {
+          console.error(`❌ No types available for item "${item.name}"`)
+        }
+      }
+    })
+
+    // Log del resultado final
+    console.log('✅ Final grouped snack items:', Object.keys(grouped).map(key => ({
+      type: key,
+      typeName: snackTypes.find(t => t.id === key)?.name,
+      itemCount: grouped[key].length,
+      items: grouped[key].map(item => item.name)
+    })))
+
+    return grouped
+  }, [snackItems, snackTypes])
+
+  // ✅ FUNCIÓN HELPER: Calcular totales
   const getTotalSnacks = () => {
     return selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0);
   };
@@ -34,36 +182,15 @@ const SnackSelection = ({
     return (currentOrder?.roomPrice || 0) + getTotalSnacks();
   };
 
-  // ✅ VALIDACIÓN SIMPLIFICADA - Solo nombre y documento
+  // ✅ VALIDACIÓN MEJORADA
   const isGuestDataValid = () => {
     if (isCheckout) {
-      // Para check-out, solo necesitamos el nombre (ya debería existir)
-      return guestData?.fullName?.trim();
+      return guestData?.fullName?.trim()
     }
-    // Para check-in, solo validar los 2 campos obligatorios
-    return guestData?.fullName?.trim() && guestData?.documentNumber?.trim();
-  };
+    return guestData?.fullName?.trim() && guestData?.documentNumber?.trim()
+  }
 
-  // ✅ Procesar datos de snacks del hook actualizado
-  const processedSnackItems = React.useMemo(() => {
-    if (!snackItems || !Array.isArray(snackItems)) {
-      return {};
-    }
-
-    // Agrupar items por categoría
-    const grouped = {};
-    snackItems.forEach(item => {
-      const categoryId = item.category_id;
-      if (!grouped[categoryId]) {
-        grouped[categoryId] = [];
-      }
-      grouped[categoryId].push(item);
-    });
-
-    return grouped;
-  }, [snackItems]);
-
-  // Validate data
+  // ✅ VERIFICACIÓN DE DATOS
   if (!currentOrder) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -74,14 +201,70 @@ const SnackSelection = ({
           </Button>
         </div>
       </div>
-    );
+    )
   }
 
-  // ✅ Compatibilidad mejorada con datos del hook
-  const roomNumber = currentOrder?.room?.number || currentOrder?.room?.room_number || 'N/A';
+  // ✅ Obtener número de habitación
+  const roomNumber = currentOrder?.room?.number || currentOrder?.room?.room_number || 'N/A'
+
+  // ✅ DEBUG: Mostrar información de debug en desarrollo
+  const showDebugInfo = process.env.NODE_ENV === 'development'
 
   return (
     <div>
+      {/* ✅ DEBUG INFO - Solo en desarrollo */}
+      {showDebugInfo && (
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <h4 className="font-bold text-yellow-800 mb-2">🐛 Debug Info (Development)</h4>
+          <div className="text-sm text-yellow-700 space-y-1">
+            <p><strong>Snack Types:</strong> {snackTypes?.length || 0} tipos disponibles</p>
+            <p><strong>Snack Items:</strong> {snackItems?.length || 0} items disponibles</p>
+            <p><strong>Processed Groups:</strong> {Object.keys(processedSnackItems).length} grupos procesados</p>
+            <p><strong>Selected Type:</strong> {selectedSnackType || 'Ninguno'}</p>
+            <p><strong>Selected Snacks:</strong> {selectedSnacks?.length || 0}</p>
+            <p><strong>Is Checkout:</strong> {isCheckout ? 'Sí' : 'No'}</p>
+            <p><strong>Guest Data Valid:</strong> {isGuestDataValid() ? 'Sí' : 'No'}</p>
+            
+            {Object.keys(processedSnackItems).length > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer font-medium">Ver agrupación detallada</summary>
+                <div className="mt-2 text-xs bg-yellow-100 p-2 rounded overflow-auto max-h-32">
+                  {Object.entries(processedSnackItems).map(([typeId, items]) => (
+                    <div key={typeId} className="mb-1">
+                      <strong>{snackTypes?.find(t => t.id === typeId)?.name || typeId}:</strong> {items.length} items
+                      {items.length > 0 && (
+                        <div className="ml-2 text-gray-600">
+                          {items.slice(0, 3).map(item => item.name).join(', ')}
+                          {items.length > 3 && '...'}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+            
+            <details className="mt-2">
+              <summary className="cursor-pointer font-medium">Ver datos raw</summary>
+              <pre className="mt-2 text-xs bg-yellow-100 p-2 rounded overflow-auto max-h-32">
+                {JSON.stringify({
+                  snackTypesCount: snackTypes?.length,
+                  snackItemsCount: snackItems?.length,
+                  snackTypesSample: snackTypes?.slice(0, 2),
+                  snackItemsSample: snackItems?.slice(0, 2),
+                  processedKeys: Object.keys(processedSnackItems),
+                  currentOrder: {
+                    room: currentOrder?.room?.number,
+                    price: currentOrder?.roomPrice
+                  }
+                }, null, 2)}
+              </pre>
+            </details>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ HEADER */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-800 flex items-center">
           {isCheckout ? (
@@ -116,7 +299,7 @@ const SnackSelection = ({
       </div>
 
       <div className="space-y-6">
-        {/* FORMULARIO DEL HUÉSPED - Diferente comportamiento para check-out */}
+        {/* ✅ FORMULARIO DEL HUÉSPED */}
         {isCheckout ? (
           // Para check-out: Solo mostrar información del huésped (no editable)
           <div className="bg-white border-2 border-red-200 rounded-lg p-6">
@@ -169,7 +352,7 @@ const SnackSelection = ({
             </div>
           </div>
         ) : (
-          // Para check-in: Formulario completo editable (simplificado)
+          // Para check-in: Formulario completo editable
           <GuestRegistrationForm
             guestData={guestData}
             onGuestDataChange={onGuestDataChange}
@@ -179,7 +362,7 @@ const SnackSelection = ({
           />
         )}
 
-        {/* SECCIÓN DE SNACKS - Solo si los datos del huésped son válidos */}
+        {/* ✅ SECCIÓN DE SNACKS - Solo si los datos del huésped son válidos */}
         {isGuestDataValid() ? (
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
@@ -187,30 +370,94 @@ const SnackSelection = ({
               {isCheckout ? 'Servicios Adicionales para Check-out' : 'Snacks Opcionales'}
             </h3>
 
-            {/* Grid de 3 Columnas para Snacks */}
+            {/* ✅ VERIFICACIÓN DE DATOS DE SNACKS */}
+            {(!snackTypes || snackTypes.length === 0) && (
+              <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <p className="text-orange-800 text-sm font-medium">
+                  ⚠️ <strong>Tipos de snacks no disponibles.</strong>
+                </p>
+                <p className="text-orange-700 text-sm mt-1">
+                  Verifica que el hook useQuickCheckins esté cargando los snackTypes correctamente.
+                </p>
+                {showDebugInfo && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs">Ver diagnóstico</summary>
+                    <div className="mt-2 text-xs bg-orange-100 p-2 rounded">
+                      <p><strong>snackTypes:</strong> {JSON.stringify(snackTypes)}</p>
+                      <p><strong>typeof:</strong> {typeof snackTypes}</p>
+                      <p><strong>isArray:</strong> {Array.isArray(snackTypes) ? 'Sí' : 'No'}</p>
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {(!snackItems || snackItems.length === 0) && (
+              <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <p className="text-orange-800 text-sm font-medium">
+                  ⚠️ <strong>Items de snacks no disponibles.</strong>
+                </p>
+                <p className="text-orange-700 text-sm mt-1">
+                  Ejecuta el script de la base de datos para agregar productos o verifica la conexión a Supabase.
+                </p>
+                {showDebugInfo && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs">Ver solución paso a paso</summary>
+                    <div className="mt-2 text-xs bg-orange-100 p-2 rounded">
+                      <p><strong>Pasos para solucionar:</strong></p>
+                      <ol className="list-decimal list-inside space-y-1 mt-1">
+                        <li>Ve a Supabase → SQL Editor</li>
+                        <li>Ejecuta el script "Completar Base de Datos - Snacks"</li>
+                        <li>Verifica que las tablas snack_categories y snack_items tengan datos</li>
+                        <li>Recarga la página</li>
+                        <li>Verifica en la consola que no haya errores de API</li>
+                      </ol>
+                      <div className="mt-2 p-1 bg-orange-200 rounded">
+                        <p><strong>Debug info:</strong></p>
+                        <p>snackItems: {JSON.stringify(snackItems)}</p>
+                        <p>typeof: {typeof snackItems}</p>
+                        <p>isArray: {Array.isArray(snackItems) ? 'Sí' : 'No'}</p>
+                      </div>
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {/* ✅ GRID DE 3 COLUMNAS PARA SNACKS */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[500px]">
               
               {/* Columna 1: Tipos de Snack */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <h4 className="text-md font-semibold mb-4 text-center">TIPOS DE SERVICIOS</h4>
-                <div className="space-y-3">
-                  {snackTypes?.map((type) => (
-                    <button
-                      key={type.id}
-                      onClick={() => onSnackTypeSelect(type.id)}
-                      disabled={loading}
-                      className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
-                        selectedSnackType === type.id
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-gray-300 bg-white'
-                      } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      <h5 className="font-bold text-sm mb-1">{type.name}</h5>
-                      <p className="text-xs text-gray-600">{type.description}</p>
-                    </button>
-                  )) || (
+                <div className="space-y-3 overflow-y-auto h-[400px]">
+                  {snackTypes && snackTypes.length > 0 ? (
+                    snackTypes.map((type) => (
+                      <button
+                        key={type.id}
+                        onClick={() => onSnackTypeSelect(type.id)}
+                        disabled={loading}
+                        className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
+                          selectedSnackType === type.id
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                        } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <h5 className="font-bold text-sm mb-1">{type.name}</h5>
+                        <p className="text-xs text-gray-600">{type.description}</p>
+                        {processedSnackItems[type.id] && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            {processedSnackItems[type.id].length} productos disponibles
+                          </p>
+                        )}
+                      </button>
+                    ))
+                  ) : (
                     <div className="text-center text-gray-500 py-8">
-                      <p>No hay tipos de servicios disponibles</p>
+                      <p className="text-sm font-medium">No hay tipos de servicios disponibles</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {showDebugInfo ? 'Verifica el hook useQuickCheckins' : 'Contacta al administrador'}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -225,42 +472,77 @@ const SnackSelection = ({
                   }
                 </h4>
                 
-                {selectedSnackType && processedSnackItems[selectedSnackType] ? (
-                  <div className="space-y-3 overflow-y-auto h-[400px]">
-                    {processedSnackItems[selectedSnackType].map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => onSnackSelect(item)}
-                        disabled={loading}
-                        className={`w-full p-3 bg-white border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all text-left ${
-                          loading ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <h5 className="font-semibold text-sm">{item.name}</h5>
-                            <p className="text-green-600 font-bold text-sm">S/ {item.price.toFixed(2)}</p>
-                            {item.description && (
-                              <p className="text-xs text-gray-500 mt-1">{item.description}</p>
-                            )}
-                            {item.stock !== undefined && (
-                              <p className="text-xs text-gray-400">Stock: {item.stock}</p>
+                {selectedSnackType ? (
+                  processedSnackItems[selectedSnackType] && processedSnackItems[selectedSnackType].length > 0 ? (
+                    <div className="space-y-3 overflow-y-auto h-[400px]">
+                      {processedSnackItems[selectedSnackType].map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => onSnackSelect(item)}
+                          disabled={loading || item.stock === 0}
+                          className={`w-full p-3 bg-white border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all text-left ${
+                            loading || item.stock === 0 ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div className="flex-1">
+                              <h5 className="font-semibold text-sm">{item.name}</h5>
+                              <p className="text-green-600 font-bold text-sm">S/ {item.price.toFixed(2)}</p>
+                              {item.description && (
+                                <p className="text-xs text-gray-500 mt-1">{item.description}</p>
+                              )}
+                              <div className="flex items-center space-x-2 mt-1">
+                                <span className={`text-xs px-2 py-1 rounded ${
+                                  item.stock === 0 
+                                    ? 'bg-red-100 text-red-800' 
+                                    : item.stock <= item.minimum_stock
+                                      ? 'bg-orange-100 text-orange-800'
+                                      : 'bg-green-100 text-green-800'
+                                }`}>
+                                  Stock: {item.stock}
+                                </span>
+                                {item.stock === 0 && (
+                                  <span className="text-xs text-red-600 font-medium">Agotado</span>
+                                )}
+                                {item.low_stock && item.stock > 0 && (
+                                  <span className="text-xs text-orange-600 font-medium">Stock Bajo</span>
+                                )}
+                              </div>
+                            </div>
+                            {selectedSnacks.find(s => s.id === item.id) && (
+                              <div className="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold ml-2">
+                                {selectedSnacks.find(s => s.id === item.id)?.quantity}
+                              </div>
                             )}
                           </div>
-                          {selectedSnacks.find(s => s.id === item.id) && (
-                            <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
-                              {selectedSnacks.find(s => s.id === item.id)?.quantity}
-                            </div>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-[400px] text-gray-500">
+                      <div className="text-center">
+                        <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                        <p className="text-sm font-medium">No hay productos disponibles en esta categoría</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Categoría: {snackTypes?.find(t => t.id === selectedSnackType)?.name}
+                        </p>
+                        {showDebugInfo && (
+                          <div className="mt-2 text-xs text-gray-600">
+                            <p>Items procesados para este tipo: {processedSnackItems[selectedSnackType]?.length || 0}</p>
+                            <p>Total items disponibles: {snackItems?.length || 0}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
                 ) : (
                   <div className="flex items-center justify-center h-[400px] text-gray-500">
                     <div className="text-center">
                       <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                      <p>Selecciona un tipo de servicio para ver la lista</p>
+                      <p className="text-sm">Selecciona un tipo de servicio para ver la lista</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {snackTypes?.length || 0} tipos disponibles
+                      </p>
                     </div>
                   </div>
                 )}
@@ -349,6 +631,7 @@ const SnackSelection = ({
                                   onClick={() => onSnackRemove(snack.id)}
                                   disabled={loading}
                                   className="text-red-500 hover:text-red-700 text-xs p-1 disabled:opacity-50"
+                                  title="Eliminar item"
                                 >
                                   <X size={14} />
                                 </button>
@@ -358,6 +641,7 @@ const SnackSelection = ({
                                   onClick={() => onQuantityUpdate(snack.id, Math.max(1, snack.quantity - 1))}
                                   disabled={loading}
                                   className="w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600 disabled:opacity-50"
+                                  title="Reducir cantidad"
                                 >
                                   <Minus size={12} />
                                 </button>
@@ -366,6 +650,7 @@ const SnackSelection = ({
                                   onClick={() => onQuantityUpdate(snack.id, snack.quantity + 1)}
                                   disabled={loading}
                                   className="w-6 h-6 bg-green-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-green-600 disabled:opacity-50"
+                                  title="Aumentar cantidad"
                                 >
                                   <Plus size={12} />
                                 </button>
@@ -402,27 +687,22 @@ const SnackSelection = ({
 
                   {/* Botones de acción */}
                   <div className="space-y-2">
-                    {/* Botón principal - diferente para check-in vs check-out */}
                     {isCheckout ? (
-                      <>
-                        {/* Un solo botón para check-out (con o sin servicios) */}
-                        <Button
-                          variant="danger"
-                          onClick={onConfirmOrder}
-                          disabled={loading || !isGuestDataValid()}
-                          className="w-full text-sm py-3"
-                          icon={LogOut}
-                        >
-                          ✅ Procesar Check-out
-                          <div className="text-xs opacity-90">
-                            S/ {getTotalOrder().toFixed(2)}
-                            {selectedSnacks.length > 0 && " (incluye servicios)"}
-                          </div>
-                        </Button>
-                      </>
+                      <Button
+                        variant="danger"
+                        onClick={onConfirmOrder}
+                        disabled={loading || !isGuestDataValid()}
+                        className="w-full text-sm py-3"
+                        icon={LogOut}
+                      >
+                        ✅ Procesar Check-out
+                        <div className="text-xs opacity-90">
+                          S/ {getTotalOrder().toFixed(2)}
+                          {selectedSnacks.length > 0 && " (incluye servicios)"}
+                        </div>
+                      </Button>
                     ) : (
                       <>
-                        {/* Botones para check-in */}
                         <Button
                           variant="success"
                           onClick={onConfirmRoomOnly}
@@ -433,7 +713,6 @@ const SnackSelection = ({
                           <div className="text-xs opacity-90">S/ {(currentOrder?.roomPrice || 0).toFixed(2)}</div>
                         </Button>
                         
-                        {/* Botón para habitación + snacks - solo si hay snacks */}
                         {selectedSnacks && selectedSnacks.length > 0 && (
                           <Button
                             variant="primary"
@@ -458,12 +737,24 @@ const SnackSelection = ({
                       Cancelar
                     </Button>
                   </div>
+
+                  {/* Debug info en resumen */}
+                  {showDebugInfo && (
+                    <div className="mt-4 p-2 bg-gray-100 rounded text-xs">
+                      <p><strong>Debug Resumen:</strong></p>
+                      <p>Room Price: S/ {currentOrder?.roomPrice || 0}</p>
+                      <p>Snacks Total: S/ {getTotalSnacks()}</p>
+                      <p>Order Total: S/ {getTotalOrder()}</p>
+                      <p>Selected Snacks: {selectedSnacks?.length || 0}</p>
+                      <p>Guest Valid: {isGuestDataValid() ? 'Sí' : 'No'}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          /* Mensaje si faltan datos del huésped */
+          /* ✅ MENSAJE SI FALTAN DATOS DEL HUÉSPED */
           <div className={`border rounded-lg p-6 text-center ${
             isCheckout 
               ? 'bg-red-50 border-red-200' 
@@ -481,7 +772,6 @@ const SnackSelection = ({
               }
             </p>
             
-            {/* Mostrar qué campos faltan */}
             {!isCheckout && (
               <div className="mt-3 text-sm">
                 <p className="font-medium text-yellow-800 mb-2">Campos faltantes:</p>
@@ -497,6 +787,16 @@ const SnackSelection = ({
                     </span>
                   )}
                 </div>
+              </div>
+            )}
+
+            {showDebugInfo && (
+              <div className="mt-4 p-2 bg-yellow-100 rounded text-xs text-left">
+                <p><strong>Debug Guest Data:</strong></p>
+                <p>fullName: "{guestData?.fullName}"</p>
+                <p>documentNumber: "{guestData?.documentNumber}"</p>
+                <p>isCheckout: {isCheckout ? 'true' : 'false'}</p>
+                <p>isValid: {isGuestDataValid() ? 'true' : 'false'}</p>
               </div>
             )}
           </div>
