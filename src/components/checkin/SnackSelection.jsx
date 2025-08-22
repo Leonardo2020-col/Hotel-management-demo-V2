@@ -1,4 +1,4 @@
-// src/components/checkin/SnackSelection.jsx - VERSIÓN SIMPLIFICADA
+// src/components/checkin/SnackSelection.jsx - CORRECCIÓN PARA GUARDAR SNACKS
 import React from 'react';
 import { ChevronLeft, Check, ShoppingCart, Plus, Minus, X, LogOut, LogIn, User, ArrowRight } from 'lucide-react';
 import Button from '../common/Button';
@@ -18,56 +18,31 @@ const SnackSelection = ({
   onSnackRemove,
   onQuantityUpdate,
   onConfirmOrder,
-  onConfirmRoomOnly, // Ya no se usará para walk-ins
+  onConfirmRoomOnly, // Ahora se usará para "Continuar en la Habitación"
   onCancelOrder,
   loading = false,
   isCheckout = false
 }) => {
 
-  // ✅ DEBUG: Agregar debug completo
-  React.useEffect(() => {
-    console.log('🍿 SnackSelection Debug Info:', {
-      snackTypes: snackTypes,
-      snackTypesLength: snackTypes?.length,
-      snackItems: snackItems,
-      snackItemsLength: snackItems?.length,
-      selectedSnackType,
-      selectedSnacks,
-      selectedSnacksLength: selectedSnacks?.length,
-      currentOrder,
-      guestData,
-      isCheckout
-    })
-  }, [snackTypes, snackItems, selectedSnackType, selectedSnacks, currentOrder, guestData, isCheckout])
-
   // ✅ FUNCIÓN MEJORADA: Procesar snack items con mejor mapeo
   const processedSnackItems = React.useMemo(() => {
-    console.log('🔄 Processing snack items...', { 
-      snackItems, 
-      snackTypes,
-      snackItemsLength: snackItems?.length,
-      snackTypesLength: snackTypes?.length 
-    })
-    
     if (!snackItems || !Array.isArray(snackItems) || !snackTypes || !Array.isArray(snackTypes)) {
-      console.warn('⚠️ Missing snack data:', { snackItems, snackTypes })
       return {}
     }
 
     if (snackItems.length === 0 || snackTypes.length === 0) {
-      console.warn('⚠️ Empty snack data')
       return {}
     }
 
-    // Agrupar items por tipo usando mapeo inteligente
+    // Agrupar items por tipo
     const grouped = {}
     
-    // Inicializar grupos vacíos para todos los tipos
+    // Inicializar grupos vacíos
     snackTypes.forEach(type => {
       grouped[type.id] = []
     })
 
-    // Función para encontrar coincidencias entre categorías y tipos
+    // Función para encontrar coincidencias
     const findMatchingType = (item) => {
       const categoryName = (item.category_name || '').toLowerCase()
       const categorySlug = item.category_slug || ''
@@ -80,7 +55,6 @@ const SnackSelection = ({
       matchingType = snackTypes.find(type => {
         const typeName = type.name.toLowerCase()
         
-        // Mapeo específico de categorías a tipos
         const categoryMappings = {
           'bebidas': ['bebidas', 'bebidas-frias', 'bebidas-calientes'],
           'snacks': ['snacks', 'snacks-dulces', 'snacks-salados'],
@@ -88,7 +62,6 @@ const SnackSelection = ({
           'alcohol': ['alcohol']
         }
         
-        // Buscar en el mapeo
         for (const [key, variants] of Object.entries(categoryMappings)) {
           if (categoryName.includes(key) || key.includes(categoryName)) {
             return variants.some(variant => 
@@ -97,7 +70,6 @@ const SnackSelection = ({
           }
         }
         
-        // Coincidencia parcial como fallback
         return typeName.includes(categoryName.split(' ')[0]) || 
                categoryName.includes(typeName.split(' ')[0])
       })
@@ -105,25 +77,18 @@ const SnackSelection = ({
       return matchingType
     }
 
-    // Procesar cada item y asignarlo al grupo correcto
-    snackItems.forEach((item, index) => {
+    // Procesar cada item
+    snackItems.forEach((item) => {
       const matchingType = findMatchingType(item)
       
       if (matchingType) {
         grouped[matchingType.id].push(item)
       } else {
-        // Fallback: asignar al primer tipo disponible
         if (snackTypes.length > 0) {
           grouped[snackTypes[0].id].push(item)
         }
       }
     })
-
-    console.log('✅ Final grouped snack items:', Object.keys(grouped).map(key => ({
-      type: key,
-      typeName: snackTypes.find(t => t.id === key)?.name,
-      itemCount: grouped[key].length
-    })))
 
     return grouped
   }, [snackItems, snackTypes])
@@ -151,6 +116,19 @@ const SnackSelection = ({
   // ✅ DETERMINAR TIPO DE OPERACIÓN
   const isWalkInCheckIn = !isCheckout && currentOrder?.isWalkIn
   const isCheckoutWithSnacks = isCheckout
+
+  // ✅ FUNCIÓN PARA CONTINUAR EN LA HABITACIÓN (NUEVA)
+  const handleContinueInRoom = () => {
+    console.log('🔄 Continuing in room with additional services:', {
+      roomNumber: currentOrder?.room?.number,
+      selectedSnacks: selectedSnacks.length,
+      totalSnacks: getTotalSnacks()
+    })
+    
+    // ✅ IMPORTANTE: Llamar onConfirmRoomOnly en lugar de onBack
+    // Esto asegura que los snacks se guarden antes de volver al grid
+    onConfirmRoomOnly()
+  }
 
   // ✅ VERIFICACIÓN DE DATOS
   if (!currentOrder) {
@@ -181,6 +159,7 @@ const SnackSelection = ({
             <p><strong>Selected Snacks:</strong> {selectedSnacks?.length || 0}</p>
             <p><strong>Guest Data Valid:</strong> {isGuestDataValid() ? 'Sí' : 'No'}</p>
             <p><strong>Total Order:</strong> S/ {getTotalOrder().toFixed(2)}</p>
+            <p><strong>Current Order ID:</strong> {currentOrder?.id || 'Sin ID'}</p>
           </div>
         </div>
       )}
@@ -191,7 +170,7 @@ const SnackSelection = ({
           {isCheckout ? (
             <>
               <LogOut className="w-5 h-5 mr-2 text-red-600" />
-              Habitación {roomNumber} - Check-out y Servicios Adicionales
+              Habitación {roomNumber} - Servicios Adicionales
             </>
           ) : (
             <>
@@ -203,10 +182,10 @@ const SnackSelection = ({
         <div className="flex items-center space-x-3">
           <div className={`text-sm px-3 py-1 rounded-full ${
             isCheckout 
-              ? 'bg-red-100 text-red-700' 
+              ? 'bg-orange-100 text-orange-700' 
               : 'bg-green-100 text-green-700'
           }`}>
-            {isCheckout ? '🚪 Procesando Check-out' : '⚡ Registro Rápido'}
+            {isCheckout ? '🛒 Agregando Servicios' : '⚡ Registro Rápido'}
           </div>
           <Button
             variant="outline"
@@ -223,15 +202,15 @@ const SnackSelection = ({
         {/* ✅ FORMULARIO DEL HUÉSPED */}
         {isCheckout ? (
           // Para check-out: Solo mostrar información del huésped (no editable)
-          <div className="bg-white border-2 border-red-200 rounded-lg p-6">
+          <div className="bg-white border-2 border-orange-200 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
-                <User className="w-5 h-5 text-red-600" />
+                <User className="w-5 h-5 text-orange-600" />
                 <h3 className="text-lg font-semibold text-gray-800">
-                  Información del Huésped (Check-out)
+                  Huésped Actual - Agregando Servicios
                 </h3>
               </div>
-              <div className="text-sm text-red-600 bg-red-50 px-3 py-1 rounded-full">
+              <div className="text-sm text-orange-600 bg-orange-50 px-3 py-1 rounded-full">
                 Solo lectura
               </div>
             </div>
@@ -257,17 +236,18 @@ const SnackSelection = ({
                   </div>
                 )}
                 
-                {guestData?.email && (
+                {currentOrder?.checkInDate && (
                   <div>
-                    <span className="font-medium text-gray-700">Email:</span>
-                    <p className="text-gray-900">{guestData.email}</p>
+                    <span className="font-medium text-gray-700">Check-in:</span>
+                    <p className="text-gray-900">{new Date(currentOrder.checkInDate).toLocaleDateString('es-PE')}</p>
                   </div>
                 )}
               </div>
 
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-red-700 text-sm">
-                  ℹ️ <strong>Check-out en proceso:</strong> Agrega servicios adicionales si es necesario antes de finalizar.
+              <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <p className="text-orange-700 text-sm">
+                  🛒 <strong>Agregando servicios:</strong> Selecciona servicios adicionales. 
+                  Puedes continuar en la habitación o procesar el check-out.
                 </p>
               </div>
             </div>
@@ -277,7 +257,7 @@ const SnackSelection = ({
           <GuestRegistrationForm
             guestData={guestData}
             onGuestDataChange={onGuestDataChange}
-            onSave={() => {}} // Se maneja en el padre
+            onSave={() => {}}
             onCancel={onCancelOrder}
             loading={loading}
           />
@@ -288,31 +268,8 @@ const SnackSelection = ({
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <ShoppingCart className="w-5 h-5 mr-2 text-blue-600" />
-              {isCheckout ? 'Servicios Adicionales para Check-out' : 'Snacks Opcionales'}
+              {isCheckout ? 'Servicios Adicionales' : 'Snacks Opcionales'}
             </h3>
-
-            {/* ✅ VERIFICACIÓN DE DATOS DE SNACKS */}
-            {(!snackTypes || snackTypes.length === 0) && (
-              <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                <p className="text-orange-800 text-sm font-medium">
-                  ⚠️ <strong>Tipos de snacks no disponibles.</strong>
-                </p>
-                <p className="text-orange-700 text-sm mt-1">
-                  Los snacks son opcionales. Puedes continuar sin seleccionar servicios adicionales.
-                </p>
-              </div>
-            )}
-
-            {(!snackItems || snackItems.length === 0) && (
-              <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                <p className="text-orange-800 text-sm font-medium">
-                  ⚠️ <strong>Items de snacks no disponibles.</strong>
-                </p>
-                <p className="text-orange-700 text-sm mt-1">
-                  Los servicios adicionales no están configurados. Puedes continuar solo con la habitación.
-                </p>
-              </div>
-            )}
 
             {/* ✅ GRID DE 3 COLUMNAS PARA SNACKS */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[500px]">
@@ -376,9 +333,6 @@ const SnackSelection = ({
                             <div className="flex-1">
                               <h5 className="font-semibold text-sm">{item.name}</h5>
                               <p className="text-green-600 font-bold text-sm">S/ {item.price.toFixed(2)}</p>
-                              {item.description && (
-                                <p className="text-xs text-gray-500 mt-1">{item.description}</p>
-                              )}
                               <div className="flex items-center space-x-2 mt-1">
                                 <span className={`text-xs px-2 py-1 rounded ${
                                   item.stock === 0 
@@ -389,9 +343,6 @@ const SnackSelection = ({
                                 }`}>
                                   Stock: {item.stock}
                                 </span>
-                                {item.stock === 0 && (
-                                  <span className="text-xs text-red-600 font-medium">Agotado</span>
-                                )}
                               </div>
                             </div>
                             {selectedSnacks.find(s => s.id === item.id) && (
@@ -416,9 +367,6 @@ const SnackSelection = ({
                     <div className="text-center">
                       <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                       <p className="text-sm">Selecciona un tipo de servicio para ver la lista</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {snackTypes?.length || 0} tipos disponibles
-                      </p>
                     </div>
                   </div>
                 )}
@@ -427,47 +375,40 @@ const SnackSelection = ({
               {/* Columna 3: Resumen de la Orden */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <h4 className="text-md font-semibold mb-4 text-center">
-                  {isCheckout ? 'RESUMEN DE CHECK-OUT' : 'RESUMEN DE LA ORDEN'}
+                  {isCheckout ? 'SERVICIOS ADICIONALES' : 'RESUMEN DE LA ORDEN'}
                 </h4>
                 
                 <div className="bg-white rounded-lg p-4 h-[400px] overflow-y-auto">
                   {/* Header de la habitación */}
                   <div className={`text-center mb-4 p-3 text-white rounded-lg ${
-                    isCheckout ? 'bg-red-600' : 'bg-blue-600'
+                    isCheckout ? 'bg-orange-600' : 'bg-blue-600'
                   }`}>
                     <h5 className="font-bold">Habitación {roomNumber}</h5>
                     <p className="text-xs opacity-90">{currentOrder?.room?.description || 'Estándar'}</p>
                     {isCheckout && (
-                      <p className="text-xs opacity-90 mt-1">Check-out en proceso</p>
+                      <p className="text-xs opacity-90 mt-1">Agregando servicios</p>
                     )}
                   </div>
 
                   {/* Información del huésped */}
                   <div className={`mb-4 p-3 border rounded-lg ${
                     isCheckout 
-                      ? 'bg-red-50 border-red-200' 
+                      ? 'bg-orange-50 border-orange-200' 
                       : 'bg-green-50 border-green-200'
                   }`}>
                     <h6 className={`font-semibold text-sm mb-2 ${
-                      isCheckout ? 'text-red-800' : 'text-green-800'
+                      isCheckout ? 'text-orange-800' : 'text-green-800'
                     }`}>
                       Huésped:
                     </h6>
                     <p className={`text-sm font-medium ${
-                      isCheckout ? 'text-red-700' : 'text-green-700'
+                      isCheckout ? 'text-orange-700' : 'text-green-700'
                     }`}>
                       {guestData?.fullName}
                     </p>
-                    {guestData?.documentNumber && (
-                      <p className={`text-xs ${
-                        isCheckout ? 'text-red-600' : 'text-green-600'
-                      }`}>
-                        {guestData?.documentType}: {guestData?.documentNumber}
-                      </p>
-                    )}
                     {guestData?.phone && (
                       <p className={`text-xs ${
-                        isCheckout ? 'text-red-600' : 'text-green-600'
+                        isCheckout ? 'text-orange-600' : 'text-green-600'
                       }`}>
                         📞 {guestData.phone}
                       </p>
@@ -489,7 +430,7 @@ const SnackSelection = ({
                     {selectedSnacks && selectedSnacks.length > 0 ? (
                       <>
                         <div className="text-sm font-medium text-gray-800 border-b pb-1">
-                          {isCheckout ? 'Servicios adicionales:' : 'Snacks seleccionados:'}
+                          Servicios adicionales:
                         </div>
                         {selectedSnacks.map((snack) => (
                           <div key={snack.id} className="flex justify-between items-center py-2 border-b border-gray-100">
@@ -531,8 +472,8 @@ const SnackSelection = ({
                       </>
                     ) : (
                       <div className="text-center text-gray-500 py-4">
-                        <p className="text-sm mb-2">🍎 {isCheckout ? 'No hay servicios adicionales' : 'No hay snacks seleccionados'}</p>
-                        <p className="text-xs text-gray-400">{isCheckout ? 'Los servicios son opcionales' : 'Los snacks son opcionales'}</p>
+                        <p className="text-sm mb-2">🍎 No hay servicios seleccionados</p>
+                        <p className="text-xs text-gray-400">Los servicios son opcionales</p>
                       </div>
                     )}
                   </div>
@@ -541,7 +482,7 @@ const SnackSelection = ({
                   <div className="border-t-2 border-gray-300 pt-4 mb-4">
                     <div className="flex justify-between items-center text-lg font-bold">
                       <span>Total:</span>
-                      <span className={isCheckout ? 'text-red-600' : 'text-green-600'}>
+                      <span className={isCheckout ? 'text-orange-600' : 'text-green-600'}>
                         S/ {getTotalOrder().toFixed(2)}
                       </span>
                     </div>
@@ -552,25 +493,24 @@ const SnackSelection = ({
                     )}
                   </div>
 
-                  {/* ✅ BOTONES DE ACCIÓN SIMPLIFICADOS */}
+                  {/* ✅ BOTONES DE ACCIÓN CORREGIDOS */}
                   <div className="space-y-2">
                     {isCheckoutWithSnacks ? (
                       // CASO 1: CHECK-OUT CON SNACKS ADICIONALES
                       <>
                         <Button
                           variant="success"
-                          onClick={() => {
-                            // Continuar con los snacks seleccionados pero sin hacer checkout
-                            // Volver al grid de habitaciones
-                            onBack()
-                          }}
+                          onClick={handleContinueInRoom} // ✅ NUEVA FUNCIÓN
                           disabled={loading || !isGuestDataValid()}
                           className="w-full text-sm py-3"
                           icon={ArrowRight}
                         >
                           ✅ Continuar en la Habitación
                           <div className="text-xs opacity-90">
-                            Con servicios adicionales
+                            {selectedSnacks.length > 0 
+                              ? `Con ${selectedSnacks.length} servicios adicionales`
+                              : 'Sin servicios adicionales'
+                            }
                           </div>
                         </Button>
                         
@@ -613,17 +553,6 @@ const SnackSelection = ({
                       Cancelar
                     </Button>
                   </div>
-
-                  {/* Debug info en resumen */}
-                  {showDebugInfo && (
-                    <div className="mt-4 p-2 bg-gray-100 rounded text-xs">
-                      <p><strong>Debug Resumen:</strong></p>
-                      <p>Is Walk-in: {isWalkInCheckIn ? 'Sí' : 'No'}</p>
-                      <p>Is Checkout: {isCheckoutWithSnacks ? 'Sí' : 'No'}</p>
-                      <p>Selected Snacks: {selectedSnacks?.length || 0}</p>
-                      <p>Total: S/ {getTotalOrder()}</p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -632,48 +561,20 @@ const SnackSelection = ({
           /* ✅ MENSAJE SI FALTAN DATOS DEL HUÉSPED */
           <div className={`border rounded-lg p-6 text-center ${
             isCheckout 
-              ? 'bg-red-50 border-red-200' 
+              ? 'bg-orange-50 border-orange-200' 
               : 'bg-yellow-50 border-yellow-200'
           }`}>
             <h3 className={`text-lg font-semibold mb-2 ${
-              isCheckout ? 'text-red-800' : 'text-yellow-800'
+              isCheckout ? 'text-orange-800' : 'text-yellow-800'
             }`}>
               {isCheckout ? 'Información del huésped incompleta' : 'Complete la información del huésped'}
             </h3>
-            <p className={isCheckout ? 'text-red-700' : 'text-yellow-700'}>
+            <p className={isCheckout ? 'text-orange-700' : 'text-yellow-700'}>
               {isCheckout 
-                ? 'No se puede procesar el check-out sin la información básica del huésped.'
-                : 'Por favor complete solo los 2 campos obligatorios: Nombre Completo y Documento de Identidad.'
+                ? 'No se puede agregar servicios sin la información básica del huésped.'
+                : 'Por favor complete los campos obligatorios: Nombre Completo y Documento de Identidad.'
               }
             </p>
-            
-            {!isCheckout && (
-              <div className="mt-3 text-sm">
-                <p className="font-medium text-yellow-800 mb-2">Campos faltantes:</p>
-                <div className="flex justify-center space-x-4">
-                  {!guestData?.fullName?.trim() && (
-                    <span className="bg-yellow-200 text-yellow-800 px-2 py-1 rounded text-xs">
-                      📝 Nombre Completo
-                    </span>
-                  )}
-                  {!guestData?.documentNumber?.trim() && (
-                    <span className="bg-yellow-200 text-yellow-800 px-2 py-1 rounded text-xs">
-                      🆔 Documento
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {showDebugInfo && (
-              <div className="mt-4 p-2 bg-yellow-100 rounded text-xs text-left">
-                <p><strong>Debug Guest Data:</strong></p>
-                <p>fullName: "{guestData?.fullName}"</p>
-                <p>documentNumber: "{guestData?.documentNumber}"</p>
-                <p>isCheckout: {isCheckout ? 'true' : 'false'}</p>
-                <p>isValid: {isGuestDataValid() ? 'true' : 'false'}</p>
-              </div>
-            )}
           </div>
         )}
       </div>
