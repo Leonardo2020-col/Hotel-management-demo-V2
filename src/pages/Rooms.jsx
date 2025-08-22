@@ -1,20 +1,70 @@
-// pages/Rooms.jsx - VERSIÓN MÍNIMA SIN ERRORES
+// pages/Rooms.jsx - VERSIÓN FINAL CON CRUD COMPLETO
 import React, { useState, useEffect } from 'react'
-import { Hotel, Users, Bed, Sparkles, Wrench, CheckCircle } from 'lucide-react'
+import { 
+  Hotel, 
+  Users, 
+  Bed, 
+  Sparkles, 
+  Wrench, 
+  CheckCircle, 
+  Plus, 
+  Edit2, 
+  Trash2, 
+  Search,
+  RefreshCw,
+  Eye,
+  DollarSign,
+  Building,
+  AlertTriangle
+} from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 
+// Importar los componentes modales
+import RoomFormModal from '../components/rooms/RoomFormModal'
+import RoomDeleteModal from '../components/rooms/RoomDeleteModal'
+import RoomViewModal from '../components/rooms/RoomViewModal'
+
 const Rooms = () => {
-  const { getPrimaryBranch } = useAuth()
+  const { getPrimaryBranch, isAdmin } = useAuth()
   const primaryBranch = getPrimaryBranch()
   
-  // Estados básicos
+  // Estados principales
   const [rooms, setRooms] = useState([])
+  const [roomStatuses, setRoomStatuses] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // ✅ Cargar habitaciones directamente
+  // Estados de UI
+  const [selectedRoom, setSelectedRoom] = useState(null)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Estados de filtros
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [floorFilter, setFloorFilter] = useState('all')
+
+  // ✅ Cargar estados de habitación
+  const fetchRoomStatuses = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('room_status')
+        .select('*')
+        .order('status')
+      
+      if (error) throw error
+      setRoomStatuses(data || [])
+    } catch (err) {
+      console.error('Error fetching room statuses:', err)
+    }
+  }
+
+  // ✅ Cargar habitaciones
   const fetchRooms = async () => {
     if (!primaryBranch?.id) {
       setLoading(false)
@@ -34,6 +84,8 @@ const Rooms = () => {
           base_price,
           description,
           is_active,
+          created_at,
+          updated_at,
           room_status:status_id(
             id,
             status,
@@ -42,12 +94,10 @@ const Rooms = () => {
           )
         `)
         .eq('branch_id', primaryBranch.id)
-        .eq('is_active', true)
         .order('room_number')
 
       if (error) throw error
 
-      // Procesar los datos
       const processedRooms = (data || []).map(room => ({
         ...room,
         statusName: room.room_status?.status || 'disponible',
@@ -71,12 +121,116 @@ const Rooms = () => {
     }
   }
 
+  // ✅ Crear habitación
+  const createRoom = async (formData) => {
+    try {
+      setIsSubmitting(true)
+      
+      const { data, error } = await supabase
+        .from('rooms')
+        .insert({
+          branch_id: primaryBranch.id,
+          room_number: formData.room_number,
+          floor: parseInt(formData.floor),
+          base_price: parseFloat(formData.base_price),
+          description: formData.description,
+          status_id: formData.status_id,
+          is_active: true
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      toast.success('Habitación creada exitosamente')
+      setIsCreateModalOpen(false)
+      await fetchRooms()
+      
+    } catch (error) {
+      console.error('Error creating room:', error)
+      if (error.code === '23505') {
+        toast.error('Ya existe una habitación con ese número')
+      } else {
+        toast.error('Error al crear habitación')
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // ✅ Actualizar habitación
+  const updateRoom = async (formData) => {
+    if (!selectedRoom) return
+
+    try {
+      setIsSubmitting(true)
+      
+      const { data, error } = await supabase
+        .from('rooms')
+        .update({
+          room_number: formData.room_number,
+          floor: parseInt(formData.floor),
+          base_price: parseFloat(formData.base_price),
+          description: formData.description,
+          status_id: formData.status_id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedRoom.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      toast.success('Habitación actualizada exitosamente')
+      setIsEditModalOpen(false)
+      setSelectedRoom(null)
+      await fetchRooms()
+      
+    } catch (error) {
+      console.error('Error updating room:', error)
+      if (error.code === '23505') {
+        toast.error('Ya existe una habitación con ese número')
+      } else {
+        toast.error('Error al actualizar habitación')
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // ✅ Eliminar habitación (soft delete)
+  const deleteRoom = async (roomId) => {
+    try {
+      setIsSubmitting(true)
+      
+      const { error } = await supabase
+        .from('rooms')
+        .update({ 
+          is_active: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', roomId)
+
+      if (error) throw error
+
+      toast.success('Habitación eliminada exitosamente')
+      setIsDeleteModalOpen(false)
+      setSelectedRoom(null)
+      await fetchRooms()
+      
+    } catch (error) {
+      console.error('Error deleting room:', error)
+      toast.error('Error al eliminar habitación')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   // ✅ Actualizar estado de habitación
   const updateRoomStatus = async (roomId, newStatus) => {
     try {
-      const loadingToast = toast.loading('Actualizando habitación...')
+      const loadingToast = toast.loading('Actualizando estado...')
       
-      // Obtener ID del estado
       const { data: statusData, error: statusError } = await supabase
         .from('room_status')
         .select('id')
@@ -85,30 +239,58 @@ const Rooms = () => {
 
       if (statusError) throw statusError
 
-      // Actualizar habitación
       const { error } = await supabase
         .from('rooms')
-        .update({ status_id: statusData.id })
+        .update({ 
+          status_id: statusData.id,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', roomId)
 
       if (error) throw error
 
       toast.dismiss(loadingToast)
-      toast.success('Habitación actualizada')
-      
-      // Recargar habitaciones
+      toast.success('Estado actualizado')
       await fetchRooms()
       
     } catch (error) {
-      console.error('Error actualizando habitación:', error)
-      toast.error('Error al actualizar habitación')
+      console.error('Error updating room status:', error)
+      toast.error('Error al actualizar estado')
     }
   }
 
-  // ✅ Cargar datos al montar el componente
-  useEffect(() => {
-    fetchRooms()
-  }, [primaryBranch?.id])
+  // ✅ Abrir modal de edición
+  const openEditModal = (room) => {
+    setSelectedRoom(room)
+    setIsEditModalOpen(true)
+  }
+
+  // ✅ Abrir modal de eliminación
+  const openDeleteModal = (room) => {
+    setSelectedRoom(room)
+    setIsDeleteModalOpen(true)
+  }
+
+  // ✅ Abrir modal de vista
+  const openViewModal = (room) => {
+    setSelectedRoom(room)
+    setIsViewModalOpen(true)
+  }
+
+  // ✅ Filtrar habitaciones
+  const filteredRooms = rooms.filter(room => {
+    const matchesSearch = room.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         room.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesStatus = statusFilter === 'all' || room.statusName === statusFilter
+    
+    const matchesFloor = floorFilter === 'all' || room.floor.toString() === floorFilter
+
+    return matchesSearch && matchesStatus && matchesFloor && room.is_active
+  })
+
+  // ✅ Obtener pisos únicos
+  const uniqueFloors = [...new Set(rooms.filter(r => r.is_active).map(room => room.floor))].sort((a, b) => a - b)
 
   // ✅ Configuración de estados
   const statusConfig = {
@@ -139,19 +321,37 @@ const Rooms = () => {
       borderColor: 'border-blue-200',
       textColor: 'text-blue-800',
       badgeColor: 'bg-blue-100 text-blue-800'
+    },
+    fuera_servicio: {
+      icon: AlertTriangle,
+      bgColor: 'bg-gray-50',
+      borderColor: 'border-gray-200',
+      textColor: 'text-gray-800',
+      badgeColor: 'bg-gray-100 text-gray-800'
     }
   }
 
-  // ✅ Estadísticas básicas
+  // ✅ Estadísticas
   const stats = {
-    total: rooms.length,
-    available: rooms.filter(r => r.statusName === 'disponible').length,
-    occupied: rooms.filter(r => r.statusName === 'ocupada').length,
-    cleaning: rooms.filter(r => r.statusName === 'limpieza').length,
-    maintenance: rooms.filter(r => r.statusName === 'mantenimiento').length
+    total: rooms.filter(r => r.is_active).length,
+    available: rooms.filter(r => r.statusName === 'disponible' && r.is_active).length,
+    occupied: rooms.filter(r => r.statusName === 'ocupada' && r.is_active).length,
+    cleaning: rooms.filter(r => r.statusName === 'limpieza' && r.is_active).length,
+    maintenance: rooms.filter(r => r.statusName === 'mantenimiento' && r.is_active).length
   }
 
   stats.occupancyRate = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
+
+  // ✅ Cargar datos iniciales
+  useEffect(() => {
+    const loadData = async () => {
+      await Promise.all([
+        fetchRoomStatuses(),
+        fetchRooms()
+      ])
+    }
+    loadData()
+  }, [primaryBranch?.id])
 
   // ✅ Renderizar estado de carga
   if (loading) {
@@ -170,27 +370,6 @@ const Rooms = () => {
     )
   }
 
-  // ✅ Renderizar error
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="text-center py-12">
-          <Hotel className="h-12 w-12 text-red-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            Error al cargar habitaciones
-          </h3>
-          <p className="text-gray-500 mb-4">{error}</p>
-          <button
-            onClick={fetchRooms}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -201,16 +380,29 @@ const Rooms = () => {
             Gestión de Habitaciones
           </h1>
           <p className="text-gray-600 mt-1">
-            {primaryBranch?.name} • {stats.total} habitaciones
+            {primaryBranch?.name} • {stats.total} habitaciones activas
           </p>
         </div>
 
-        <button
-          onClick={fetchRooms}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Refrescar
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={fetchRooms}
+            className="flex items-center px-3 py-2 text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refrescar
+          </button>
+          
+          {isAdmin() && (
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Nueva Habitación
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Estadísticas */}
@@ -262,107 +454,285 @@ const Rooms = () => {
         </div>
       </div>
 
-      {/* Lista de habitaciones */}
-      <div className="bg-white rounded-lg border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Habitaciones</h2>
-        </div>
-        
-        <div className="divide-y divide-gray-200">
-          {rooms.length === 0 ? (
-            <div className="text-center py-12">
-              <Bed className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No hay habitaciones
-              </h3>
-              <p className="text-gray-500">
-                No se encontraron habitaciones para esta sucursal.
-              </p>
-            </div>
-          ) : (
-            rooms.map(room => {
-              const config = statusConfig[room.statusName] || statusConfig.disponible
-              const StatusIcon = config.icon
+      {/* Filtros */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Búsqueda */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar habitación..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
 
-              return (
-                <div key={room.id} className="p-6 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className={`p-3 rounded-lg ${config.badgeColor}`}>
-                        <StatusIcon className="h-6 w-6" />
-                      </div>
-                      
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          Habitación {room.room_number}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          Piso {room.floor} • {room.priceFormatted} por noche
-                        </p>
-                        {room.description && (
-                          <p className="text-sm text-gray-600 mt-1">{room.description}</p>
-                        )}
-                      </div>
-                    </div>
+          {/* Filtro por estado */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">Todos los estados</option>
+            {roomStatuses.map(status => (
+              <option key={status.id} value={status.status}>
+                {status.status.charAt(0).toUpperCase() + status.status.slice(1).replace('_', ' ')}
+              </option>
+            ))}
+          </select>
 
-                    <div className="flex items-center space-x-3">
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${config.badgeColor}`}>
-                        {room.statusName.charAt(0).toUpperCase() + room.statusName.slice(1)}
-                      </span>
+          {/* Filtro por piso */}
+          <select
+            value={floorFilter}
+            onChange={(e) => setFloorFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">Todos los pisos</option>
+            {uniqueFloors.map(floor => (
+              <option key={floor} value={floor}>
+                Piso {floor}
+              </option>
+            ))}
+          </select>
 
-                      {/* Acciones rápidas */}
-                      <div className="flex space-x-2">
-                        {room.statusName === 'limpieza' && (
-                          <button
-                            onClick={() => updateRoomStatus(room.id, 'disponible')}
-                            className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
-                          >
-                            Limpiar
-                          </button>
-                        )}
-                        
-                        {room.statusName === 'disponible' && (
-                          <>
-                            <button
-                              onClick={() => updateRoomStatus(room.id, 'limpieza')}
-                              className="px-3 py-1 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700 transition-colors"
-                            >
-                              Limpieza
-                            </button>
-                            <button
-                              onClick={() => updateRoomStatus(room.id, 'mantenimiento')}
-                              className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
-                            >
-                              Mantenimiento
-                            </button>
-                          </>
-                        )}
-                        
-                        {room.statusName === 'mantenimiento' && (
-                          <button
-                            onClick={() => updateRoomStatus(room.id, 'disponible')}
-                            className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
-                          >
-                            Completar
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })
-          )}
+          {/* Limpiar filtros */}
+          <button
+            onClick={() => {
+              setSearchTerm('')
+              setStatusFilter('all')
+              setFloorFilter('all')
+            }}
+            className="px-3 py-2 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Limpiar filtros
+          </button>
         </div>
       </div>
+
+      {/* Tabla de habitaciones */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Habitaciones ({filteredRooms.length})
+          </h2>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Habitación
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Estado
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Piso
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Precio
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Descripción
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredRooms.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="px-6 py-12 text-center">
+                    <Bed className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      No hay habitaciones
+                    </h3>
+                    <p className="text-gray-500">
+                      {searchTerm || statusFilter !== 'all' || floorFilter !== 'all' 
+                        ? 'No se encontraron habitaciones con los filtros aplicados.'
+                        : 'No hay habitaciones registradas.'}
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredRooms.map(room => {
+                  const config = statusConfig[room.statusName] || statusConfig.disponible
+                  const StatusIcon = config.icon
+
+                  return (
+                    <tr key={room.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className={`p-2 rounded-lg ${config.badgeColor} mr-3`}>
+                            <StatusIcon className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              Habitación {room.room_number}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              ID: {room.id.slice(0, 8)}...
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.badgeColor}`}>
+                          {room.statusName.charAt(0).toUpperCase() + room.statusName.slice(1).replace('_', ' ')}
+                        </span>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="flex items-center">
+                          <Building className="h-4 w-4 text-gray-400 mr-1" />
+                          Piso {room.floor}
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="flex items-center">
+                          <DollarSign className="h-4 w-4 text-gray-400 mr-1" />
+                          {room.priceFormatted}
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        <div className="max-w-xs truncate">
+                          {room.description || 'Sin descripción'}
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end space-x-2">
+                          {/* Acciones de estado */}
+                          {room.statusName === 'limpieza' && (
+                            <button
+                              onClick={() => updateRoomStatus(room.id, 'disponible')}
+                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+                            >
+                              Limpiar
+                            </button>
+                          )}
+                          
+                          {room.statusName === 'disponible' && (
+                            <select
+                              onChange={(e) => e.target.value && updateRoomStatus(room.id, e.target.value)}
+                              value=""
+                              className="text-xs border border-gray-200 rounded px-2 py-1"
+                            >
+                              <option value="">Cambiar estado</option>
+                              <option value="limpieza">Limpieza</option>
+                              <option value="mantenimiento">Mantenimiento</option>
+                              <option value="fuera_servicio">Fuera de servicio</option>
+                            </select>
+                          )}
+                          
+                          {room.statusName === 'mantenimiento' && (
+                            <button
+                              onClick={() => updateRoomStatus(room.id, 'disponible')}
+                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+                            >
+                              Completar
+                            </button>
+                          )}
+
+                          {/* Acciones CRUD */}
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={() => openViewModal(room)}
+                              className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                              title="Ver detalles"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            
+                            {isAdmin() && (
+                              <>
+                                <button
+                                  onClick={() => openEditModal(room)}
+                                  className="p-1 text-gray-400 hover:text-yellow-600 transition-colors"
+                                  title="Editar"
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                </button>
+                                
+                                <button
+                                  onClick={() => openDeleteModal(room)}
+                                  className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modales */}
+      <RoomFormModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSubmit={createRoom}
+        roomStatuses={roomStatuses}
+        isSubmitting={isSubmitting}
+      />
+
+      <RoomFormModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false)
+          setSelectedRoom(null)
+        }}
+        onSubmit={updateRoom}
+        room={selectedRoom}
+        roomStatuses={roomStatuses}
+        isSubmitting={isSubmitting}
+      />
+
+      <RoomDeleteModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false)
+          setSelectedRoom(null)
+        }}
+        onConfirm={deleteRoom}
+        room={selectedRoom}
+        isSubmitting={isSubmitting}
+      />
+
+      <RoomViewModal
+        isOpen={isViewModalOpen}
+        onClose={() => {
+          setIsViewModalOpen(false)
+          setSelectedRoom(null)
+        }}
+        room={selectedRoom}
+        onEdit={isAdmin() ? openEditModal : null}
+        canEdit={isAdmin()}
+      />
 
       {/* Debug info (solo en desarrollo) */}
       {process.env.NODE_ENV === 'development' && (
         <div className="fixed bottom-4 right-4 bg-gray-900 text-white p-4 rounded-lg text-xs max-w-sm">
           <h4 className="font-semibold mb-2">Debug Info</h4>
           <p>Total habitaciones: {rooms.length}</p>
+          <p>Habitaciones activas: {stats.total}</p>
+          <p>Filtros aplicados: {searchTerm || statusFilter !== 'all' || floorFilter !== 'all' ? 'Sí' : 'No'}</p>
           <p>Sucursal: {primaryBranch?.name || 'Ninguna'}</p>
-          <p>Estado: {loading ? 'Cargando...' : 'Listo'}</p>
         </div>
       )}
     </div>
