@@ -1,8 +1,17 @@
-// src/pages/Supplies.jsx - VERSIÓN CORREGIDA SIN ERRORES DE ROUTER
+// src/pages/Supplies.jsx - VERSIÓN COMPLETA CON COMPONENTES INTEGRADOS
 import React, { useState } from 'react'
-import { RefreshCw, Package, AlertTriangle, Plus, Search, Filter, Edit, TrendingUp } from 'lucide-react'
+import { RefreshCw, Plus, AlertTriangle, Eye, EyeOff } from 'lucide-react'
 import { useSupplies } from '../hooks/useSupplies'
 import Button from '../components/common/Button'
+
+// Importar componentes de suministros
+import StatsCards from '../components/supplies/StatsCards'
+import SuppliesFilters from '../components/supplies/SuppliesFilters'
+import SuppliesTable from '../components/supplies/SuppliesTable'
+import SupplyFormModal from '../components/supplies/SupplyFormModal'
+import MovementModal from '../components/supplies/MovementModal'
+import AlertsPanel from '../components/supplies/AlertsPanel'
+
 import toast from 'react-hot-toast'
 
 const Supplies = () => {
@@ -14,62 +23,102 @@ const Supplies = () => {
     loading,
     error,
     getSuppliesStats,
+    getLowStockSupplies,
+    getOutOfStockSupplies,
     refreshData,
     updateFilters,
     clearFilters,
-    filters
+    filters,
+    createSupply,
+    updateSupply,
+    deleteSupply,
+    addMovement,
+    resolveAlert,
+    dismissAlert,
+    createCategory,
+    createSupplier,
+    openCreateModal,
+    openEditModal,
+    openMovementModal,
+    closeModals,
+    showCreateModal,
+    showMovementModal,
+    selectedSupply
   } = useSupplies()
 
-  const [searchTerm, setSearchTerm] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [selectedSupply, setSelectedSupply] = useState(null)
+  // Estados locales para la página
+  const [currentView, setCurrentView] = useState('inventory') // 'inventory', 'alerts'
+  const [showResolvedAlerts, setShowResolvedAlerts] = useState(false)
 
   const stats = getSuppliesStats()
+  const lowStockSupplies = getLowStockSupplies()
+  const outOfStockSupplies = getOutOfStockSupplies()
 
-  const handleSearch = (e) => {
-    const value = e.target.value
-    setSearchTerm(value)
-    updateFilters({ search: value })
+  // ✅ FUNCIONES DE MANEJO DE SUMINISTROS
+  const handleCreateSupply = async (supplyData) => {
+    const result = await createSupply(supplyData)
+    if (result.success) {
+      closeModals()
+      toast.success('Suministro creado exitosamente')
+    }
+    return result
   }
 
-  const handleFilterChange = (filterName, value) => {
-    updateFilters({ [filterName]: value })
+  const handleUpdateSupply = async (supplyId, updateData) => {
+    const result = await updateSupply(supplyId, updateData)
+    if (result.success) {
+      closeModals()
+      toast.success('Suministro actualizado exitosamente')
+    }
+    return result
   }
 
-  const handleClearFilters = () => {
-    setSearchTerm('')
-    clearFilters()
+  const handleDeleteSupply = async (supplyId) => {
+    const confirmed = window.confirm('¿Estás seguro de que deseas eliminar este suministro?')
+    if (!confirmed) return
+
+    const result = await deleteSupply(supplyId)
+    if (result.success) {
+      toast.success('Suministro eliminado exitosamente')
+    }
+    return result
   }
 
-  // ✅ FUNCIÓN CORREGIDA - Sin navegación de router
-  const handleNewSupply = () => {
-    console.log('📦 Abriendo modal de nuevo suministro...')
-    setSelectedSupply(null)
-    setShowCreateModal(true)
-    toast.success('Modal de crear suministro abierto')
+  const handleAddMovement = async (movementData) => {
+    const result = await addMovement(movementData)
+    if (result.success) {
+      closeModals()
+      toast.success('Movimiento registrado exitosamente')
+    }
+    return result
   }
 
-  // ✅ FUNCIÓN PARA EDITAR SUMINISTRO
-  const handleEditSupply = (supply) => {
-    console.log('✏️ Editando suministro:', supply.name)
-    setSelectedSupply(supply)
-    setShowCreateModal(true)
-    toast.success(`Editando: ${supply.name}`)
+  // ✅ FUNCIONES DE MANEJO DE ALERTAS
+  const handleResolveAlert = async (alertId) => {
+    const result = await resolveAlert(alertId)
+    if (result.success) {
+      toast.success('Alerta resuelta')
+    }
+    return result
   }
 
-  // ✅ FUNCIÓN PARA VER DETALLES
-  const handleViewDetails = (supply) => {
-    console.log('👁️ Viendo detalles de:', supply.name)
-    setSelectedSupply(supply)
-    toast.info(`Mostrando detalles de: ${supply.name}`)
+  const handleDismissAlert = async (alertId) => {
+    const result = await dismissAlert(alertId)
+    if (result.success) {
+      toast.success('Alerta descartada')
+    }
+    return result
   }
 
-  // ✅ FUNCIÓN PARA MOVIMIENTOS DE STOCK
-  const handleStockMovement = (supply) => {
-    console.log('📈 Movimiento de stock para:', supply.name)
-    setSelectedSupply(supply)
-    toast.info(`Gestionar stock de: ${supply.name}`)
+  // ✅ FUNCIONES DE CATEGORÍAS Y PROVEEDORES
+  const handleCreateCategory = async (categoryData) => {
+    const result = await createCategory(categoryData)
+    return result
+  }
+
+  const handleCreateSupplier = async (supplierData) => {
+    const result = await createSupplier(supplierData)
+    return result
   }
 
   // Error State
@@ -129,473 +178,249 @@ const Supplies = () => {
     )
   }
 
+  const unresolvedAlertsCount = alerts.filter(a => !a.is_resolved).length
+
   return (
     <div className="min-h-screen bg-gray-100 p-6">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-800 mb-2">Suministros e Inventario</h1>
-          <p className="text-gray-600">Gestión de productos y stock del hotel</p>
+          <p className="text-gray-600">Gestión completa de productos y stock del hotel</p>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4 text-center">
-            <Package className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-gray-800">{stats.total}</div>
-            <div className="text-sm text-gray-600">Total de Artículos</div>
-            <div className="text-xs text-gray-500 mt-1">Artículos en inventario</div>
-            <div className="text-xs text-green-600 font-medium">✓ Todo bien</div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4 text-center">
-            <AlertTriangle className="w-8 h-8 text-orange-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-orange-600">{stats.lowStock}</div>
-            <div className="text-sm text-gray-600">Stock Bajo</div>
-            <div className="text-xs text-gray-500 mt-1">Requieren restock</div>
-            {stats.lowStock > 0 ? (
-              <div className="text-xs text-orange-600 font-medium">⚠ Revisar</div>
-            ) : (
-              <div className="text-xs text-green-600 font-medium">✓ Todo bien</div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4 text-center">
-            <AlertTriangle className="w-8 h-8 text-red-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-red-600">{stats.outOfStock}</div>
-            <div className="text-sm text-gray-600">Agotados</div>
-            <div className="text-xs text-gray-500 mt-1">Sin stock disponible</div>
-            {stats.outOfStock > 0 ? (
-              <div className="text-xs text-red-600 font-medium">🚨 Urgente</div>
-            ) : (
-              <div className="text-xs text-green-600 font-medium">✓ Todo bien</div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4 text-center">
-            <div className="text-green-600 text-2xl font-bold mb-2">S/</div>
-            <div className="text-2xl font-bold text-gray-800">{stats.totalValue.toFixed(0)}</div>
-            <div className="text-sm text-gray-600">Valor Total</div>
-            <div className="text-xs text-gray-500 mt-1">Valor del inventario</div>
-            <div className="text-xs text-gray-600">💰 Inventario</div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4 text-center">
-            <div className="text-purple-600 text-2xl font-bold mb-2">📁</div>
-            <div className="text-2xl font-bold text-gray-800">{stats.categories}</div>
-            <div className="text-sm text-gray-600">Categorías</div>
-            <div className="text-xs text-gray-500 mt-1">Diferentes categorías</div>
-            <div className="text-xs text-gray-600">🏷 Tipos</div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4 text-center">
-            <div className="text-blue-600 text-2xl font-bold mb-2">🏢</div>
-            <div className="text-2xl font-bold text-gray-800">{stats.suppliers}</div>
-            <div className="text-sm text-gray-600">Proveedores</div>
-            <div className="text-xs text-gray-500 mt-1">Proveedores activos</div>
-            <div className="text-xs text-gray-600">📦 Activos</div>
-          </div>
-        </div>
-
-        {/* Alertas si las hay */}
-        {stats.alertsCount > 0 && (
-          <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-4">
-            <div className="flex items-center space-x-3">
-              <AlertTriangle className="w-5 h-5 text-orange-600" />
-              <div>
-                <h3 className="text-sm font-semibold text-orange-800">
-                  {stats.alertsCount} Alerta{stats.alertsCount !== 1 ? 's' : ''} de Inventario
-                </h3>
-                <p className="text-sm text-orange-700">
-                  Hay productos que requieren atención inmediata por stock bajo o agotado.
-                </p>
-              </div>
-              <Button
-                variant="warning"
-                size="sm"
-                onClick={() => handleFilterChange('lowStock', true)}
+        {/* Navegación de pestañas */}
+        <div className="mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setCurrentView('inventory')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  currentView === 'inventory'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
               >
-                Ver Alertas
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Filtros y Búsqueda */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            {/* Búsqueda */}
-            <div className="flex-1 max-w-md">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Buscar por nombre o SKU..."
-                  value={searchTerm}
-                  onChange={handleSearch}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Botones */}
-            <div className="flex items-center space-x-3">
-              <Button
-                variant="outline"
-                icon={Filter}
-                onClick={() => setShowFilters(!showFilters)}
-                className={showFilters ? 'bg-blue-50 border-blue-300' : ''}
-              >
-                Filtros
-              </Button>
+                Inventario
+                <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs">
+                  {supplies.length}
+                </span>
+              </button>
               
-              <Button
-                variant="outline"
-                icon={RefreshCw}
-                onClick={refreshData}
-                disabled={loading}
+              <button
+                onClick={() => setCurrentView('alerts')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  currentView === 'alerts'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
               >
-                Actualizar
-              </Button>
-
-              {/* ✅ BOTÓN CORREGIDO - Sin navegación */}
-              <Button
-                variant="primary"
-                icon={Plus}
-                onClick={handleNewSupply}
-              >
-                Nuevo Suministro
-              </Button>
-            </div>
+                Alertas
+                {unresolvedAlertsCount > 0 && (
+                  <span className="ml-2 bg-orange-100 text-orange-600 py-0.5 px-2 rounded-full text-xs">
+                    {unresolvedAlertsCount}
+                  </span>
+                )}
+              </button>
+            </nav>
           </div>
+        </div>
 
-          {/* Panel de Filtros */}
-          {showFilters && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Filtro por Categoría */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Categoría
-                  </label>
-                  <select
-                    value={filters.category}
-                    onChange={(e) => handleFilterChange('category', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Todas las categorías</option>
-                    {categories.map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+        {/* Stats Cards - Siempre visible */}
+        <div className="mb-8">
+          <StatsCards 
+            stats={stats}
+            lowStockCount={lowStockSupplies.length}
+            outOfStockCount={outOfStockSupplies.length}
+          />
+        </div>
 
-                {/* Filtro por Proveedor */}
+        {/* Alerta global si hay stock bajo */}
+        {unresolvedAlertsCount > 0 && currentView === 'inventory' && (
+          <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <AlertTriangle className="w-5 h-5 text-orange-600" />
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Proveedor
-                  </label>
-                  <select
-                    value={filters.supplier}
-                    onChange={(e) => handleFilterChange('supplier', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Todos los proveedores</option>
-                    {suppliers.map(supplier => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Filtro Stock Bajo */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Estado de Stock
-                  </label>
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={filters.lowStock}
-                      onChange={(e) => handleFilterChange('lowStock', e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">Solo mostrar stock bajo</span>
-                  </label>
+                  <h3 className="text-sm font-semibold text-orange-800">
+                    {unresolvedAlertsCount} Alerta{unresolvedAlertsCount !== 1 ? 's' : ''} de Inventario
+                  </h3>
+                  <p className="text-sm text-orange-700">
+                    Hay productos que requieren atención inmediata por stock bajo o agotado.
+                  </p>
                 </div>
               </div>
-
-              {/* Limpiar Filtros */}
-              <div className="mt-4 flex justify-end">
+              <div className="flex space-x-2">
+                <Button
+                  variant="warning"
+                  size="sm"
+                  onClick={() => setCurrentView('alerts')}
+                >
+                  Ver Alertas
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleClearFilters}
+                  onClick={() => updateFilters({ lowStock: true })}
                 >
-                  Limpiar Filtros
+                  Filtrar Stock Bajo
                 </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Lista de Suministros */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-800">
-              Lista de Suministros ({supplies.length})
-            </h2>
-            {filters.search && (
-              <p className="text-sm text-gray-600 mt-1">
-                Mostrando resultados para: "{filters.search}"
-              </p>
-            )}
-          </div>
-
-          {supplies.length === 0 ? (
-            <div className="p-8 text-center">
-              <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-500 mb-2">
-                {filters.search || filters.category || filters.supplier || filters.lowStock 
-                  ? 'No hay suministros que coincidan con los filtros'
-                  : 'No hay suministros registrados'
-                }
-              </h3>
-              <p className="text-gray-400 mb-4">
-                {filters.search || filters.category || filters.supplier || filters.lowStock
-                  ? 'Intenta ajustar los filtros de búsqueda'
-                  : 'Comienza agregando tu primer suministro al inventario'
-                }
-              </p>
-              
-              {(filters.search || filters.category || filters.supplier || filters.lowStock) ? (
-                <Button
-                  variant="outline"
-                  onClick={handleClearFilters}
-                >
-                  Limpiar Filtros
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  icon={Plus}
-                  onClick={handleNewSupply}
-                >
-                  Agregar Primer Suministro
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {supplies.map((supply) => (
-                  <div
-                    key={supply.id}
-                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                  >
-                    {/* Header del Suministro */}
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-800 mb-1">
-                          {supply.name}
-                        </h3>
-                        <p className="text-sm text-gray-600">
-                          {supply.category?.name || 'Sin categoría'}
-                        </p>
-                        {supply.sku && (
-                          <p className="text-xs text-gray-500">
-                            SKU: {supply.sku}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Badge de Stock */}
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        supply.stockStatus === 'out_of_stock' 
-                          ? 'bg-red-100 text-red-800'
-                          : supply.stockStatus === 'low_stock'
-                            ? 'bg-orange-100 text-orange-800'
-                            : supply.stockStatus === 'medium_stock'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-green-100 text-green-800'
-                      }`}>
-                        {supply.stockStatus === 'out_of_stock' && 'Agotado'}
-                        {supply.stockStatus === 'low_stock' && 'Stock Bajo'}
-                        {supply.stockStatus === 'medium_stock' && 'Stock Medio'}
-                        {supply.stockStatus === 'good_stock' && 'Stock Bueno'}
-                      </div>
-                    </div>
-
-                    {/* Información de Stock */}
-                    <div className="space-y-2 mb-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Stock actual:</span>
-                        <span className="font-medium">
-                          {supply.current_stock} {supply.unit_of_measure}
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Stock mínimo:</span>
-                        <span className="font-medium">
-                          {supply.minimum_stock} {supply.unit_of_measure}
-                        </span>
-                      </div>
-
-                      {/* Barra de Progreso de Stock */}
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full ${
-                            supply.stockPercentage <= 25 
-                              ? 'bg-red-500'
-                              : supply.stockPercentage <= 50
-                                ? 'bg-orange-500'
-                                : supply.stockPercentage <= 75
-                                  ? 'bg-yellow-500'
-                                  : 'bg-green-500'
-                          }`}
-                          style={{ 
-                            width: `${Math.min(supply.stockPercentage, 100)}%` 
-                          }}
-                        ></div>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Costo unitario:</span>
-                        <span className="font-medium">
-                          S/ {supply.unit_cost.toFixed(2)}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Valor total:</span>
-                        <span className="font-bold text-green-600">
-                          S/ {supply.totalValue.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Proveedor */}
-                    {supply.supplier && (
-                      <div className="text-xs text-gray-500 mb-3">
-                        📦 {supply.supplier.name}
-                      </div>
-                    )}
-
-                    {/* ✅ BOTONES DE ACCIÓN CORREGIDOS */}
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        icon={Edit}
-                        className="flex-1"
-                        onClick={() => handleEditSupply(supply)}
-                      >
-                        Editar
-                      </Button>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        icon={TrendingUp}
-                        className="flex-1"
-                        onClick={() => handleStockMovement(supply)}
-                      >
-                        Stock
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ✅ MODAL SIMPLE DE CREAR/EDITAR */}
-        {showCreateModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-              <div className="bg-blue-600 text-white p-6 rounded-t-lg">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold">
-                    {selectedSupply ? 'Editar Suministro' : 'Nuevo Suministro'}
-                  </h3>
-                  <button
-                    onClick={() => setShowCreateModal(false)}
-                    className="text-blue-100 hover:text-white text-2xl"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-              
-              <div className="p-6">
-                <div className="text-center">
-                  <Package className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-                  <h4 className="text-lg font-semibold text-gray-800 mb-2">
-                    {selectedSupply ? `Editando: ${selectedSupply.name}` : 'Crear Nuevo Suministro'}
-                  </h4>
-                  <p className="text-gray-600 mb-6">
-                    Esta funcionalidad estará disponible próximamente. Por ahora, puedes visualizar el inventario existente.
-                  </p>
-                  
-                  {selectedSupply && (
-                    <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
-                      <h5 className="font-medium text-gray-800 mb-2">Información Actual:</h5>
-                      <div className="text-sm space-y-1">
-                        <p><strong>Nombre:</strong> {selectedSupply.name}</p>
-                        <p><strong>Categoría:</strong> {selectedSupply.category?.name || 'Sin categoría'}</p>
-                        <p><strong>Stock:</strong> {selectedSupply.current_stock} {selectedSupply.unit_of_measure}</p>
-                        <p><strong>Costo:</strong> S/ {selectedSupply.unit_cost.toFixed(2)}</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="flex space-x-3">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => setShowCreateModal(false)}
-                    >
-                      Cerrar
-                    </Button>
-                    <Button
-                      variant="primary"
-                      className="flex-1"
-                      onClick={() => {
-                        setShowCreateModal(false)
-                        toast.success('Funcionalidad en desarrollo')
-                      }}
-                    >
-                      Entendido
-                    </Button>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
         )}
 
+        {/* Contenido principal según la vista */}
+        {currentView === 'inventory' ? (
+          <div className="space-y-6">
+            {/* Filtros */}
+            <SuppliesFilters
+              filters={filters}
+              categories={categories}
+              suppliers={suppliers}
+              onFiltersChange={updateFilters}
+              onClearFilters={clearFilters}
+              loading={loading}
+            />
+
+            {/* Header del inventario con botón de crear */}
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800">
+                  Inventario de Suministros
+                </h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  {supplies.length} artículos registrados
+                </p>
+              </div>
+              
+              <div className="flex space-x-3">
+                <Button
+                  variant="outline"
+                  icon={RefreshCw}
+                  onClick={refreshData}
+                  disabled={loading}
+                >
+                  Actualizar
+                </Button>
+                
+                {/* ✅ BOTÓN PRINCIPAL - NUEVO SUMINISTRO */}
+                <Button
+                  variant="primary"
+                  icon={Plus}
+                  onClick={openCreateModal}
+                >
+                  Nuevo Suministro
+                </Button>
+              </div>
+            </div>
+
+            {/* Tabla de suministros */}
+            <SuppliesTable
+              supplies={supplies}
+              loading={loading}
+              onEdit={openEditModal}
+              onDelete={handleDeleteSupply}
+              onAddMovement={openMovementModal}
+              onAdjustStock={async (supplyId, newStock, reason) => {
+                return handleAddMovement({
+                  supplyId,
+                  movementType: 'adjustment',
+                  quantity: newStock,
+                  reason: reason || 'Ajuste de inventario'
+                })
+              }}
+            />
+          </div>
+        ) : (
+          /* Vista de Alertas */
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800">
+                  Centro de Alertas
+                </h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Gestión de alertas de inventario
+                </p>
+              </div>
+              
+              <div className="flex space-x-3">
+                <Button
+                  variant="outline"
+                  icon={showResolvedAlerts ? EyeOff : Eye}
+                  onClick={() => setShowResolvedAlerts(!showResolvedAlerts)}
+                >
+                  {showResolvedAlerts ? 'Ocultar Resueltas' : 'Mostrar Resueltas'}
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  icon={RefreshCw}
+                  onClick={refreshData}
+                  disabled={loading}
+                >
+                  Actualizar
+                </Button>
+              </div>
+            </div>
+
+            <AlertsPanel
+              alerts={showResolvedAlerts ? alerts : alerts.filter(a => !a.is_resolved)}
+              supplies={supplies}
+              onResolve={handleResolveAlert}
+              onDismiss={handleDismissAlert}
+              loading={loading}
+            />
+          </div>
+        )}
+
+        {/* ✅ MODALES */}
+        
+        {/* Modal de crear/editar suministro */}
+        <SupplyFormModal
+          isOpen={showCreateModal}
+          onClose={closeModals}
+          onSubmit={selectedSupply ? handleUpdateSupply : handleCreateSupply}
+          supply={selectedSupply}
+          categories={categories}
+          suppliers={suppliers}
+          onCreateCategory={handleCreateCategory}
+          onCreateSupplier={handleCreateSupplier}
+          loading={loading}
+        />
+
+        {/* Modal de movimiento de stock */}
+        <MovementModal
+          isOpen={showMovementModal}
+          onClose={closeModals}
+          onSubmit={handleAddMovement}
+          supply={selectedSupply}
+          loading={loading}
+        />
+
         {/* Debug Info - Solo en desarrollo */}
         {process.env.NODE_ENV === 'development' && (
-          <div className="mt-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <div className="mt-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
             <details>
               <summary className="cursor-pointer font-medium text-gray-700">
                 🐛 Debug Info (Development)
               </summary>
               <div className="mt-2 text-sm text-gray-600 space-y-1">
+                <p><strong>Current View:</strong> {currentView}</p>
                 <p><strong>Supplies loaded:</strong> {supplies.length}</p>
                 <p><strong>Categories loaded:</strong> {categories.length}</p>
                 <p><strong>Suppliers loaded:</strong> {suppliers.length}</p>
                 <p><strong>Alerts count:</strong> {alerts.length}</p>
+                <p><strong>Unresolved alerts:</strong> {unresolvedAlertsCount}</p>
                 <p><strong>Current filters:</strong> {JSON.stringify(filters)}</p>
                 <p><strong>Loading state:</strong> {loading ? 'True' : 'False'}</p>
                 <p><strong>Error state:</strong> {error || 'None'}</p>
                 <p><strong>Show Create Modal:</strong> {showCreateModal ? 'True' : 'False'}</p>
+                <p><strong>Show Movement Modal:</strong> {showMovementModal ? 'True' : 'False'}</p>
                 <p><strong>Selected Supply:</strong> {selectedSupply?.name || 'None'}</p>
+                <p><strong>Show Resolved Alerts:</strong> {showResolvedAlerts ? 'True' : 'False'}</p>
               </div>
             </details>
           </div>
