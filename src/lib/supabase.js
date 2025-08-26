@@ -990,34 +990,97 @@ export const quickCheckinService = {
 
       // ✅ Obtener branch_id del usuario actual o usar default
       const { data: { user } } = await supabase.auth.getUser()
-      let branchId = null
+let createdByUserId = null
+
+if (user) {
+  console.log('🔍 Auth user found:', user.id, user.email)
+  
+  // Buscar el usuario en nuestra tabla 'users' que corresponde al usuario de Auth
+  const { data: internalUser, error: userError } = await supabase
+    .from('users')
+    .select('id, email, first_name, last_name')
+    .eq('auth_id', user.id)  // ✅ Buscar por auth_id
+    .single()
+  
+  if (!userError && internalUser) {
+    createdByUserId = internalUser.id
+    console.log('✅ Internal user found:', internalUser.email, 'ID:', createdByUserId)
+  } else {
+    console.warn('⚠️ No internal user found for auth user:', user.email)
+    console.warn('⚠️ User error:', userError)
+    
+    // OPCIÓN: Crear el usuario interno automáticamente si no existe
+    if (userError?.code === 'PGRST116') { // No rows returned
+      console.log('🔄 Creating internal user record...')
       
-      if (user) {
-        const { data: userBranch } = await supabase
-          .from('user_branches')
-          .select('branch_id')
-          .eq('user_id', user.id)
-          .eq('is_primary', true)
-          .single()
-        
-        branchId = userBranch?.branch_id
+      // Obtener rol de recepción por defecto
+      const { data: defaultRole } = await supabase
+        .from('roles')
+        .select('id')
+        .eq('name', 'recepcion')
+        .single()
+      
+      const { data: newInternalUser, error: createError } = await supabase
+        .from('users')
+        .insert({
+          auth_id: user.id,
+          email: user.email,
+          first_name: user.user_metadata?.first_name || 'Usuario',
+          last_name: user.user_metadata?.last_name || 'Sistema',
+          role_id: defaultRole?.id,
+          is_active: true
+        })
+        .select('id')
+        .single()
+      
+      if (!createError && newInternalUser) {
+        createdByUserId = newInternalUser.id
+        console.log('✅ Internal user created:', createdByUserId)
+      } else {
+        console.error('❌ Failed to create internal user:', createError)
       }
+    }
+  }
+}
       
       // Si no se encuentra branch, usar el primero disponible
       if (!branchId) {
-        const { data: firstBranch } = await supabase
-          .from('branches')
-          .select('id')
-          .eq('is_active', true)
-          .limit(1)
-          .single()
-        
-        branchId = firstBranch?.id
-      }
+  const { data: firstBranch } = await supabase
+    .from('branches')
+    .select('id')
+    .eq('is_active', true)
+    .limit(1)
+    .single()
+  
+  branchId = firstBranch?.id
+}
 
-      if (!branchId) {
-        throw new Error('No se pudo determinar la sucursal')
-      }
+if (!branchId) {
+  throw new Error('No se pudo determinar la sucursal')
+}
+
+// ✅ Preparar datos para inserción
+const insertData = {
+  branch_id: branchId,
+  room_id: roomId,
+  guest_name: guestData.fullName.trim(),
+  guest_document: documentInfo,
+  guest_phone: guestData.phone?.trim() || '',
+  check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
+  check_out_date: roomData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  amount: totalAmount,
+  payment_method_id: paymentMethodId
+}
+
+// Solo agregar created_by si encontramos/creamos el usuario interno
+if (createdByUserId) {
+  insertData.created_by = createdByUserId
+  console.log('✅ Adding created_by:', createdByUserId)
+} else {
+  console.warn('⚠️ Proceeding without created_by field')
+}
+
+console.log('📤 Final insert data:', insertData)
 
       // ✅ Obtener método de pago
       let paymentMethodId = null
