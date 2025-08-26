@@ -1,11 +1,12 @@
-// src/hooks/useQuickCheckins.js - VERSIÓN CORREGIDA SIN DUPLICADOS
+// src/hooks/useQuickCheckins.js - VERSIÓN COMPLETAMENTE CORREGIDA
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { quickCheckinService, snackService } from '../lib/supabase'
+import { supabase, quickCheckinService, snackService } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 
 export const useQuickCheckins = () => {
   const { primaryBranch } = useAuth()
+  const branchId = primaryBranch?.id
   
   // Estados principales
   const [roomsByFloor, setRoomsByFloor] = useState({})
@@ -15,7 +16,7 @@ export const useQuickCheckins = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // ✅ DATOS FIJOS PARA EVITAR LLAMADAS INNECESARIAS
+  // Datos fijos
   const roomPrices = useMemo(() => ({
     1: 100.00,
     2: 120.00,
@@ -23,7 +24,6 @@ export const useQuickCheckins = () => {
     4: 180.00
   }), [])
 
-  // ✅ TIPOS DE SNACKS FIJOS (evita problemas de base de datos)
   const fixedSnackTypes = useMemo(() => [
     { 
       id: 'bebidas', 
@@ -42,380 +42,284 @@ export const useQuickCheckins = () => {
     }
   ], [])
 
-  // ✅ FUNCIÓN PARA GENERAR HABITACIONES ÚNICAS REALES
-  const generateRealRooms = useCallback(() => {
-    console.log('🏗️ Generando habitaciones reales únicas...')
-    
-    const floors = {
-      1: [], // Piso 1: 101-110
-      2: [], // Piso 2: 201-210  
-      3: []  // Piso 3: 301-305
-    }
-
-    // ✅ PISO 1: Habitaciones 101-110 (económicas)
-    for (let i = 1; i <= 10; i++) {
-      const roomNumber = `10${i}`
-      floors[1].push({
-        id: `room-${roomNumber}`,
-        room_id: `room-${roomNumber}`,
-        number: roomNumber,
-        room_number: roomNumber,
-        floor: 1,
-        status: i <= 6 ? 'available' : (i <= 8 ? 'occupied' : 'cleaning'),
-        cleaning_status: i <= 6 ? 'clean' : 'dirty',
-        capacity: 2,
-        base_price: roomPrices[1],
-        rate: roomPrices[1],
-        description: 'Habitación Estándar',
-        room_status: {
-          id: i <= 6 ? 'available' : (i <= 8 ? 'occupied' : 'cleaning'),
-          status: i <= 6 ? 'disponible' : (i <= 8 ? 'ocupada' : 'limpieza'),
-          color: i <= 6 ? '#22c55e' : (i <= 8 ? '#ef4444' : '#f59e0b'),
-          is_available: i <= 6
-        },
-        // ✅ Simular algunos check-ins activos
-        quickCheckin: i === 7 ? {
-          id: `checkin-${roomNumber}`,
-          guest_name: 'Juan Pérez',
-          guest_document: 'DNI:12345678',
-          guest_phone: '+51987654321',
-          check_in_date: new Date().toISOString().split('T')[0],
-          check_out_date: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
-          total_amount: roomPrices[1],
-          room_rate: roomPrices[1],
-          confirmation_code: `QC-${roomNumber}-001`
-        } : null,
-        isActive: true
-      })
-    }
-
-    // ✅ PISO 2: Habitaciones 201-210 (superior)
-    for (let i = 1; i <= 10; i++) {
-      const roomNumber = `20${i}`
-      floors[2].push({
-        id: `room-${roomNumber}`,
-        room_id: `room-${roomNumber}`,
-        number: roomNumber,
-        room_number: roomNumber,
-        floor: 2,
-        status: i <= 7 ? 'available' : (i <= 9 ? 'occupied' : 'cleaning'),
-        cleaning_status: i <= 7 ? 'clean' : 'dirty',
-        capacity: 2,
-        base_price: roomPrices[2],
-        rate: roomPrices[2],
-        description: 'Habitación Superior',
-        room_status: {
-          id: i <= 7 ? 'available' : (i <= 9 ? 'occupied' : 'cleaning'),
-          status: i <= 7 ? 'disponible' : (i <= 9 ? 'ocupada' : 'limpieza'),
-          color: i <= 7 ? '#22c55e' : (i <= 9 ? '#ef4444' : '#f59e0b'),
-          is_available: i <= 7
-        },
-        // ✅ Simular algunos check-ins activos
-        quickCheckin: i === 8 ? {
-          id: `checkin-${roomNumber}`,
-          guest_name: 'María González',
-          guest_document: 'DNI:87654321',
-          guest_phone: '+51976543210',
-          check_in_date: new Date().toISOString().split('T')[0],
-          check_out_date: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
-          total_amount: roomPrices[2],
-          room_rate: roomPrices[2],
-          confirmation_code: `QC-${roomNumber}-002`
-        } : null,
-        isActive: true
-      })
-    }
-
-    // ✅ PISO 3: Habitaciones 301-305 (suites)
-    for (let i = 1; i <= 5; i++) {
-      const roomNumber = `30${i}`
-      floors[3].push({
-        id: `room-${roomNumber}`,
-        room_id: `room-${roomNumber}`,
-        number: roomNumber,
-        room_number: roomNumber,
-        floor: 3,
-        status: i <= 3 ? 'available' : (i === 4 ? 'occupied' : 'maintenance'),
-        cleaning_status: i <= 3 ? 'clean' : 'dirty',
-        capacity: 4,
-        base_price: roomPrices[3],
-        rate: roomPrices[3],
-        description: 'Suite Ejecutiva',
-        room_status: {
-          id: i <= 3 ? 'available' : (i === 4 ? 'occupied' : 'maintenance'),
-          status: i <= 3 ? 'disponible' : (i === 4 ? 'ocupada' : 'mantenimiento'),
-          color: i <= 3 ? '#22c55e' : (i === 4 ? '#ef4444' : '#8b5cf6'),
-          is_available: i <= 3
-        },
-        // ✅ Una suite ocupada
-        quickCheckin: i === 4 ? {
-          id: `checkin-${roomNumber}`,
-          guest_name: 'Carlos Mendoza',
-          guest_document: 'Pasaporte:P123456789',
-          guest_phone: '+51965432109',
-          check_in_date: new Date().toISOString().split('T')[0],
-          check_out_date: new Date(Date.now() + 48*60*60*1000).toISOString().split('T')[0],
-          total_amount: roomPrices[3] * 2, // 2 noches
-          room_rate: roomPrices[3],
-          confirmation_code: `QC-${roomNumber}-003`,
-          snacks_consumed: [
-            { id: 1, name: 'Coca Cola', price: 5.00, quantity: 2 },
-            { id: 2, name: 'Snacks Mix', price: 8.00, quantity: 1 }
-          ]
-        } : null,
-        isActive: true
-      })
-    }
-
-    console.log('✅ Habitaciones generadas:', {
-      piso1: floors[1].length,
-      piso2: floors[2].length,
-      piso3: floors[3].length,
-      total: floors[1].length + floors[2].length + floors[3].length
-    })
-
-    return floors
-  }, [roomPrices])
-
-  // ✅ FUNCIÓN PARA GENERAR SNACKS DE EJEMPLO
-  const generateExampleSnacks = useCallback(() => {
-    console.log('🍿 Generando snacks de ejemplo...')
-    
-    return [
-      // Bebidas
-      { 
-        id: 1, 
-        name: 'Agua Mineral', 
-        price: 3.00, 
-        stock: 50, 
-        minimum_stock: 10,
-        category_id: 'bebidas',
-        snack_categories: { name: 'Bebidas' },
-        category_name: 'Bebidas',
-        category_slug: 'bebidas',
-        is_active: true 
-      },
-      { 
-        id: 2, 
-        name: 'Coca Cola', 
-        price: 5.00, 
-        stock: 30, 
-        minimum_stock: 5,
-        category_id: 'bebidas',
-        snack_categories: { name: 'Bebidas' },
-        category_name: 'Bebidas',
-        category_slug: 'bebidas',
-        is_active: true 
-      },
-      { 
-        id: 3, 
-        name: 'Café Americano', 
-        price: 8.00, 
-        stock: 25, 
-        minimum_stock: 5,
-        category_id: 'bebidas',
-        snack_categories: { name: 'Bebidas' },
-        category_name: 'Bebidas',
-        category_slug: 'bebidas',
-        is_active: true 
-      },
+  // Cargar habitaciones desde la base de datos
+  const loadRoomsFromDatabase = useCallback(async () => {
+    try {
+      console.log('Cargando habitaciones desde la base de datos para branch:', branchId)
       
-      // Snacks
-      { 
-        id: 4, 
-        name: 'Papitas Lays', 
-        price: 6.00, 
-        stock: 40, 
-        minimum_stock: 8,
-        category_id: 'snacks',
-        snack_categories: { name: 'Snacks' },
-        category_name: 'Snacks',
-        category_slug: 'snacks',
-        is_active: true 
-      },
-      { 
-        id: 5, 
-        name: 'Chocolate Sublime', 
-        price: 4.50, 
-        stock: 35, 
-        minimum_stock: 10,
-        category_id: 'snacks',
-        snack_categories: { name: 'Snacks' },
-        category_name: 'Snacks',
-        category_slug: 'snacks',
-        is_active: true 
-      },
-      { 
-        id: 6, 
-        name: 'Galletas Oreo', 
-        price: 7.00, 
-        stock: 20, 
-        minimum_stock: 5,
-        category_id: 'snacks',
-        snack_categories: { name: 'Snacks' },
-        category_name: 'Snacks',
-        category_slug: 'snacks',
-        is_active: true 
-      },
-      
-      // Servicios Extra
-      { 
-        id: 7, 
-        name: 'Toalla Extra', 
-        price: 15.00, 
-        stock: 15, 
-        minimum_stock: 3,
-        category_id: 'servicios',
-        snack_categories: { name: 'Servicios Extra' },
-        category_name: 'Servicios Extra',
-        category_slug: 'servicios',
-        is_active: true 
-      },
-      { 
-        id: 8, 
-        name: 'Almohada Extra', 
-        price: 20.00, 
-        stock: 10, 
-        minimum_stock: 2,
-        category_id: 'servicios',
-        snack_categories: { name: 'Servicios Extra' },
-        category_name: 'Servicios Extra',
-        category_slug: 'servicios',
-        is_active: true 
+      if (!branchId) {
+        console.warn('No hay branch ID disponible')
+        return generateFallbackRooms()
       }
-    ]
-  }, [])
 
-  // ✅ CARGAR DATOS PRINCIPALES
+      const { data: rooms, error } = await supabase
+        .from('rooms')
+        .select(`
+          id,
+          room_number,
+          floor,
+          base_price,
+          description,
+          is_active,
+          room_status:status_id(
+            id,
+            status,
+            color,
+            is_available
+          )
+        `)
+        .eq('branch_id', branchId)
+        .eq('is_active', true)
+        .order('room_number')
+
+      if (error) {
+        console.warn('Error cargando habitaciones, usando fallback:', error)
+        return generateFallbackRooms()
+      }
+
+      if (!rooms || rooms.length === 0) {
+        console.warn('No se encontraron habitaciones, usando fallback')
+        return generateFallbackRooms()
+      }
+
+      // Agrupar por piso
+      const grouped = {}
+      
+      rooms.forEach(room => {
+        const floor = room.floor || Math.floor(parseInt(room.room_number) / 100) || 1
+        
+        if (!grouped[floor]) {
+          grouped[floor] = []
+        }
+
+        const roomStatus = room.room_status?.status || 'disponible'
+        const internalStatus = mapDatabaseStatusToInternal(roomStatus)
+        
+        grouped[floor].push({
+          id: room.id,
+          room_id: room.id,
+          number: room.room_number,
+          room_number: room.room_number,
+          floor: floor,
+          status: internalStatus,
+          cleaning_status: roomStatus === 'limpieza' ? 'dirty' : 'clean',
+          capacity: 2,
+          base_price: room.base_price || roomPrices[floor] || 100,
+          rate: room.base_price || roomPrices[floor] || 100,
+          description: room.description || 'Habitación Estándar',
+          room_status: {
+            id: room.room_status?.id,
+            status: roomStatus,
+            color: room.room_status?.color || '#22c55e',
+            is_available: room.room_status?.is_available !== false
+          },
+          isActive: true
+        })
+      })
+
+      // Ordenar por número
+      Object.keys(grouped).forEach(floor => {
+        grouped[floor].sort((a, b) => {
+          const numA = parseInt(a.room_number) || 0
+          const numB = parseInt(b.room_number) || 0
+          return numA - numB
+        })
+      })
+
+      console.log('Habitaciones cargadas desde BD:', Object.keys(grouped).length, 'pisos')
+      return grouped
+
+    } catch (error) {
+      console.error('Error cargando habitaciones:', error)
+      return generateFallbackRooms()
+    }
+  }, [branchId, roomPrices])
+
+  // Cargar check-ins activos desde la base de datos
+  const loadActiveCheckinsFromDatabase = useCallback(async () => {
+    try {
+      console.log('Cargando check-ins activos desde la base de datos')
+      
+      if (!branchId) {
+        return {}
+      }
+
+      const today = new Date().toISOString().split('T')[0]
+      
+      const { data, error } = await supabase
+        .from('quick_checkins')
+        .select(`
+          id,
+          room_id,
+          guest_name,
+          guest_document,
+          guest_phone,
+          check_in_date,
+          check_out_date,
+          amount,
+          created_at,
+          room:room_id(
+            id,
+            room_number,
+            floor
+          ),
+          payment_method:payment_method_id(
+            name
+          )
+        `)
+        .eq('branch_id', branchId)
+        .gte('check_out_date', today)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.warn('Error cargando check-ins activos:', error)
+        return {}
+      }
+
+      const structured = {}
+      
+      if (data && Array.isArray(data)) {
+        data.forEach(checkin => {
+          const roomNumber = checkin.room?.room_number
+          if (roomNumber) {
+            const docParts = checkin.guest_document?.split(':') || ['DNI', '']
+            
+            structured[roomNumber] = {
+              id: checkin.id,
+              guest_name: checkin.guest_name,
+              guest_document: checkin.guest_document,
+              guest_phone: checkin.guest_phone,
+              documentType: docParts[0],
+              documentNumber: docParts[1],
+              check_in_date: checkin.check_in_date,
+              check_out_date: checkin.check_out_date,
+              total_amount: checkin.amount,
+              room_rate: checkin.amount, // Simplificado por ahora
+              confirmation_code: `QC-${checkin.id}`,
+              payment_method: checkin.payment_method?.name,
+              created_at: checkin.created_at,
+              snacks_consumed: [], // TODO: Implementar tabla relacionada
+              isQuickCheckin: true
+            }
+          }
+        })
+      }
+
+      console.log('Check-ins activos cargados:', Object.keys(structured).length)
+      return structured
+
+    } catch (error) {
+      console.error('Error cargando check-ins activos:', error)
+      return {}
+    }
+  }, [branchId])
+
+  // Cargar todos los datos
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
       
-      console.log('🔄 Cargando datos del sistema de check-in...')
-      
-      // ✅ INTENTAR CARGAR DATOS REALES PRIMERO
-      const [roomsResult, snackCategoriesResult, snackItemsResult] = await Promise.all([
-        quickCheckinService.getRoomsWithStatus(),
-        snackService.getSnackCategories(),
-        snackService.getSnackItems()
+      console.log('Cargando todos los datos del sistema...')
+
+      // Cargar datos en paralelo
+      const [rooms, checkins, snackCategoriesResult, snackItemsResult] = await Promise.all([
+        loadRoomsFromDatabase(),
+        loadActiveCheckinsFromDatabase(),
+        snackService.getSnackCategories().catch(() => ({ data: [], error: null })),
+        snackService.getSnackItems().catch(() => ({ data: [], error: null }))
       ])
 
-      console.log('📊 Resultados de carga:', {
-        rooms: roomsResult?.data?.length || 0,
-        snackCategories: snackCategoriesResult?.data?.length || 0,
-        snackItems: snackItemsResult?.data?.length || 0
-      })
-
-      // ✅ USAR DATOS REALES SI ESTÁN DISPONIBLES, SINO USAR MOCK
-      let finalRoomsByFloor = {}
-      let finalActiveCheckins = {}
-      
-      if (roomsResult?.data && Array.isArray(roomsResult.data) && roomsResult.data.length > 0) {
-        console.log('✅ Usando habitaciones reales de la base de datos')
-        
-        // Agrupar habitaciones reales por piso
-        roomsResult.data.forEach(room => {
-          const floor = room.floor || Math.floor(parseInt(room.room_number) / 100) || 1
-          if (!finalRoomsByFloor[floor]) {
-            finalRoomsByFloor[floor] = []
-          }
+      // Actualizar habitaciones con información de check-ins
+      const updatedRooms = { ...rooms }
+      Object.keys(updatedRooms).forEach(floor => {
+        updatedRooms[floor] = updatedRooms[floor].map(room => {
+          const activeCheckin = checkins[room.room_number]
           
-          // Verificar duplicados antes de agregar
-          const existingRoom = finalRoomsByFloor[floor].find(r => 
-            r.room_number === room.room_number || r.number === room.room_number
-          )
-          
-          if (!existingRoom) {
-            finalRoomsByFloor[floor].push({
+          if (activeCheckin) {
+            return {
               ...room,
-              number: room.room_number,
-              floor: floor,
-              rate: room.base_price || roomPrices[floor] || 100
-            })
+              status: 'occupied',
+              cleaning_status: 'dirty',
+              quickCheckin: activeCheckin,
+              currentGuest: {
+                name: activeCheckin.guest_name,
+                checkIn: activeCheckin.check_in_date,
+                checkOut: activeCheckin.check_out_date
+              },
+              room_status: {
+                ...room.room_status,
+                status: 'ocupada',
+                color: '#ef4444',
+                is_available: false
+              }
+            }
           }
+          
+          return room
         })
-      } else {
-        console.log('⚠️ No hay habitaciones reales, usando datos de ejemplo')
-        finalRoomsByFloor = generateRealRooms()
-      }
-
-      // ✅ EXTRAER CHECK-INS ACTIVOS
-      Object.values(finalRoomsByFloor).flat().forEach(room => {
-        if (room.quickCheckin) {
-          finalActiveCheckins[room.room_number || room.number] = room.quickCheckin
-        }
       })
 
-      // ✅ USAR SNACKS REALES O DE EJEMPLO
+      // Procesar snacks
       let finalSnackTypes = fixedSnackTypes
       let finalSnackItems = []
-      
-      if (snackItemsResult?.data && Array.isArray(snackItemsResult.data) && snackItemsResult.data.length > 0) {
-        console.log('✅ Usando snacks reales de la base de datos')
+
+      if (snackItemsResult?.data && snackItemsResult.data.length > 0) {
+        console.log('Usando snacks reales de la base de datos')
         finalSnackItems = snackItemsResult.data
-        
-        // Usar categorías reales si existen
+
         if (snackCategoriesResult?.data && snackCategoriesResult.data.length > 0) {
           finalSnackTypes = snackCategoriesResult.data.map(cat => ({
-            id: cat.id,
+            id: cat.id || cat.name.toLowerCase().replace(/\s+/g, '-'),
             name: cat.name,
             description: `Productos de ${cat.name.toLowerCase()}`
           }))
         }
       } else {
-        console.log('⚠️ No hay snacks reales, usando datos de ejemplo')
+        console.log('Usando snacks de ejemplo')
         finalSnackItems = generateExampleSnacks()
       }
 
-      // ✅ ACTUALIZAR ESTADOS
-      setRoomsByFloor(finalRoomsByFloor)
-      setActiveCheckins(finalActiveCheckins)
+      // Actualizar estados
+      setRoomsByFloor(updatedRooms)
+      setActiveCheckins(checkins)
       setSnackTypes(finalSnackTypes)
       setSnackItems(finalSnackItems)
       
-      console.log('✅ Datos cargados exitosamente:', {
-        pisos: Object.keys(finalRoomsByFloor).length,
-        habitaciones: Object.values(finalRoomsByFloor).flat().length,
-        checkinsActivos: Object.keys(finalActiveCheckins).length,
+      console.log('Todos los datos cargados exitosamente:', {
+        pisos: Object.keys(updatedRooms).length,
+        habitaciones: Object.values(updatedRooms).flat().length,
+        checkinsActivos: Object.keys(checkins).length,
         tiposSnacks: finalSnackTypes.length,
         itemsSnacks: finalSnackItems.length
       })
       
     } catch (err) {
-      console.error('❌ Error cargando datos:', err)
+      console.error('Error cargando datos:', err)
       setError(err.message || 'Error al cargar datos del sistema')
       
-      // ✅ COMO FALLBACK, USAR DATOS DE EJEMPLO
-      console.log('🔄 Usando datos de ejemplo como fallback...')
-      const fallbackRooms = generateRealRooms()
-      const fallbackActiveCheckins = {}
-      
-      Object.values(fallbackRooms).flat().forEach(room => {
-        if (room.quickCheckin) {
-          fallbackActiveCheckins[room.room_number] = room.quickCheckin
-        }
-      })
-      
+      // Usar datos de fallback
+      const fallbackRooms = generateFallbackRooms()
       setRoomsByFloor(fallbackRooms)
-      setActiveCheckins(fallbackActiveCheckins)
+      setActiveCheckins({})
       setSnackTypes(fixedSnackTypes)
       setSnackItems(generateExampleSnacks())
       
     } finally {
       setLoading(false)
     }
-  }, [generateRealRooms, generateExampleSnacks, fixedSnackTypes, roomPrices])
+  }, [loadRoomsFromDatabase, loadActiveCheckinsFromDatabase, fixedSnackTypes])
 
-  // ✅ PROCESAR QUICK CHECK-IN
+  // FUNCIÓN CORREGIDA: Procesar Quick Check-in REAL
   const processQuickCheckIn = useCallback(async (orderData, guestData, snacksData = []) => {
     try {
-      console.log('🏨 Procesando Quick Check-in:', {
+      console.log('Procesando Quick Check-in REAL:', {
         habitacion: orderData.room.number,
         huesped: guestData.fullName,
         snacks: snacksData.length
       })
 
+      // Validaciones
       if (!guestData.fullName?.trim()) {
         throw new Error('El nombre del huésped es obligatorio')
       }
@@ -424,26 +328,59 @@ export const useQuickCheckins = () => {
         throw new Error('El documento del huésped es obligatorio')
       }
 
-      const roomNumber = orderData.room.number
-      const roomPrice = orderData.roomPrice || roomPrices[orderData.room.floor] || 100
-      const snacksTotal = snacksData.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-      const totalAmount = roomPrice + snacksTotal
-
-      // ✅ CREAR QUICK CHECK-IN SIMULADO (reemplazar con API real)
-      const quickCheckinData = {
-        id: `checkin-${roomNumber}-${Date.now()}`,
-        guest_name: guestData.fullName,
-        guest_document: `${guestData.documentType}:${guestData.documentNumber}`,
-        guest_phone: guestData.phone || '',
-        check_in_date: new Date().toISOString().split('T')[0],
-        check_out_date: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
-        total_amount: totalAmount,
-        room_rate: roomPrice,
-        confirmation_code: `QC-${roomNumber}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-        snacks_consumed: snacksData
+      if (!orderData.room?.id && !orderData.room?.room_id) {
+        throw new Error('ID de habitación no válido')
       }
 
-      // ✅ ACTUALIZAR ESTADOS LOCALES
+      const roomNumber = orderData.room.number
+      const roomId = orderData.room.id || orderData.room.room_id
+      const roomPrice = orderData.roomPrice || roomPrices[orderData.room.floor] || 100
+
+      // Preparar datos para el servicio
+      const roomDataForService = {
+        roomId: roomId,
+        room: orderData.room,
+        roomPrice: roomPrice,
+        checkInDate: orderData.checkInDate || new Date().toISOString().split('T')[0],
+        checkOutDate: orderData.checkOutDate || new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
+        paymentMethod: 'efectivo'
+      }
+
+      // LLAMAR AL SERVICIO REAL DE LA BASE DE DATOS
+      console.log('Llamando a quickCheckinService.createQuickCheckin...')
+      const { data: serviceResult, error: serviceError } = await quickCheckinService.createQuickCheckin(
+        roomDataForService,
+        guestData,
+        snacksData
+      )
+
+      if (serviceError) {
+        console.error('Error del servicio:', serviceError)
+        throw serviceError
+      }
+
+      if (!serviceResult) {
+        throw new Error('No se recibió confirmación del servidor')
+      }
+
+      console.log('Quick check-in guardado en la base de datos:', serviceResult)
+
+      // Crear datos para el estado local basados en la respuesta del servidor
+      const quickCheckinData = {
+        id: serviceResult.id,
+        guest_name: serviceResult.guestName || guestData.fullName,
+        guest_document: serviceResult.guestDocument || `${guestData.documentType}:${guestData.documentNumber}`,
+        guest_phone: serviceResult.guestPhone || guestData.phone || '',
+        check_in_date: serviceResult.checkInDate || roomDataForService.checkInDate,
+        check_out_date: serviceResult.checkOutDate || roomDataForService.checkOutDate,
+        total_amount: serviceResult.total || roomDataForService.roomPrice,
+        room_rate: roomPrice,
+        confirmation_code: serviceResult.confirmationCode || `QC-${serviceResult.id}`,
+        snacks_consumed: snacksData,
+        isQuickCheckin: true
+      }
+
+      // Actualizar estados locales
       setRoomsByFloor(prev => {
         const updated = { ...prev }
         Object.keys(updated).forEach(floor => {
@@ -472,7 +409,7 @@ export const useQuickCheckins = () => {
         [roomNumber]: quickCheckinData
       }))
 
-      // ✅ PROCESAR CONSUMO DE SNACKS
+      // Procesar consumo de snacks
       if (snacksData.length > 0) {
         setSnackItems(prev => prev.map(item => {
           const consumedSnack = snacksData.find(s => s.id === item.id)
@@ -486,24 +423,37 @@ export const useQuickCheckins = () => {
         }))
       }
 
-      return { data: quickCheckinData, error: null }
+      return { data: serviceResult, error: null }
       
     } catch (error) {
-      console.error('❌ Error en processQuickCheckIn:', error)
+      console.error('Error en processQuickCheckIn:', error)
       return { data: null, error }
     }
   }, [roomPrices])
 
-  // ✅ PROCESAR QUICK CHECK-OUT
-  const processQuickCheckOut = useCallback(async (roomNumber, paymentMethod = 'cash') => {
+  // FUNCIÓN CORREGIDA: Procesar Quick Check-out REAL
+  const processQuickCheckOut = useCallback(async (roomNumber, paymentMethod = 'efectivo') => {
     try {
-      console.log('🚪 Procesando Quick Check-out:', { roomNumber, paymentMethod })
+      console.log('Procesando Quick Check-out REAL:', { roomNumber, paymentMethod })
 
-      if (!activeCheckins[roomNumber]) {
+      const activeCheckin = activeCheckins[roomNumber]
+      if (!activeCheckin) {
         throw new Error(`No hay check-in activo para la habitación ${roomNumber}`)
       }
 
-      // ✅ ACTUALIZAR ESTADOS LOCALES
+      // LLAMAR AL SERVICIO REAL
+      const { data: serviceResult, error: serviceError } = await quickCheckinService.processQuickCheckOut(
+        activeCheckin.id,
+        paymentMethod
+      )
+
+      if (serviceError) {
+        throw serviceError
+      }
+
+      console.log('Quick check-out procesado en la base de datos')
+
+      // Actualizar estados locales
       setRoomsByFloor(prev => {
         const updated = { ...prev }
         Object.keys(updated).forEach(floor => {
@@ -512,7 +462,7 @@ export const useQuickCheckins = () => {
               ? { 
                   ...room, 
                   status: 'available',
-                  cleaning_status: 'dirty',
+                  cleaning_status: 'dirty', // Necesita limpieza
                   quickCheckin: null,
                   room_status: {
                     ...room.room_status,
@@ -533,20 +483,23 @@ export const useQuickCheckins = () => {
         return updated
       })
 
-      return { data: true, error: null }
+      return { data: serviceResult || true, error: null }
       
     } catch (error) {
-      console.error('❌ Error en processQuickCheckOut:', error)
+      console.error('Error en processQuickCheckOut:', error)
       return { data: null, error }
     }
   }, [activeCheckins])
 
-  // ✅ LIMPIAR HABITACIÓN
+  // Limpiar habitación
   const cleanRoom = useCallback(async (roomId) => {
     try {
-      console.log('🧹 Limpiando habitación:', roomId)
+      console.log('Limpiando habitación:', roomId)
 
       let roomNumber = null
+      
+      // Actualizar estado en la base de datos si es necesario
+      // TODO: Implementar llamada a API para actualizar estado a 'disponible'
       
       setRoomsByFloor(prev => {
         const updated = { ...prev }
@@ -575,67 +528,184 @@ export const useQuickCheckins = () => {
       return { data: { roomNumber }, error: null }
       
     } catch (error) {
-      console.error('❌ Error limpiando habitación:', error)
+      console.error('Error limpiando habitación:', error)
       return { data: null, error }
     }
   }, [])
 
-  // ✅ REFRESCAR DATOS
+  // Refrescar datos
   const refreshData = useCallback(() => {
-    console.log('🔄 Refrescando datos...')
+    console.log('Refrescando datos...')
     loadData()
   }, [loadData])
 
-  // ✅ CARGAR DATOS AL INICIALIZAR
+  // Utilidades
+  const mapDatabaseStatusToInternal = (dbStatus) => {
+    const statusMap = {
+      'disponible': 'available',
+      'ocupada': 'occupied',
+      'limpieza': 'cleaning',
+      'mantenimiento': 'maintenance',
+      'fuera_servicio': 'out_of_service'
+    }
+    return statusMap[dbStatus] || 'available'
+  }
+
+  const generateFallbackRooms = () => {
+    console.log('Generando habitaciones de fallback...')
+    return {
+      1: [
+        {
+          id: 'fallback-101',
+          room_id: 'fallback-101',
+          number: '101',
+          room_number: '101',
+          floor: 1,
+          status: 'available',
+          cleaning_status: 'clean',
+          capacity: 2,
+          base_price: 100.00,
+          rate: 100.00,
+          description: 'Habitación Estándar',
+          room_status: { status: 'disponible', is_available: true, color: '#22c55e' },
+          isActive: true
+        },
+        {
+          id: 'fallback-102',
+          room_id: 'fallback-102',
+          number: '102',
+          room_number: '102',
+          floor: 1,
+          status: 'available',
+          cleaning_status: 'clean',
+          capacity: 2,
+          base_price: 100.00,
+          rate: 100.00,
+          description: 'Habitación Estándar',
+          room_status: { status: 'disponible', is_available: true, color: '#22c55e' },
+          isActive: true
+        }
+      ]
+    }
+  }
+
+  const generateExampleSnacks = () => {
+    return [
+      { 
+        id: 1, 
+        name: 'Agua Mineral', 
+        price: 3.00, 
+        stock: 50, 
+        minimum_stock: 10,
+        category_id: 'bebidas',
+        snack_categories: { name: 'Bebidas' },
+        category_name: 'Bebidas',
+        category_slug: 'bebidas',
+        is_active: true 
+      },
+      { 
+        id: 2, 
+        name: 'Coca Cola', 
+        price: 5.00, 
+        stock: 30, 
+        minimum_stock: 5,
+        category_id: 'bebidas',
+        snack_categories: { name: 'Bebidas' },
+        category_name: 'Bebidas',
+        category_slug: 'bebidas',
+        is_active: true 
+      },
+      { 
+        id: 4, 
+        name: 'Papitas Lays', 
+        price: 6.00, 
+        stock: 40, 
+        minimum_stock: 8,
+        category_id: 'snacks',
+        snack_categories: { name: 'Snacks' },
+        category_name: 'Snacks',
+        category_slug: 'snacks',
+        is_active: true 
+      },
+      { 
+        id: 7, 
+        name: 'Toalla Extra', 
+        price: 15.00, 
+        stock: 15, 
+        minimum_stock: 3,
+        category_id: 'servicios',
+        snack_categories: { name: 'Servicios Extra' },
+        category_name: 'Servicios Extra',
+        category_slug: 'servicios',
+        is_active: true 
+      }
+    ]
+  }
+
+  // Debug
+  const debugData = useCallback(() => {
+    console.log('=== DEBUG useQuickCheckins ===')
+    console.log('Branch ID:', branchId)
+    console.log('Rooms by floor:', roomsByFloor)
+    console.log('Active checkins:', activeCheckins)
+    console.log('Loading:', loading)
+    console.log('Error:', error)
+  }, [branchId, roomsByFloor, activeCheckins, loading, error])
+
+  // Efectos
   useEffect(() => {
     loadData()
   }, [loadData])
 
-  // ✅ DEBUG INFO
-  const debugData = useCallback(() => {
-    console.log('🐛 Debug useQuickCheckins:', {
-      roomsByFloor,
-      activeCheckins,
-      snackTypes,
-      snackItems: snackItems.length,
-      loading,
-      error
-    })
-  }, [roomsByFloor, activeCheckins, snackTypes, snackItems, loading, error])
+  useEffect(() => {
+    if (!branchId || loading) return
+
+    const interval = setInterval(() => {
+      console.log('Auto-refresh de datos...')
+      loadData()
+    }, 5 * 60 * 1000) // Cada 5 minutos
+
+    return () => clearInterval(interval)
+  }, [branchId, loading, loadData])
+
+  // Estadísticas computadas
+  const allRooms = Object.values(roomsByFloor).flat()
+  const totalRooms = allRooms.length
+  const availableRooms = allRooms.filter(r => r.status === 'available' && r.cleaning_status === 'clean').length
+  const occupiedRooms = allRooms.filter(r => r.status === 'occupied').length
+  const cleaningRooms = allRooms.filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length
+  const activeCheckinsCount = Object.keys(activeCheckins).length
 
   return {
-    // ✅ DATOS PRINCIPALES
+    // Datos principales
     roomsByFloor,
     activeCheckins,
     snackTypes,
     snackItems,
     roomPrices,
     
-    // ✅ ESTADOS
+    // Estados
     loading,
     error,
     
-    // ✅ ACCIONES PRINCIPALES
+    // Acciones principales
     processQuickCheckIn,
     processQuickCheckOut,
     cleanRoom,
     refreshData,
     debugData,
     
-    // ✅ ESTADÍSTICAS COMPUTADAS
-    totalRooms: Object.values(roomsByFloor).flat().length,
-    availableRooms: Object.values(roomsByFloor).flat().filter(r => 
-      r.status === 'available' && r.cleaning_status === 'clean'
-    ).length,
-    occupiedRooms: Object.values(roomsByFloor).flat().filter(r => 
-      r.status === 'occupied'
-    ).length,
-    cleaningRooms: Object.values(roomsByFloor).flat().filter(r => 
-      r.cleaning_status === 'dirty' || r.status === 'cleaning'
-    ).length,
-    activeCheckinsCount: Object.keys(activeCheckins).length,
+    // Estadísticas
+    totalRooms,
+    availableRooms,
+    occupiedRooms,
+    cleaningRooms,
+    activeCheckinsCount,
     
-    // ✅ UTILIDADES
+    // Utilidades
+    branchId,
+    hasData: totalRooms > 0,
+    isReady: !loading && !error && totalRooms > 0,
     hasQuickCleanCapability: true,
     supportedFeatures: [
       'walk_in_checkin',
@@ -643,7 +713,8 @@ export const useQuickCheckins = () => {
       'snack_selection',
       'quick_room_cleaning',
       'quick_checkout',
-      'real_time_updates'
+      'real_time_updates',
+      'database_persistence'
     ]
   }
 }

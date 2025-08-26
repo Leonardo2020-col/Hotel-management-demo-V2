@@ -871,12 +871,15 @@ export const quickCheckinService = {
   },
 
   // Obtener quick checkins activos
-  async getActiveQuickCheckins() {
+  async getActiveQuickCheckins(branchId = null) {
     try {
-      const { data, error } = await supabase
+      console.log('📋 Loading active quick checkins...', { branchId })
+      
+      let query = supabase
         .from('quick_checkins')
         .select(`
           id,
+          branch_id,
           room_id,
           guest_name,
           guest_document,
@@ -885,71 +888,317 @@ export const quickCheckinService = {
           check_out_date,
           amount,
           created_at,
-          room:room_id(room_number),
-          payment_method:payment_method_id(name)
+          created_by,
+          room:room_id(
+            id,
+            room_number,
+            floor,
+            base_price
+          ),
+          payment_method:payment_method_id(
+            id,
+            name
+          ),
+          branch:branch_id(
+            id,
+            name
+          )
         `)
         .gte('check_out_date', new Date().toISOString().split('T')[0])
         .order('created_at', { ascending: false })
 
-      if (error) throw error
-      return { data: data || [], error: null }
+      // Filtrar por sucursal si se especifica
+      if (branchId) {
+        query = query.eq('branch_id', branchId)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error('❌ Error loading quick checkins:', error)
+        throw error
+      }
+
+      console.log('✅ Quick checkins loaded:', data?.length || 0)
+
+      // ✅ ESTRUCTURAR DATOS PARA EL FRONTEND
+      const structuredData = {}
+      
+      if (data && Array.isArray(data)) {
+        data.forEach(checkin => {
+          const roomNumber = checkin.room?.room_number
+          if (roomNumber) {
+            // Parsear documento
+            const docParts = checkin.guest_document?.split(':') || ['DNI', '']
+            
+            structuredData[roomNumber] = {
+              id: checkin.id,
+              room: {
+                id: checkin.room.id,
+                number: roomNumber,
+                floor: checkin.room.floor,
+                base_price: checkin.room.base_price
+              },
+              guest_name: checkin.guest_name,
+              guest_document: checkin.guest_document,
+              guest_phone: checkin.guest_phone,
+              documentType: docParts[0],
+              documentNumber: docParts[1],
+              check_in_date: checkin.check_in_date,
+              check_out_date: checkin.check_out_date,
+              total_amount: checkin.amount,
+              room_rate: checkin.room?.base_price || 0,
+              confirmation_code: `QC-${checkin.id}-${checkin.created_at.slice(-4)}`,
+              payment_method: checkin.payment_method?.name,
+              branch_name: checkin.branch?.name,
+              created_at: checkin.created_at,
+              snacks_consumed: [], // Placeholder - en implementación completa iría a otra tabla
+              isQuickCheckin: true
+            }
+          }
+        })
+      }
+
+      return { data: structuredData, error: null }
+
     } catch (error) {
-      console.error('❌ Error fetching active quick checkins:', error)
-      return { data: [], error }
+      console.error('❌ Error in getActiveQuickCheckins:', error)
+      return { data: {}, error }
     }
   },
 
   // Crear quick checkin
-  async createQuickCheckin(quickCheckinData, guestData, snacksData = []) {
+  async createQuickCheckin(roomData, guestData, snacksData = []) {
     try {
       console.log('🎯 Creating quick checkin...', {
-        room: quickCheckinData.roomId,
+        room: roomData.room?.number || roomData.roomId,
         guest: guestData.fullName,
         snacks: snacksData.length
       })
 
-      // Obtener método de pago
+      // ✅ VALIDACIONES
+      if (!guestData.fullName?.trim()) {
+        throw new Error('El nombre del huésped es obligatorio')
+      }
+
+      if (!roomData.roomId && !roomData.room?.id) {
+        throw new Error('ID de habitación es requerido')
+      }
+
+      const roomId = roomData.roomId || roomData.room?.id
+      const roomNumber = roomData.room?.number || roomData.room?.room_number || 'N/A'
+
+      // ✅ Obtener branch_id del usuario actual o usar default
+      const { data: { user } } = await supabase.auth.getUser()
+      let branchId = null
+      
+      if (user) {
+        const { data: userBranch } = await supabase
+          .from('user_branches')
+          .select('branch_id')
+          .eq('user_id', user.id)
+          .eq('is_primary', true)
+          .single()
+        
+        branchId = userBranch?.branch_id
+      }
+      
+      // Si no se encuentra branch, usar el primero disponible
+      if (!branchId) {
+        const { data: firstBranch } = await supabase
+          .from('branches')
+          .select('id')
+          .eq('is_active', true)
+          .limit(1)
+          .single()
+        
+        branchId = firstBranch?.id
+      }
+
+      if (!branchId) {
+        throw new Error('No se pudo determinar la sucursal')
+      }
+
+      // ✅ Obtener método de pago
       let paymentMethodId = null
-      if (quickCheckinData.paymentMethod) {
+      if (roomData.paymentMethod) {
         const { data: paymentMethod } = await supabase
           .from('payment_methods')
           .select('id')
-          .eq('name', quickCheckinData.paymentMethod)
+          .eq('name', roomData.paymentMethod === 'cash' ? 'efectivo' : roomData.paymentMethod)
           .single()
         
         paymentMethodId = paymentMethod?.id
       }
 
+      // ✅ Calcular totales
+      const roomPrice = roomData.roomPrice || roomData.room?.base_price || 100
       const snacksTotal = snacksData.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-      const totalAmount = quickCheckinData.roomPrice + snacksTotal
+      const totalAmount = roomPrice + snacksTotal
 
-      // Crear quick checkin
+      // ✅ Preparar datos del documento
+      const documentInfo = guestData.documentNumber 
+        ? `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`
+        : null
+
+      // ✅ INSERTAR EN QUICK_CHECKINS - CORREGIDO
       const { data: quickCheckin, error: quickCheckinError } = await supabase
         .from('quick_checkins')
         .insert({
-          room_id: quickCheckinData.roomId,
-          guest_name: guestData.fullName,
-          guest_document: `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`,
-          guest_phone: guestData.phone || '',
-          check_in_date: quickCheckinData.checkInDate || new Date().toISOString().split('T')[0],
-          check_out_date: quickCheckinData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          branch_id: branchId,
+          room_id: roomId,
+          guest_name: guestData.fullName.trim(),
+          guest_document: documentInfo,
+          guest_phone: guestData.phone?.trim() || '',
+          check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
+          check_out_date: roomData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           amount: totalAmount,
-          payment_method_id: paymentMethodId
+          payment_method_id: paymentMethodId,
+          created_by: user?.id || null
         })
-        .select()
+        .select(`
+          id,
+          guest_name,
+          guest_document,
+          guest_phone,
+          check_in_date,
+          check_out_date,
+          amount,
+          created_at,
+          room:room_id(id, room_number, floor),
+          payment_method:payment_method_id(name)
+        `)
         .single()
 
-      if (quickCheckinError) throw quickCheckinError
+      if (quickCheckinError) {
+        console.error('❌ Error inserting quick checkin:', quickCheckinError)
+        throw new Error(`Error creando quick checkin: ${quickCheckinError.message}`)
+      }
 
-      // Procesar consumo de snacks si hay
+      console.log('✅ Quick checkin created in database:', quickCheckin.id)
+
+      // ✅ ACTUALIZAR ESTADO DE LA HABITACIÓN
+      const { data: occupiedStatus } = await supabase
+        .from('room_status')
+        .select('id')
+        .eq('status', 'ocupada')
+        .single()
+
+      if (occupiedStatus) {
+        const { error: roomUpdateError } = await supabase
+          .from('rooms')
+          .update({ status_id: occupiedStatus.id })
+          .eq('id', roomId)
+
+        if (roomUpdateError) {
+          console.warn('⚠️ Warning updating room status:', roomUpdateError)
+        } else {
+          console.log('✅ Room status updated to occupied')
+        }
+      }
+
+      // ✅ PROCESAR CONSUMO DE SNACKS SI HAY
       if (snacksData.length > 0) {
+        console.log('🍿 Processing snack consumption...')
         await snackService.processSnackConsumption(snacksData)
       }
 
-      console.log('✅ Quick checkin created successfully:', quickCheckin.id)
-      return { data: quickCheckin, error: null }
+      // ✅ RETORNAR DATOS ESTRUCTURADOS
+      const result = {
+        id: quickCheckin.id,
+        room: {
+          id: roomId,
+          number: quickCheckin.room?.room_number || roomNumber,
+          floor: quickCheckin.room?.floor || Math.floor(parseInt(roomNumber) / 100)
+        },
+        roomPrice: roomPrice,
+        snacks: snacksData,
+        total: totalAmount,
+        checkInDate: quickCheckin.check_in_date,
+        checkOutDate: quickCheckin.check_out_date,
+        guestName: quickCheckin.guest_name,
+        guestDocument: quickCheckin.guest_document,
+        guestPhone: quickCheckin.guest_phone,
+        confirmationCode: `QC-${quickCheckin.id}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
+        paymentMethod: quickCheckin.payment_method?.name,
+        createdAt: quickCheckin.created_at,
+        isQuickCheckin: true
+      }
+
+      console.log('✅ Quick checkin created successfully:', result)
+      return { data: result, error: null }
+
     } catch (error) {
-      console.error('❌ Error creating quick checkin:', error)
+      console.error('❌ Error in createQuickCheckin:', error)
+      return { data: null, error: error }
+    }
+  },
+
+  // ✅ FUNCIÓN PARA PROCESAR CHECK-OUT
+  async processQuickCheckOut(quickCheckinId, paymentMethod = 'efectivo') {
+    try {
+      console.log('🚪 Processing quick checkout...', { quickCheckinId, paymentMethod })
+
+      // Obtener el quick checkin
+      const { data: quickCheckin, error: fetchError } = await supabase
+        .from('quick_checkins')
+        .select(`
+          id,
+          room_id,
+          guest_name,
+          amount,
+          room:room_id(room_number)
+        `)
+        .eq('id', quickCheckinId)
+        .single()
+
+      if (fetchError || !quickCheckin) {
+        throw new Error('Quick check-in no encontrado')
+      }
+
+      // Marcar como completado (agregar campo si no existe)
+      const { error: updateError } = await supabase
+        .from('quick_checkins')
+        .update({
+          // En una implementación completa, agregarías:
+          // checked_out_at: new Date().toISOString(),
+          // checkout_payment_method: paymentMethod
+          check_out_date: new Date().toISOString().split('T')[0] // Por ahora actualizar fecha
+        })
+        .eq('id', quickCheckinId)
+
+      if (updateError) {
+        console.warn('⚠️ Warning updating checkout:', updateError)
+      }
+
+      // Liberar habitación
+      const { data: availableStatus } = await supabase
+        .from('room_status')
+        .select('id')
+        .eq('status', 'limpieza')
+        .single()
+
+      if (availableStatus) {
+        await supabase
+          .from('rooms')
+          .update({ status_id: availableStatus.id })
+          .eq('id', quickCheckin.room_id)
+      }
+
+      console.log('✅ Quick checkout processed successfully')
+      return { 
+        data: {
+          id: quickCheckinId,
+          roomNumber: quickCheckin.room?.room_number,
+          guestName: quickCheckin.guest_name,
+          amount: quickCheckin.amount,
+          paymentMethod
+        }, 
+        error: null 
+      }
+
+    } catch (error) {
+      console.error('❌ Error in processQuickCheckOut:', error)
       return { data: null, error }
     }
   }
