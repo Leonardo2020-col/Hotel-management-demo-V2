@@ -887,6 +887,7 @@ export const quickCheckinService = {
           check_in_date,
           check_out_date,
           amount,
+          snacks_consumed,
           created_at,
           created_by,
           room:room_id(
@@ -952,7 +953,7 @@ export const quickCheckinService = {
               payment_method: checkin.payment_method?.name,
               branch_name: checkin.branch?.name,
               created_at: checkin.created_at,
-              snacks_consumed: [], // Placeholder - en implementación completa iría a otra tabla
+              snacks_consumed: checkin.snacks_consumed || [], // ✅ AHORA DESDE LA BD
               isQuickCheckin: true
             }
           }
@@ -967,7 +968,7 @@ export const quickCheckinService = {
     }
   },
 
-  // Crear quick checkin
+  // ✅ CREAR QUICK CHECKIN - FUNCIÓN CORREGIDA CON SNACKS EN BD
   async createQuickCheckin(roomData, guestData, snacksData = []) {
     try {
       console.log('🎯 Creating quick checkin...', {
@@ -991,7 +992,7 @@ export const quickCheckinService = {
       // ✅ OBTENER USUARIO ACTUAL Y BRANCH_ID
       const { data: { user } } = await supabase.auth.getUser()
       let createdByUserId = null
-      let branchId = roomData.branchId // ✅ TOMAR DE ROOMDATA PRIMERO
+      let branchId = roomData.branchId // Tomar de roomData primero
 
       if (user) {
         console.log('🔍 Auth user found:', user.id, user.email)
@@ -999,7 +1000,7 @@ export const quickCheckinService = {
         // Buscar el usuario en nuestra tabla 'users' que corresponde al usuario de Auth
         const { data: internalUser, error: userError } = await supabase
           .from('users')
-          .select('id, email, first_name, last_name, user_branches!inner(branch_id, is_primary)')
+          .select('id, email, first_name, last_name, auth_id, user_branches!inner(branch_id, is_primary)')
           .eq('auth_id', user.id)  // ✅ Buscar por auth_id
           .single()
         
@@ -1058,6 +1059,15 @@ export const quickCheckinService = {
         ? `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`
         : null
 
+      // ✅ PREPARAR SNACKS PARA LA BASE DE DATOS
+      const snacksForDB = snacksData.map(snack => ({
+        id: snack.id,
+        name: snack.name,
+        quantity: snack.quantity,
+        price: snack.price,
+        total: snack.price * snack.quantity
+      }))
+
       // ✅ Preparar datos para inserción
       const insertData = {
         branch_id: branchId,
@@ -1068,10 +1078,11 @@ export const quickCheckinService = {
         check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
         check_out_date: roomData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         amount: totalAmount,
-        payment_method_id: paymentMethodId
+        payment_method_id: paymentMethodId,
+        snacks_consumed: snacksForDB // ✅ GUARDAR SNACKS EN LA BD
       }
 
-      // Solo agregar created_by si encontramos/creamos el usuario interno
+      // Solo agregar created_by si encontramos el usuario interno
       if (createdByUserId) {
         insertData.created_by = createdByUserId
         console.log('✅ Adding created_by:', createdByUserId)
@@ -1093,6 +1104,7 @@ export const quickCheckinService = {
           check_in_date,
           check_out_date,
           amount,
+          snacks_consumed,
           created_at,
           room:room_id(id, room_number, floor),
           payment_method:payment_method_id(name)
@@ -1126,9 +1138,9 @@ export const quickCheckinService = {
         }
       }
 
-      // ✅ PROCESAR CONSUMO DE SNACKS SI HAY
+      // ✅ PROCESAR CONSUMO DE SNACKS EN INVENTARIO (OPCIONAL)
       if (snacksData.length > 0) {
-        console.log('🍿 Processing snack consumption...')
+        console.log('🍿 Processing snack consumption in inventory...')
         await snackService.processSnackConsumption(snacksData)
       }
 
@@ -1141,7 +1153,7 @@ export const quickCheckinService = {
           floor: quickCheckin.room?.floor || Math.floor(parseInt(roomNumber) / 100)
         },
         roomPrice: roomPrice,
-        snacks: snacksData,
+        snacks: quickCheckin.snacks_consumed || [], // ✅ DESDE LA BD
         total: totalAmount,
         checkInDate: quickCheckin.check_in_date,
         checkOutDate: quickCheckin.check_out_date,
@@ -1176,6 +1188,7 @@ export const quickCheckinService = {
           room_id,
           guest_name,
           amount,
+          snacks_consumed,
           room:room_id(room_number)
         `)
         .eq('id', quickCheckinId)
@@ -1185,14 +1198,11 @@ export const quickCheckinService = {
         throw new Error('Quick check-in no encontrado')
       }
 
-      // Marcar como completado (agregar campo si no existe)
+      // Marcar como completado (actualizar fecha de checkout)
       const { error: updateError } = await supabase
         .from('quick_checkins')
         .update({
-          // En una implementación completa, agregarías:
-          // checked_out_at: new Date().toISOString(),
-          // checkout_payment_method: paymentMethod
-          check_out_date: new Date().toISOString().split('T')[0] // Por ahora actualizar fecha
+          check_out_date: new Date().toISOString().split('T')[0]
         })
         .eq('id', quickCheckinId)
 
@@ -1221,6 +1231,7 @@ export const quickCheckinService = {
           roomNumber: quickCheckin.room?.room_number,
           guestName: quickCheckin.guest_name,
           amount: quickCheckin.amount,
+          snacksConsumed: quickCheckin.snacks_consumed || [],
           paymentMethod
         }, 
         error: null 
@@ -1229,6 +1240,75 @@ export const quickCheckinService = {
     } catch (error) {
       console.error('❌ Error in processQuickCheckOut:', error)
       return { data: null, error }
+    }
+  },
+
+  // ✅ NUEVA FUNCIÓN: Obtener snacks consumidos de un quick checkin específico
+  async getQuickCheckinSnacks(quickCheckinId) {
+    try {
+      const { data, error } = await supabase
+        .from('quick_checkins')
+        .select('snacks_consumed')
+        .eq('id', quickCheckinId)
+        .single()
+
+      if (error) throw error
+
+      return { data: data.snacks_consumed || [], error: null }
+    } catch (error) {
+      console.error('❌ Error fetching quick checkin snacks:', error)
+      return { data: [], error }
+    }
+  },
+
+  // ✅ NUEVA FUNCIÓN: Actualizar snacks consumidos
+  async updateQuickCheckinSnacks(quickCheckinId, newSnacks) {
+    try {
+      const snacksForDB = newSnacks.map(snack => ({
+        id: snack.id,
+        name: snack.name,
+        quantity: snack.quantity,
+        price: snack.price,
+        total: snack.price * snack.quantity
+      }))
+
+      const { data, error } = await supabase
+        .from('quick_checkins')
+        .update({ 
+          snacks_consumed: snacksForDB,
+          // Opcional: recalcular amount total
+          amount: await this.calculateUpdatedAmount(quickCheckinId, snacksForDB)
+        })
+        .eq('id', quickCheckinId)
+        .select('snacks_consumed, amount')
+        .single()
+
+      if (error) throw error
+
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error updating quick checkin snacks:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ FUNCIÓN AUXILIAR: Calcular monto total actualizado
+  async calculateUpdatedAmount(quickCheckinId, snacks) {
+    try {
+      // Obtener precio base de la habitación
+      const { data: checkin } = await supabase
+        .from('quick_checkins')
+        .select('room:room_id(base_price)')
+        .eq('id', quickCheckinId)
+        .single()
+
+      const roomPrice = checkin?.room?.base_price || 0
+      const snacksTotal = snacks.reduce((total, snack) => total + (snack.total || 0), 0)
+      
+      return roomPrice + snacksTotal
+    } catch (error) {
+      console.warn('⚠️ Error calculating updated amount:', error)
+      return 0
     }
   }
 }
