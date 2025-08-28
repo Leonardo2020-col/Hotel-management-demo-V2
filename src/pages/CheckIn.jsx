@@ -6,6 +6,7 @@ import RoomGrid from '../components/checkin/RoomGrid'
 import SnackSelection from '../components/checkin/SnackSelection'
 import QuickCheckoutModal from '../components/checkin/QuickCheckoutModal'
 import { useQuickCheckins } from '../hooks/useQuickCheckins'
+import { quickCheckinService, snackService } from '../lib/supabase'
 import toast from 'react-hot-toast'
 
 const CheckIn = () => {
