@@ -968,212 +968,232 @@ export const quickCheckinService = {
     }
   },
 
-  // ✅ CREAR QUICK CHECKIN - FUNCIÓN CORREGIDA CON SNACKS EN BD
-  async createQuickCheckin(roomData, guestData, snacksData = []) {
-    try {
-      console.log('🎯 Creating quick checkin...', {
-        room: roomData.room?.number || roomData.roomId,
-        guest: guestData.fullName,
-        snacks: snacksData.length
-      })
+  // ✅ CREAR QUICK CHECKIN - VERSIÓN CORREGIDA CON SNACKS_CONSUMED
+async createQuickCheckin(roomData, guestData, snacksData = []) {
+  try {
+    console.log('🎯 Creating quick checkin...', {
+      room: roomData.room?.number || roomData.roomId,
+      guest: guestData.fullName,
+      snacks: snacksData.length,
+      snacksDetails: snacksData
+    })
 
-      // ✅ VALIDACIONES
-      if (!guestData.fullName?.trim()) {
-        throw new Error('El nombre del huésped es obligatorio')
-      }
+    // ✅ VALIDACIONES
+    if (!guestData.fullName?.trim()) {
+      throw new Error('El nombre del huésped es obligatorio')
+    }
 
-      if (!roomData.roomId && !roomData.room?.id) {
-        throw new Error('ID de habitación es requerido')
-      }
+    if (!roomData.roomId && !roomData.room?.id) {
+      throw new Error('ID de habitación es requerido')
+    }
 
-      const roomId = roomData.roomId || roomData.room?.id
-      const roomNumber = roomData.room?.number || roomData.room?.room_number || 'N/A'
+    const roomId = roomData.roomId || roomData.room?.id
+    const roomNumber = roomData.room?.number || roomData.room?.room_number || 'N/A'
 
-      // ✅ OBTENER USUARIO ACTUAL Y BRANCH_ID
-      const { data: { user } } = await supabase.auth.getUser()
-      let createdByUserId = null
-      let branchId = roomData.branchId // Tomar de roomData primero
+    // ✅ OBTENER USUARIO ACTUAL Y BRANCH_ID
+    const { data: { user } } = await supabase.auth.getUser()
+    let createdByUserId = null
+    let branchId = roomData.branchId
 
-      if (user) {
-        console.log('🔍 Auth user found:', user.id, user.email)
-        
-        // Buscar el usuario en nuestra tabla 'users' que corresponde al usuario de Auth
-        const { data: internalUser, error: userError } = await supabase
-          .from('users')
-          .select('id, email, first_name, last_name, auth_id, user_branches!inner(branch_id, is_primary)')
-          .eq('auth_id', user.id)  // ✅ Buscar por auth_id
-          .single()
-        
-        if (!userError && internalUser) {
-          createdByUserId = internalUser.id
-          
-          // ✅ OBTENER BRANCH_ID DEL USUARIO SI NO SE PROPORCIONA
-          if (!branchId && internalUser.user_branches?.length > 0) {
-            // Buscar la sucursal primaria o tomar la primera
-            const primaryBranch = internalUser.user_branches.find(ub => ub.is_primary)
-            branchId = primaryBranch?.branch_id || internalUser.user_branches[0]?.branch_id
-          }
-          
-          console.log('✅ Internal user found:', internalUser.email, 'ID:', createdByUserId, 'Branch:', branchId)
-        } else {
-          console.warn('⚠️ No internal user found for auth user:', user.email)
-          console.warn('⚠️ User error:', userError)
-        }
-      }
+    if (user) {
+      console.log('🔍 Auth user found:', user.id, user.email)
       
-      // ✅ Si no se encuentra branch, usar el primero disponible
-      if (!branchId) {
-        const { data: firstBranch } = await supabase
-          .from('branches')
-          .select('id')
-          .eq('is_active', true)
-          .limit(1)
-          .single()
+      const { data: internalUser, error: userError } = await supabase
+        .from('users')
+        .select('id, email, first_name, last_name, auth_id, user_branches!inner(branch_id, is_primary)')
+        .eq('auth_id', user.id)
+        .single()
+      
+      if (!userError && internalUser) {
+        createdByUserId = internalUser.id
         
-        branchId = firstBranch?.id
-      }
-
-      if (!branchId) {
-        throw new Error('No se pudo determinar la sucursal')
-      }
-
-      // ✅ Obtener método de pago
-      let paymentMethodId = null
-      if (roomData.paymentMethod) {
-        const { data: paymentMethod } = await supabase
-          .from('payment_methods')
-          .select('id')
-          .eq('name', roomData.paymentMethod === 'cash' ? 'efectivo' : roomData.paymentMethod)
-          .single()
+        if (!branchId && internalUser.user_branches?.length > 0) {
+          const primaryBranch = internalUser.user_branches.find(ub => ub.is_primary)
+          branchId = primaryBranch?.branch_id || internalUser.user_branches[0]?.branch_id
+        }
         
-        paymentMethodId = paymentMethod?.id
+        console.log('✅ Internal user found:', internalUser.email, 'ID:', createdByUserId, 'Branch:', branchId)
+      } else {
+        console.warn('⚠️ No internal user found for auth user:', user.email)
       }
+    }
+    
+    // Si no se encuentra branch, usar el primero disponible
+    if (!branchId) {
+      const { data: firstBranch } = await supabase
+        .from('branches')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .single()
+      
+      branchId = firstBranch?.id
+    }
 
-      // ✅ Calcular totales
-      const roomPrice = roomData.roomPrice || roomData.room?.base_price || 100
-      const snacksTotal = snacksData.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-      const totalAmount = roomPrice + snacksTotal
+    if (!branchId) {
+      throw new Error('No se pudo determinar la sucursal')
+    }
 
-      // ✅ Preparar datos del documento
-      const documentInfo = guestData.documentNumber 
-        ? `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`
-        : null
-
-      // ✅ PREPARAR SNACKS PARA LA BASE DE DATOS
-      const snacksForDB = snacksData.map(snack => ({
+    // ✅ PREPARAR SNACKS PARA LA BASE DE DATOS
+    console.log('🍿 Preparing snacks for database...', snacksData)
+    const snacksForDB = snacksData.map(snack => {
+      const snackData = {
         id: snack.id,
         name: snack.name,
-        quantity: snack.quantity,
-        price: snack.price,
-        total: snack.price * snack.quantity
-      }))
-
-      // ✅ Preparar datos para inserción
-      const insertData = {
-        branch_id: branchId,
-        room_id: roomId,
-        guest_name: guestData.fullName.trim(),
-        guest_document: documentInfo,
-        guest_phone: guestData.phone?.trim() || '',
-        check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
-        check_out_date: roomData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        amount: totalAmount,
-        payment_method_id: paymentMethodId,
-        snacks_consumed: snacksForDB // ✅ GUARDAR SNACKS EN LA BD
+        quantity: snack.quantity || 1,
+        price: snack.price || 0,
+        total: (snack.price || 0) * (snack.quantity || 1)
       }
+      console.log('📦 Snack prepared:', snackData)
+      return snackData
+    })
 
-      // Solo agregar created_by si encontramos el usuario interno
-      if (createdByUserId) {
-        insertData.created_by = createdByUserId
-        console.log('✅ Adding created_by:', createdByUserId)
-      } else {
-        console.warn('⚠️ Proceeding without created_by field')
-      }
+    console.log('✅ All snacks prepared for DB:', snacksForDB)
 
-      console.log('📤 Final insert data:', insertData)
-
-      // ✅ INSERTAR EN QUICK_CHECKINS - CORREGIDO
-      const { data: quickCheckin, error: quickCheckinError } = await supabase
-        .from('quick_checkins')
-        .insert(insertData)
-        .select(`
-          id,
-          guest_name,
-          guest_document,
-          guest_phone,
-          check_in_date,
-          check_out_date,
-          amount,
-          snacks_consumed,
-          created_at,
-          room:room_id(id, room_number, floor),
-          payment_method:payment_method_id(name)
-        `)
-        .single()
-
-      if (quickCheckinError) {
-        console.error('❌ Error inserting quick checkin:', quickCheckinError)
-        throw new Error(`Error creando quick checkin: ${quickCheckinError.message}`)
-      }
-
-      console.log('✅ Quick checkin created in database:', quickCheckin.id)
-
-      // ✅ ACTUALIZAR ESTADO DE LA HABITACIÓN
-      const { data: occupiedStatus } = await supabase
-        .from('room_status')
+    // ✅ Obtener método de pago
+    let paymentMethodId = null
+    if (roomData.paymentMethod) {
+      const { data: paymentMethod } = await supabase
+        .from('payment_methods')
         .select('id')
-        .eq('status', 'ocupada')
+        .eq('name', roomData.paymentMethod === 'cash' ? 'efectivo' : roomData.paymentMethod)
         .single()
-
-      if (occupiedStatus) {
-        const { error: roomUpdateError } = await supabase
-          .from('rooms')
-          .update({ status_id: occupiedStatus.id })
-          .eq('id', roomId)
-
-        if (roomUpdateError) {
-          console.warn('⚠️ Warning updating room status:', roomUpdateError)
-        } else {
-          console.log('✅ Room status updated to occupied')
-        }
-      }
-
-      // ✅ PROCESAR CONSUMO DE SNACKS EN INVENTARIO (OPCIONAL)
-      if (snacksData.length > 0) {
-        console.log('🍿 Processing snack consumption in inventory...')
-        await snackService.processSnackConsumption(snacksData)
-      }
-
-      // ✅ RETORNAR DATOS ESTRUCTURADOS
-      const result = {
-        id: quickCheckin.id,
-        room: {
-          id: roomId,
-          number: quickCheckin.room?.room_number || roomNumber,
-          floor: quickCheckin.room?.floor || Math.floor(parseInt(roomNumber) / 100)
-        },
-        roomPrice: roomPrice,
-        snacks: quickCheckin.snacks_consumed || [], // ✅ DESDE LA BD
-        total: totalAmount,
-        checkInDate: quickCheckin.check_in_date,
-        checkOutDate: quickCheckin.check_out_date,
-        guestName: quickCheckin.guest_name,
-        guestDocument: quickCheckin.guest_document,
-        guestPhone: quickCheckin.guest_phone,
-        confirmationCode: `QC-${quickCheckin.id}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
-        paymentMethod: quickCheckin.payment_method?.name,
-        createdAt: quickCheckin.created_at,
-        isQuickCheckin: true
-      }
-
-      console.log('✅ Quick checkin created successfully:', result)
-      return { data: result, error: null }
-
-    } catch (error) {
-      console.error('❌ Error in createQuickCheckin:', error)
-      return { data: null, error: error }
+      
+      paymentMethodId = paymentMethod?.id
     }
-  },
+
+    // ✅ Calcular totales
+    const roomPrice = roomData.roomPrice || roomData.room?.base_price || 100
+    const snacksTotal = snacksForDB.reduce((total, snack) => total + (snack.total || 0), 0)
+    const totalAmount = roomPrice + snacksTotal
+
+    console.log('💰 Pricing breakdown:', {
+      roomPrice,
+      snacksTotal,
+      totalAmount,
+      snacksCount: snacksForDB.length
+    })
+
+    // ✅ Preparar datos del documento
+    const documentInfo = guestData.documentNumber 
+      ? `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`
+      : null
+
+    // ✅ PREPARAR DATOS PARA INSERCIÓN
+    const insertData = {
+      branch_id: branchId,
+      room_id: roomId,
+      guest_name: guestData.fullName.trim(),
+      guest_document: documentInfo,
+      guest_phone: guestData.phone?.trim() || '',
+      check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
+      check_out_date: roomData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      amount: totalAmount,
+      payment_method_id: paymentMethodId,
+      snacks_consumed: snacksForDB // 🔥 CLAVE: INCLUIR SNACKS AQUÍ
+    }
+
+    if (createdByUserId) {
+      insertData.created_by = createdByUserId
+    }
+
+    console.log('📤 Final insert data with snacks:', {
+      ...insertData,
+      snacks_consumed_count: insertData.snacks_consumed?.length || 0
+    })
+
+    // ✅ INSERTAR EN QUICK_CHECKINS
+    const { data: quickCheckin, error: quickCheckinError } = await supabase
+      .from('quick_checkins')
+      .insert(insertData)
+      .select(`
+        id,
+        guest_name,
+        guest_document,
+        guest_phone,
+        check_in_date,
+        check_out_date,
+        amount,
+        snacks_consumed,
+        created_at,
+        room:room_id(id, room_number, floor),
+        payment_method:payment_method_id(name)
+      `)
+      .single()
+
+    if (quickCheckinError) {
+      console.error('❌ Error inserting quick checkin:', quickCheckinError)
+      throw new Error(`Error creando quick checkin: ${quickCheckinError.message}`)
+    }
+
+    console.log('✅ Quick checkin created in database with snacks:', {
+      id: quickCheckin.id,
+      snacks_count: quickCheckin.snacks_consumed?.length || 0,
+      snacks_data: quickCheckin.snacks_consumed
+    })
+
+    // ✅ ACTUALIZAR ESTADO DE LA HABITACIÓN
+    const { data: occupiedStatus } = await supabase
+      .from('room_status')
+      .select('id')
+      .eq('status', 'ocupada')
+      .single()
+
+    if (occupiedStatus) {
+      const { error: roomUpdateError } = await supabase
+        .from('rooms')
+        .update({ status_id: occupiedStatus.id })
+        .eq('id', roomId)
+
+      if (roomUpdateError) {
+        console.warn('⚠️ Warning updating room status:', roomUpdateError)
+      } else {
+        console.log('✅ Room status updated to occupied')
+      }
+    }
+
+    // ✅ PROCESAR CONSUMO DE SNACKS EN INVENTARIO
+    if (snacksForDB.length > 0) {
+      console.log('🍿 Processing snack consumption in inventory...', snacksForDB.length, 'items')
+      const inventoryResult = await snackService.processSnackConsumption(snacksData)
+      console.log('📊 Inventory update result:', inventoryResult.error ? 'Failed' : 'Success')
+    }
+
+    // ✅ RETORNAR DATOS ESTRUCTURADOS
+    const result = {
+      id: quickCheckin.id,
+      room: {
+        id: roomId,
+        number: quickCheckin.room?.room_number || roomNumber,
+        floor: quickCheckin.room?.floor || Math.floor(parseInt(roomNumber) / 100)
+      },
+      roomPrice: roomPrice,
+      snacks: quickCheckin.snacks_consumed || [], // 🔥 DESDE LA BD
+      total: totalAmount,
+      checkInDate: quickCheckin.check_in_date,
+      checkOutDate: quickCheckin.check_out_date,
+      guestName: quickCheckin.guest_name,
+      guestDocument: quickCheckin.guest_document,
+      guestPhone: quickCheckin.guest_phone,
+      confirmationCode: `QC-${quickCheckin.id}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
+      paymentMethod: quickCheckin.payment_method?.name,
+      createdAt: quickCheckin.created_at,
+      isQuickCheckin: true
+    }
+
+    console.log('🎉 Quick checkin created successfully with snacks!', {
+      id: result.id,
+      snacks_saved: result.snacks.length,
+      total_amount: result.total
+    })
+    
+    return { data: result, error: null }
+
+  } catch (error) {
+    console.error('❌ Error in createQuickCheckin:', error)
+    return { data: null, error: error }
+  }
+},
 
   // ✅ FUNCIÓN PARA PROCESAR CHECK-OUT
   async processQuickCheckOut(quickCheckinId, paymentMethod = 'efectivo') {
