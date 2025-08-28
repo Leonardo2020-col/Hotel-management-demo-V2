@@ -345,58 +345,74 @@ const CheckIn = () => {
 
   // ✅ NUEVA FUNCIÓN: CONTINUAR EN LA HABITACIÓN (GUARDAR SNACKS SIN CHECK-OUT)
   const handleConfirmRoomOnly = async () => {
-    if (!currentOrder || !currentOrder.isCheckout) {
-      // Si no es checkout, usar la función normal
-      return await handleConfirmOrder()
-    }
-
-    console.log('🔄 Continuing in room with additional services:', {
-      roomNumber: currentOrder?.room?.number,
-      currentSnacks: currentOrder.snacks?.length || 0,
-      newSnacks: selectedSnacks.length,
-      guestName: guestData.fullName
-    })
-
-    try {
-      // ✅ ACTUALIZAR EL CHECK-IN EXISTENTE CON LOS NUEVOS SNACKS
-      const roomNumber = currentOrder.room.number
-      const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
-      const newTotal = (currentOrder.originalTotal || currentOrder.roomPrice || 0) + snacksTotal
-
-      // ✅ ACTUALIZAR EN EL ESTADO LOCAL (simulado)
-      // En una implementación real, esto iría a la base de datos
-      const updatedActiveCheckin = {
-        ...activeCheckins[roomNumber],
-        snacks_consumed: selectedSnacks,
-        total_amount: newTotal,
-        last_updated: new Date().toISOString()
-      }
-
-      // ✅ ACTUALIZAR LOS ESTADOS LOCALES
-      // Aquí deberías llamar a una función del hook que actualice el check-in
-      // await updateActiveCheckin(roomNumber, updatedActiveCheckin)
-
-      // ✅ SIMULACIÓN: Actualizar directamente el estado
-      setSelectedSnacks(selectedSnacks) // Mantener los snacks seleccionados
-
-      toast.success(
-        `Servicios agregados a habitación ${roomNumber}\n👤 ${guestData.fullName}\n🛒 ${selectedSnacks.length} servicios adicionales\n💰 +S/ ${snacksTotal.toFixed(2)}`,
-        { duration: 4000, icon: '✅' }
-      )
-
-      // ✅ VOLVER AL GRID SIN RESETEAR COMPLETAMENTE
-      setOrderStep(0)
-      setSelectedSnackType(null)
-      // NO resetear selectedSnacks para que se mantengan
-      setCurrentOrder(null)
-      setSelectedRoom(null)
-      // NO resetear guestData
-
-    } catch (error) {
-      console.error('❌ Error adding services to room:', error)
-      toast.error('Error al agregar servicios: ' + error.message)
-    }
+  if (!currentOrder || !currentOrder.isCheckout) {
+    // Si no es checkout, usar la función normal
+    return await handleConfirmOrder()
   }
+
+  console.log('🔄 Continuing in room with additional services:', {
+    roomNumber: currentOrder?.room?.number,
+    currentSnacks: currentOrder.snacks?.length || 0,
+    newSnacks: selectedSnacks.length,
+    guestName: guestData.fullName,
+    quickCheckinId: currentOrder.id
+  })
+
+  try {
+    const roomNumber = currentOrder.room.number
+    const snacksTotal = selectedSnacks.reduce((total, snack) => total + (snack.price * snack.quantity), 0)
+    const newTotal = (currentOrder.originalTotal || currentOrder.roomPrice || 0) + snacksTotal
+
+    // ✅ LLAMAR AL SERVICIO REAL PARA ACTUALIZAR EN LA BASE DE DATOS
+    console.log('🔄 Updating quick checkin with new snacks in database...')
+    
+    const updateResult = await quickCheckinService.updateQuickCheckinSnacks(
+      currentOrder.id, // ID del quick checkin
+      selectedSnacks    // Nuevos snacks
+    )
+
+    if (updateResult.error) {
+      throw new Error(updateResult.error.message || 'Error actualizando snacks en la base de datos')
+    }
+
+    console.log('✅ Snacks updated in database successfully:', updateResult.data)
+
+    // ✅ PROCESAR CONSUMO EN INVENTARIO
+    if (selectedSnacks.length > 0) {
+      console.log('🍿 Processing additional snack consumption...')
+      
+      // Solo procesar snacks nuevos (no los que ya estaban)
+      const existingSnackIds = (currentOrder.snacks || []).map(s => s.id)
+      const newSnacksOnly = selectedSnacks.filter(snack => !existingSnackIds.includes(snack.id))
+      
+      if (newSnacksOnly.length > 0) {
+        const inventoryResult = await snackService.processSnackConsumption(newSnacksOnly)
+        console.log('📊 Inventory update result:', inventoryResult.error ? 'Failed' : 'Success')
+      }
+    }
+
+    // ✅ ACTUALIZAR EL HOOK PARA REFRESCAR LOS DATOS
+    await refreshData()
+
+    toast.success(
+      `Servicios agregados a habitación ${roomNumber}
+👤 ${guestData.fullName}
+🛒 ${selectedSnacks.length} servicios adicionales
+💰 Total: S/ ${newTotal.toFixed(2)}`,
+      { duration: 4000, icon: '✅' }
+    )
+
+    // ✅ VOLVER AL GRID
+    setOrderStep(0)
+    setSelectedSnackType(null)
+    setCurrentOrder(null)
+    setSelectedRoom(null)
+
+  } catch (error) {
+    console.error('❌ Error adding services to room:', error)
+    toast.error('Error al agregar servicios: ' + error.message)
+  }
+}
 
   // ✅ PROCESAR WALK-IN CHECK-IN
   const processWalkInCheckIn = async () => {

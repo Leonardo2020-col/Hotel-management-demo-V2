@@ -1283,54 +1283,98 @@ async createQuickCheckin(roomData, guestData, snacksData = []) {
 
   // ✅ NUEVA FUNCIÓN: Actualizar snacks consumidos
   async updateQuickCheckinSnacks(quickCheckinId, newSnacks) {
-    try {
-      const snacksForDB = newSnacks.map(snack => ({
-        id: snack.id,
-        name: snack.name,
-        quantity: snack.quantity,
-        price: snack.price,
-        total: snack.price * snack.quantity
-      }))
+  try {
+    console.log('🔄 Updating quick checkin snacks in database:', {
+      quickCheckinId,
+      newSnacksCount: newSnacks.length,
+      newSnacks
+    })
 
-      const { data, error } = await supabase
-        .from('quick_checkins')
-        .update({ 
-          snacks_consumed: snacksForDB,
-          // Opcional: recalcular amount total
-          amount: await this.calculateUpdatedAmount(quickCheckinId, snacksForDB)
-        })
-        .eq('id', quickCheckinId)
-        .select('snacks_consumed, amount')
-        .single()
+    // Preparar snacks para la base de datos
+    const snacksForDB = newSnacks.map(snack => ({
+      id: snack.id,
+      name: snack.name,
+      quantity: snack.quantity,
+      price: snack.price,
+      total: snack.price * snack.quantity
+    }))
 
-      if (error) throw error
+    // Calcular nuevo monto total
+    const newAmount = await this.calculateUpdatedAmount(quickCheckinId, snacksForDB)
 
-      return { data, error: null }
-    } catch (error) {
+    const { data, error } = await supabase
+      .from('quick_checkins')
+      .update({ 
+        snacks_consumed: snacksForDB,
+        amount: newAmount, // Actualizar el monto total
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', quickCheckinId)
+      .select(`
+        id,
+        snacks_consumed,
+        amount,
+        room:room_id(room_number),
+        guest_name
+      `)
+      .single()
+
+    if (error) {
       console.error('❌ Error updating quick checkin snacks:', error)
-      return { data: null, error }
+      throw error
     }
-  },
 
-  // ✅ FUNCIÓN AUXILIAR: Calcular monto total actualizado
-  async calculateUpdatedAmount(quickCheckinId, snacks) {
-    try {
-      // Obtener precio base de la habitación
-      const { data: checkin } = await supabase
-        .from('quick_checkins')
-        .select('room:room_id(base_price)')
-        .eq('id', quickCheckinId)
-        .single()
+    console.log('✅ Quick checkin snacks updated successfully:', {
+      id: data.id,
+      roomNumber: data.room?.room_number,
+      snacksCount: data.snacks_consumed?.length || 0,
+      newAmount: data.amount
+    })
 
-      const roomPrice = checkin?.room?.base_price || 0
-      const snacksTotal = snacks.reduce((total, snack) => total + (snack.total || 0), 0)
-      
-      return roomPrice + snacksTotal
-    } catch (error) {
-      console.warn('⚠️ Error calculating updated amount:', error)
-      return 0
-    }
+    return { data, error: null }
+  } catch (error) {
+    console.error('❌ Error in updateQuickCheckinSnacks:', error)
+    return { data: null, error }
   }
+},
+
+// ✅ FUNCIÓN AUXILIAR: Calcular monto total actualizado
+async calculateUpdatedAmount(quickCheckinId, snacks) {
+  try {
+    console.log('💰 Calculating updated amount for quick checkin:', quickCheckinId)
+    
+    // Obtener precio base de la habitación
+    const { data: checkin, error } = await supabase
+      .from('quick_checkins')
+      .select(`
+        room:room_id(base_price)
+      `)
+      .eq('id', quickCheckinId)
+      .single()
+
+    if (error) {
+      console.warn('⚠️ Error getting room price, using snacks total only:', error)
+      return snacks.reduce((total, snack) => total + (snack.total || 0), 0)
+    }
+
+    const roomPrice = checkin?.room?.base_price || 100
+    const snacksTotal = snacks.reduce((total, snack) => total + (snack.total || 0), 0)
+    const totalAmount = roomPrice + snacksTotal
+    
+    console.log('💰 Amount calculation:', {
+      roomPrice,
+      snacksTotal,
+      totalAmount,
+      snacksCount: snacks.length
+    })
+    
+    return totalAmount
+  } catch (error) {
+    console.warn('⚠️ Error calculating updated amount:', error)
+    // Fallback: solo el total de snacks
+    return snacks.reduce((total, snack) => total + (snack.total || 0), 0)
+  }
+}
 }
 
 // =====================================================
