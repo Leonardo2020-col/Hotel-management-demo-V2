@@ -19,6 +19,7 @@ import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
 import Reservations from './pages/Reservations.jsx' 
 import Rooms from './pages/Rooms.jsx' // ✅ NUEVA IMPORTACIÓN
+import GuestsPage from './pages/GuestsPage';
 import BranchSwitcher from './pages/BranchSwitcher.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
@@ -129,10 +130,7 @@ function App() {
                 element={
                   <ProtectedRoute requireReception>
                     <Layout>
-                      <div className="p-6">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Huéspedes</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
+                      <GuestsPage />  
                     </Layout>
                   </ProtectedRoute>
                 }
