@@ -456,7 +456,613 @@ export const guestService = {
       console.error('Error creating guest:', error)
       return { data: null, error }
     }
+  },
+
+  async getAllGuests(filters = {}) {
+    try {
+      console.log('👥 Fetching guests with filters:', filters);
+      
+      let query = supabase
+        .from('guests')
+        .select('*');
+
+      // Filtros de búsqueda
+      if (filters.search) {
+        query = query.or(`full_name.ilike.%${filters.search}%,document_number.ilike.%${filters.search}%,phone.ilike.%${filters.search}%`);
+      }
+
+      // Filtro por tipo de documento
+      if (filters.documentType) {
+        query = query.eq('document_type', filters.documentType);
+      }
+
+      // Filtro por fecha de registro
+      if (filters.dateFrom) {
+        query = query.gte('created_at', filters.dateFrom);
+      }
+
+      if (filters.dateTo) {
+        query = query.lte('created_at', filters.dateTo);
+      }
+
+      // Ordenamiento
+      const orderBy = filters.orderBy || 'created_at';
+      const order = filters.order || 'desc';
+      query = query.order(orderBy, { ascending: order === 'asc' });
+
+      // Paginación
+      const limit = filters.limit || 50;
+      const offset = filters.offset || 0;
+      query = query.range(offset, offset + limit - 1);
+
+      const { data, error, count } = await query;
+
+      if (error) {
+        console.error('❌ Error fetching guests:', error);
+        throw error;
+      }
+
+      console.log('✅ Guests fetched successfully:', data?.length || 0);
+      return { 
+        data: data || [], 
+        error: null,
+        totalCount: count 
+      };
+    } catch (error) {
+      console.error('❌ Error in getAllGuests:', error);
+      return { data: [], error, totalCount: 0 };
+    }
+  },
+
+  // Actualizar huésped existente
+  async updateGuest(guestId, updateData) {
+    try {
+      console.log('🔄 Updating guest:', guestId, updateData);
+
+      // Validaciones básicas
+      if (!updateData.full_name?.trim()) {
+        throw new Error('El nombre completo es requerido');
+      }
+
+      const { data, error } = await supabase
+        .from('guests')
+        .update({
+          full_name: updateData.full_name.trim(),
+          phone: updateData.phone?.trim() || null,
+          document_type: updateData.document_type?.trim() || null,
+          document_number: updateData.document_number?.trim() || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', guestId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Error updating guest:', error);
+        throw error;
+      }
+
+      console.log('✅ Guest updated successfully:', data.full_name);
+      return { data, error: null };
+    } catch (error) {
+      console.error('❌ Error in updateGuest:', error);
+      return { data: null, error };
+    }
+  },
+
+  // Eliminar huésped
+  async deleteGuest(guestId) {
+    try {
+      console.log('🗑️ Deleting guest:', guestId);
+
+      // Verificar si tiene reservaciones asociadas
+      const { data: reservations, error: checkError } = await supabase
+        .from('reservations')
+        .select('id, reservation_code, check_in_date')
+        .eq('guest_id', guestId)
+        .limit(5);
+
+      if (checkError) {
+        console.warn('⚠️ Warning checking reservations:', checkError);
+      }
+
+      if (reservations && reservations.length > 0) {
+        const reservationCodes = reservations.map(r => r.reservation_code).join(', ');
+        throw new Error(`No se puede eliminar el huésped porque tiene ${reservations.length} reservación(es) asociada(s): ${reservationCodes}`);
+      }
+
+      // Eliminar huésped
+      const { error } = await supabase
+        .from('guests')
+        .delete()
+        .eq('id', guestId);
+
+      if (error) {
+        console.error('❌ Error deleting guest:', error);
+        throw error;
+      }
+
+      console.log('✅ Guest deleted successfully');
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Error in deleteGuest:', error);
+      return { error };
+    }
+  },
+
+  // Buscar huésped por número de documento
+  async findGuestByDocument(documentNumber, documentType = null) {
+    try {
+      if (!documentNumber?.trim()) {
+        return { data: null, error: null };
+      }
+
+      console.log('🔍 Searching guest by document:', documentNumber, documentType);
+
+      let query = supabase
+        .from('guests')
+        .select('*')
+        .eq('document_number', documentNumber.trim());
+
+      if (documentType) {
+        query = query.eq('document_type', documentType);
+      }
+
+      const { data, error } = await query.maybeSingle();
+
+      if (error) {
+        console.error('❌ Error finding guest by document:', error);
+        throw error;
+      }
+
+      console.log('✅ Guest search completed:', data ? 'Found' : 'Not found');
+      return { data, error: null };
+    } catch (error) {
+      console.error('❌ Error in findGuestByDocument:', error);
+      return { data: null, error };
+    }
+  },
+
+  // Obtener huésped por ID con historial
+  async getGuestWithHistory(guestId) {
+    try {
+      console.log('📋 Fetching guest with history:', guestId);
+
+      // Obtener datos del huésped
+      const { data: guest, error: guestError } = await supabase
+        .from('guests')
+        .select('*')
+        .eq('id', guestId)
+        .single();
+
+      if (guestError) {
+        console.error('❌ Error fetching guest:', guestError);
+        throw guestError;
+      }
+
+      // Obtener historial de reservaciones
+      const { data: reservations, error: reservationsError } = await supabase
+        .from('reservations')
+        .select(`
+          id,
+          reservation_code,
+          check_in_date,
+          check_out_date,
+          total_amount,
+          paid_amount,
+          created_at,
+          status:status_id(status, color),
+          room:room_id(room_number, floor),
+          branch:branch_id(name)
+        `)
+        .eq('guest_id', guestId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (reservationsError) {
+        console.warn('⚠️ Warning fetching reservations:', reservationsError);
+      }
+
+      const guestWithHistory = {
+        ...guest,
+        reservations: reservations || [],
+        totalReservations: reservations?.length || 0,
+        totalSpent: reservations?.reduce((sum, r) => sum + (r.total_amount || 0), 0) || 0
+      };
+
+      console.log('✅ Guest with history fetched successfully');
+      return { data: guestWithHistory, error: null };
+    } catch (error) {
+      console.error('❌ Error in getGuestWithHistory:', error);
+      return { data: null, error };
+    }
+  },
+
+  // Obtener estadísticas de huéspedes
+  async getGuestsStatistics() {
+    try {
+      console.log('📊 Fetching guest statistics...');
+
+      // Total de huéspedes
+      const { count: totalGuests, error: totalError } = await supabase
+        .from('guests')
+        .select('*', { count: 'exact', head: true });
+
+      if (totalError) throw totalError;
+
+      // Huéspedes registrados este mes
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      const { count: monthlyGuests, error: monthlyError } = await supabase
+        .from('guests')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', startOfMonth.toISOString());
+
+      if (monthlyError) throw monthlyError;
+
+      // Huéspedes con información completa
+      const { count: completeGuests, error: completeError } = await supabase
+        .from('guests')
+        .select('*', { count: 'exact', head: true })
+        .not('document_number', 'is', null)
+        .not('phone', 'is', null);
+
+      if (completeError) throw completeError;
+
+      // Top tipos de documento
+      const { data: documentTypes, error: docTypesError } = await supabase
+        .from('guests')
+        .select('document_type')
+        .not('document_type', 'is', null);
+
+      let documentTypeCounts = {};
+      if (!docTypesError && documentTypes) {
+        documentTypeCounts = documentTypes.reduce((acc, guest) => {
+          acc[guest.document_type] = (acc[guest.document_type] || 0) + 1;
+          return acc;
+        }, {});
+      }
+
+      const statistics = {
+        total: totalGuests || 0,
+        monthly: monthlyGuests || 0,
+        complete: completeGuests || 0,
+        withDocument: Object.values(documentTypeCounts).reduce((a, b) => a + b, 0),
+        withPhone: 0, // Se calculará después
+        documentTypes: documentTypeCounts,
+        completionRate: totalGuests > 0 ? ((completeGuests / totalGuests) * 100).toFixed(1) : 0
+      };
+
+      // Calcular huéspedes con teléfono
+      const { count: phoneCount } = await supabase
+        .from('guests')
+        .select('*', { count: 'exact', head: true })
+        .not('phone', 'is', null);
+
+      statistics.withPhone = phoneCount || 0;
+
+      console.log('✅ Guest statistics calculated:', statistics);
+      return { data: statistics, error: null };
+    } catch (error) {
+      console.error('❌ Error fetching guest statistics:', error);
+      return { 
+        data: {
+          total: 0,
+          monthly: 0,
+          complete: 0,
+          withDocument: 0,
+          withPhone: 0,
+          documentTypes: {},
+          completionRate: 0
+        }, 
+        error 
+      };
+    }
+  },
+
+  // Validar duplicados antes de crear
+  async checkForDuplicates(guestData) {
+    try {
+      console.log('🔍 Checking for duplicate guests...', guestData);
+
+      const checks = [];
+
+      // Buscar por número de documento
+      if (guestData.document_number?.trim()) {
+        checks.push(
+          supabase
+            .from('guests')
+            .select('id, full_name, document_number')
+            .eq('document_number', guestData.document_number.trim())
+            .limit(1)
+            .single()
+        );
+      }
+
+      // Buscar por nombre completo exacto
+      if (guestData.full_name?.trim()) {
+        checks.push(
+          supabase
+            .from('guests')
+            .select('id, full_name, phone')
+            .ilike('full_name', guestData.full_name.trim())
+            .limit(3)
+        );
+      }
+
+      const results = await Promise.allSettled(checks);
+      const duplicates = [];
+
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.data) {
+          if (Array.isArray(result.value.data)) {
+            duplicates.push(...result.value.data);
+          } else {
+            duplicates.push(result.value.data);
+          }
+        }
+      });
+
+      console.log('✅ Duplicate check completed:', duplicates.length, 'potential matches');
+      return { data: duplicates, error: null };
+    } catch (error) {
+      console.error('❌ Error checking duplicates:', error);
+      return { data: [], error };
+    }
+  },
+
+  // Exportar huéspedes a CSV
+  async exportGuests(filters = {}) {
+    try {
+      console.log('📤 Exporting guests to CSV...', filters);
+
+      const result = await this.getAllGuests({ ...filters, limit: 10000 });
+      if (result.error) throw result.error;
+
+      const guests = result.data;
+      
+      // Crear headers CSV
+      const headers = [
+        'ID',
+        'Nombre Completo',
+        'Tipo Documento',
+        'Número Documento',
+        'Teléfono',
+        'Fecha Registro',
+        'Última Actualización'
+      ];
+
+      // Convertir datos a CSV
+      const csvRows = [
+        headers.join(','),
+        ...guests.map(guest => [
+          guest.id,
+          `"${guest.full_name}"`,
+          guest.document_type || '',
+          guest.document_number || '',
+          guest.phone || '',
+          new Date(guest.created_at).toLocaleDateString('es-PE'),
+          new Date(guest.updated_at).toLocaleDateString('es-PE')
+        ].join(','))
+      ];
+
+      const csvContent = csvRows.join('\n');
+      const filename = `huespedes_${new Date().toISOString().split('T')[0]}.csv`;
+
+      console.log('✅ CSV export prepared:', guests.length, 'guests');
+      return { 
+        data: {
+          content: csvContent,
+          filename: filename,
+          count: guests.length
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('❌ Error exporting guests:', error);
+      return { data: null, error };
+    }
+  },
+
+  // Importar huéspedes desde CSV
+  async importGuestsFromCSV(csvData) {
+    try {
+      console.log('📥 Importing guests from CSV...');
+
+      // Parsear CSV (implementación básica)
+      const lines = csvData.split('\n');
+      const headers = lines[0].split(',').map(h => h.trim());
+      
+      const guestsToImport = [];
+      const errors = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        try {
+          const values = line.split(',').map(v => v.replace(/"/g, '').trim());
+          
+          const guestData = {
+            full_name: values[1],
+            document_type: values[2] || null,
+            document_number: values[3] || null,
+            phone: values[4] || null
+          };
+
+          // Validación básica
+          if (!guestData.full_name) {
+            errors.push(`Línea ${i + 1}: Nombre requerido`);
+            continue;
+          }
+
+          guestsToImport.push(guestData);
+        } catch (err) {
+          errors.push(`Línea ${i + 1}: Error de formato - ${err.message}`);
+        }
+      }
+
+      // Insertar en lotes
+      if (guestsToImport.length > 0) {
+        const { data, error } = await supabase
+          .from('guests')
+          .insert(guestsToImport)
+          .select();
+
+        if (error) throw error;
+
+        console.log('✅ Guests imported successfully:', data.length);
+        return { 
+          data: {
+            imported: data.length,
+            errors: errors,
+            guests: data
+          }, 
+          error: null 
+        };
+      } else {
+        throw new Error('No hay datos válidos para importar');
+      }
+    } catch (error) {
+      console.error('❌ Error importing guests:', error);
+      return { data: null, error };
+    }
+  },
+
+  // Buscar huéspedes similares (fuzzy search)
+  async findSimilarGuests(searchTerm) {
+    try {
+      console.log('🔍 Finding similar guests:', searchTerm);
+
+      if (!searchTerm?.trim()) {
+        return { data: [], error: null };
+      }
+
+      // Búsqueda fuzzy usando trigram similarity (si está disponible)
+      const { data, error } = await supabase
+        .from('guests')
+        .select('*')
+        .or(`full_name.ilike.%${searchTerm}%,document_number.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`)
+        .limit(10)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Ordenar por relevancia (implementación simple)
+      const scoredResults = (data || []).map(guest => {
+        let score = 0;
+        const term = searchTerm.toLowerCase();
+        
+        if (guest.full_name?.toLowerCase().includes(term)) score += 3;
+        if (guest.document_number?.includes(searchTerm)) score += 2;
+        if (guest.phone?.includes(searchTerm)) score += 2;
+        
+        return { ...guest, relevanceScore: score };
+      }).sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+      console.log('✅ Similar guests found:', scoredResults.length);
+      return { data: scoredResults, error: null };
+    } catch (error) {
+      console.error('❌ Error finding similar guests:', error);
+      return { data: [], error };
+    }
+  },
+
+  // Utilidades de validación
+  validateGuestData(guestData) {
+    const errors = {};
+
+    // Validar nombre completo
+    if (!guestData.full_name?.trim()) {
+      errors.full_name = 'El nombre completo es requerido';
+    } else if (guestData.full_name.trim().length < 2) {
+      errors.full_name = 'El nombre debe tener al menos 2 caracteres';
+    }
+
+    // Validar documento si se proporciona
+    if (guestData.document_type && !guestData.document_number) {
+      errors.document_number = 'El número de documento es requerido cuando se especifica el tipo';
+    }
+
+    if (guestData.document_number && !guestData.document_type) {
+      errors.document_type = 'El tipo de documento es requerido cuando se especifica el número';
+    }
+
+    // Validar DNI peruano
+    if (guestData.document_type === 'DNI' && guestData.document_number) {
+      if (!/^\d{8}$/.test(guestData.document_number.replace(/\s/g, ''))) {
+        errors.document_number = 'El DNI debe tener exactamente 8 dígitos';
+      }
+    }
+
+    // Validar RUC peruano
+    if (guestData.document_type === 'RUC' && guestData.document_number) {
+      if (!/^\d{11}$/.test(guestData.document_number.replace(/\s/g, ''))) {
+        errors.document_number = 'El RUC debe tener exactamente 11 dígitos';
+      }
+    }
+
+    // Validar teléfono básico
+    if (guestData.phone && !/^[\d\s\+\-\(\)]{7,15}$/.test(guestData.phone)) {
+      errors.phone = 'El formato del teléfono no es válido';
+    }
+
+    return {
+      isValid: Object.keys(errors).length === 0,
+      errors
+    };
+  },
+
+  // Formatear datos de huésped
+  formatGuestData(guest) {
+    if (!guest) return null;
+
+    return {
+      ...guest,
+      displayName: guest.full_name,
+      hasDocument: !!(guest.document_type && guest.document_number),
+      hasPhone: !!guest.phone,
+      documentInfo: guest.document_type && guest.document_number 
+        ? `${guest.document_type}: ${guest.document_number}`
+        : null,
+      formattedPhone: this.formatPhone(guest.phone),
+      registeredDate: new Date(guest.created_at).toLocaleDateString('es-PE'),
+      initials: this.getInitials(guest.full_name)
+    };
+  },
+
+  // Formatear teléfono peruano
+  formatPhone(phone) {
+    if (!phone) return '';
+    
+    const cleaned = phone.replace(/\D/g, '');
+    
+    if (cleaned.length === 9 && cleaned.startsWith('9')) {
+      return `${cleaned.slice(0, 3)} ${cleaned.slice(3, 6)} ${cleaned.slice(6)}`;
+    }
+    
+    if (cleaned.length === 11 && cleaned.startsWith('51')) {
+      return `+51 ${cleaned.slice(2, 5)} ${cleaned.slice(5, 8)} ${cleaned.slice(8)}`;
+    }
+    
+    return phone;
+  },
+
+  // Obtener iniciales del nombre
+  getInitials(name) {
+    if (!name) return '';
+    
+    return name
+      .split(' ')
+      .filter(word => word.length > 0)
+      .map(word => word.charAt(0))
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
   }
+
 }
 
 // =====================================================
