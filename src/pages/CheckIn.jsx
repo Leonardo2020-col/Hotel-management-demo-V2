@@ -188,64 +188,71 @@ const CheckIn = () => {
 
   // ✅ AGREGAR SERVICIOS A HABITACIÓN OCUPADA (RENOMBRADO)
   const handleAddServicesFlow = async (room) => {
-    const roomNumber = room.room_number || room.number
-    console.log('🛒 Starting add services flow for room:', roomNumber)
+  const roomNumber = room.room_number || room.number
+  console.log('🛒 Starting add services flow for room:', roomNumber)
+  
+  try {
+    const activeCheckin = room.quickCheckin || activeCheckins[roomNumber]
     
-    try {
-      const activeCheckin = room.quickCheckin || activeCheckins[roomNumber]
-      
-      if (!activeCheckin) {
-        toast.error(`No se encontró check-in activo para la habitación ${roomNumber}`)
-        return
-      }
-
-      // Extraer documento
-      const documentParts = activeCheckin.guest_document?.split(':') || ['DNI', '']
-      
-      setGuestData({
-        fullName: activeCheckin.guest_name || 'Huésped',
-        documentType: documentParts[0] || 'DNI',
-        documentNumber: documentParts[1] || '',
-        phone: activeCheckin.guest_phone || activeCheckin.phone || '',
-        email: activeCheckin.email || ''
-      })
-      
-      // ✅ IMPORTANTE: Cargar snacks ya consumidos
-      setSelectedSnacks(activeCheckin.snacks_consumed || [])
-      setSelectedSnackType(null)
-      
-      setSelectedRoom(room)
-      setCurrentOrder({
-        id: activeCheckin.id,
-        room: {
-          id: room.id || room.room_id,
-          number: roomNumber,
-          room_number: roomNumber,
-          description: room.description || 'Habitación Estándar'
-        },
-        roomPrice: activeCheckin.room_rate || room.base_price || 0,
-        snacks: activeCheckin.snacks_consumed || [],
-        total: activeCheckin.total_amount || 0,
-        originalTotal: activeCheckin.total_amount || 0,
-        guestName: activeCheckin.guest_name,
-        checkInDate: activeCheckin.check_in_date,
-        confirmationCode: activeCheckin.confirmation_code,
-        isCheckout: true, // ✅ IMPORTANTE: Es para agregar servicios
-        isWalkIn: false,
-        isQuickCheckin: true
-      })
-      setOrderStep(1)
-      
-      toast.success(`Agregando servicios para habitación ${roomNumber}`, {
-        icon: '🛒',
-        duration: 2000
-      })
-      
-    } catch (error) {
-      console.error('❌ Error in add services flow:', error)
-      toast.error('Error al preparar agregado de servicios: ' + error.message)
+    if (!activeCheckin) {
+      toast.error(`No se encontró check-in activo para la habitación ${roomNumber}`)
+      return
     }
+
+    // Extraer documento
+    const documentParts = activeCheckin.guest_document?.split(':') || ['DNI', '']
+    
+    setGuestData({
+      fullName: activeCheckin.guest_name || 'Huésped',
+      documentType: documentParts[0] || 'DNI',
+      documentNumber: documentParts[1] || '',
+      phone: activeCheckin.guest_phone || activeCheckin.phone || '',
+      email: activeCheckin.email || ''
+    })
+    
+    // ✅ CORRECCIÓN IMPORTANTE: NO resetear selectedSnacks aquí
+    // Solo resetear si no hay snacks ya seleccionados (primera vez)
+    if (selectedSnacks.length === 0) {
+      setSelectedSnacks(activeCheckin.snacks_consumed || [])
+      console.log('🔄 Loading existing snacks for first time:', activeCheckin.snacks_consumed?.length || 0)
+    } else {
+      console.log('🔄 Keeping current selected snacks:', selectedSnacks.length)
+    }
+    
+    setSelectedSnackType(null)
+    
+    setSelectedRoom(room)
+    setCurrentOrder({
+      id: activeCheckin.id,
+      room: {
+        id: room.id || room.room_id,
+        number: roomNumber,
+        room_number: roomNumber,
+        description: room.description || 'Habitación Estándar'
+      },
+      roomPrice: activeCheckin.room_rate || room.base_price || 0,
+      snacks: activeCheckin.snacks_consumed || [],
+      total: activeCheckin.total_amount || 0,
+      originalTotal: activeCheckin.total_amount || 0,
+      guestName: activeCheckin.guest_name,
+      checkInDate: activeCheckin.check_in_date,
+      confirmationCode: activeCheckin.confirmation_code,
+      isCheckout: true, // ✅ IMPORTANTE: Es para agregar servicios
+      isWalkIn: false,
+      isQuickCheckin: true
+    })
+    setOrderStep(1)
+    
+    toast.success(`Agregando servicios para habitación ${roomNumber}`, {
+      icon: '🛒',
+      duration: 2000
+    })
+    
+  } catch (error) {
+    console.error('❌ Error in add services flow:', error)
+    toast.error('Error al preparar agregado de servicios: ' + error.message)
   }
+}
 
   // ✅ LIMPIEZA RÁPIDA
   const handleQuickClean = async (roomId, roomNumber) => {
