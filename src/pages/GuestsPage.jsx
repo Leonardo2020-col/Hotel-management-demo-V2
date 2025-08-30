@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useGuests } from '../hooks/useGuests';
-import GuestForm from '../components/GuestForm';
-import GuestList from '../components/GuestList';
+import GuestForm from '../components/guests/GuestForm.jsx';
+import GuestList from '../components/guests/GuestList.jsx';
 import { Plus, Search, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
