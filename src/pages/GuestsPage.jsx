@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useGuests } from '../hooks/useGuests';
 import GuestForm from '../components/guests/GuestForm.jsx';
 import GuestList from '../components/guests/GuestList.jsx';
@@ -22,6 +22,10 @@ const GuestsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stats, setStats] = useState({ total: 0, withDocument: 0, withPhone: 0 });
+  
+  // ✅ SOLUCIÓN 1: Usar ref para evitar recargas constantes
+  const statsLoadedRef = useRef(false);
+  const lastGuestCountRef = useRef(0);
 
   // Filtrar huéspedes por término de búsqueda (si no se usa la API)
   const filteredGuests = useMemo(() => {
@@ -35,39 +39,67 @@ const GuestsPage = () => {
     );
   }, [guests, searchTerm]);
 
-  // Cargar estadísticas al montar
-  React.useEffect(() => {
-    const loadStats = async () => {
-      try {
-        const guestStats = await getGuestsStats();
-        setStats(guestStats);
-      } catch (err) {
-        console.error('Error loading stats:', err);
-      }
-    };
-    
-    if (guests.length > 0) {
-      loadStats();
+  // ✅ SOLUCIÓN 2: Memoizar la función de carga de estadísticas
+  const loadStats = useCallback(async () => {
+    try {
+      console.log('📊 Loading guest statistics...');
+      const guestStats = await getGuestsStats();
+      setStats(guestStats);
+      statsLoadedRef.current = true;
+      lastGuestCountRef.current = guests.length;
+    } catch (err) {
+      console.error('Error loading stats:', err);
     }
-  }, [guests.length, getGuestsStats]);
+  }, [getGuestsStats, guests.length]);
 
-  // Manejar creación de huésped
-  const handleCreateGuest = async (guestData) => {
+  // ✅ SOLUCIÓN 3: Effect más inteligente para cargar estadísticas
+  React.useEffect(() => {
+    const currentGuestCount = guests.length;
+    
+    // Solo cargar estadísticas si:
+    // 1. Nunca se han cargado Y hay huéspedes
+    // 2. O el número de huéspedes cambió significativamente
+    if (
+      (!statsLoadedRef.current && currentGuestCount > 0) ||
+      (statsLoadedRef.current && Math.abs(currentGuestCount - lastGuestCountRef.current) > 0)
+    ) {
+      console.log('🔄 Stats need update:', {
+        loaded: statsLoadedRef.current,
+        currentCount: currentGuestCount,
+        lastCount: lastGuestCountRef.current
+      });
+      
+      // Debounce la carga para evitar llamadas excesivas
+      const timeoutId = setTimeout(() => {
+        loadStats();
+      }, 500);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [guests.length, loadStats]);
+
+  // ✅ SOLUCIÓN 4: Usar useCallback para funciones que se pasan como props
+  const handleCreateGuest = useCallback(async (guestData) => {
     try {
       setIsSubmitting(true);
       await createGuest(guestData);
       setShowForm(false);
       setSelectedGuest(null);
       toast.success('Huésped creado exitosamente');
+      
+      // ✅ Forzar recarga de stats después de crear
+      setTimeout(() => {
+        statsLoadedRef.current = false;
+        loadStats();
+      }, 1000);
     } catch (err) {
       toast.error(err.message || 'Error al crear huésped');
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [createGuest, loadStats]);
 
-  // Manejar actualización de huésped
-  const handleUpdateGuest = async (guestData) => {
+  const handleUpdateGuest = useCallback(async (guestData) => {
     if (!selectedGuest) return;
     
     try {
@@ -81,10 +113,9 @@ const GuestsPage = () => {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [selectedGuest, updateGuest]);
 
-  // Manejar eliminación de huésped
-  const handleDeleteGuest = async (guestId) => {
+  const handleDeleteGuest = useCallback(async (guestId) => {
     if (!window.confirm('¿Estás seguro de que quieres eliminar este huésped?')) {
       return;
     }
@@ -92,39 +123,62 @@ const GuestsPage = () => {
     try {
       await deleteGuest(guestId);
       toast.success('Huésped eliminado exitosamente');
+      
+      // ✅ Forzar recarga de stats después de eliminar
+      setTimeout(() => {
+        statsLoadedRef.current = false;
+        loadStats();
+      }, 1000);
     } catch (err) {
       toast.error(err.message || 'Error al eliminar huésped');
     }
-  };
+  }, [deleteGuest, loadStats]);
 
-  // Manejar edición de huésped
-  const handleEditGuest = (guest) => {
+  const handleEditGuest = useCallback((guest) => {
     setSelectedGuest(guest);
     setShowForm(true);
-  };
+  }, []);
 
-  // Manejar búsqueda
-  const handleSearch = (e) => {
+  // ✅ SOLUCIÓN 5: Debounce search para evitar llamadas excesivas
+  const handleSearch = useCallback((e) => {
     const value = e.target.value;
     setSearchTerm(value);
     
-    // Si es una búsqueda avanzada (más de 2 caracteres), buscar en la base de datos
-    if (value.length > 2 || value.length === 0) {
-      fetchGuests(value);
-    }
-  };
+    // Usar un timeout para debounce
+    const searchTimeout = setTimeout(() => {
+      if (value.length > 2 || value.length === 0) {
+        fetchGuests(value);
+      }
+    }, 300); // 300ms de debounce
 
-  // Cerrar formulario
-  const handleCloseForm = () => {
+    return () => clearTimeout(searchTimeout);
+  }, [fetchGuests]);
+
+  const handleCloseForm = useCallback(() => {
     setShowForm(false);
     setSelectedGuest(null);
-  };
+  }, []);
 
-  // Nuevo huésped
-  const handleNewGuest = () => {
+  const handleNewGuest = useCallback(() => {
     setSelectedGuest(null);
     setShowForm(true);
-  };
+  }, []);
+
+  // ✅ SOLUCIÓN 6: Memoizar las estadísticas calculadas como fallback
+  const calculatedStats = useMemo(() => {
+    if (!guests || guests.length === 0) {
+      return { total: 0, withDocument: 0, withPhone: 0 };
+    }
+
+    return {
+      total: guests.length,
+      withDocument: guests.filter(g => g.document_number).length,
+      withPhone: guests.filter(g => g.phone).length
+    };
+  }, [guests]);
+
+  // ✅ Usar stats de la API si están disponibles, sino usar calculadas
+  const displayStats = stats.total > 0 ? stats : calculatedStats;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -166,7 +220,7 @@ const GuestsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-slate-500 font-medium">Total Huéspedes</p>
-                <p className="text-3xl font-bold text-slate-800 mt-2">{stats.total || guests.length}</p>
+                <p className="text-3xl font-bold text-slate-800 mt-2">{displayStats.total}</p>
                 <div className="flex items-center mt-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
                   <span className="text-sm text-slate-600">Registrados</span>
@@ -182,9 +236,7 @@ const GuestsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-slate-500 font-medium">Con Documento</p>
-                <p className="text-3xl font-bold text-slate-800 mt-2">
-                  {stats.withDocument || guests.filter(g => g.document_number).length}
-                </p>
+                <p className="text-3xl font-bold text-slate-800 mt-2">{displayStats.withDocument}</p>
                 <div className="flex items-center mt-2">
                   <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
                   <span className="text-sm text-slate-600">Verificados</span>
@@ -202,9 +254,7 @@ const GuestsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-slate-500 font-medium">Con Teléfono</p>
-                <p className="text-3xl font-bold text-slate-800 mt-2">
-                  {stats.withPhone || guests.filter(g => g.phone).length}
-                </p>
+                <p className="text-3xl font-bold text-slate-800 mt-2">{displayStats.withPhone}</p>
                 <div className="flex items-center mt-2">
                   <div className="w-2 h-2 bg-purple-500 rounded-full mr-2"></div>
                   <span className="text-sm text-slate-600">Contactables</span>
@@ -260,6 +310,16 @@ const GuestsPage = () => {
                 </svg>
               </div>
               <span className="text-red-800 font-medium">{error}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Loading indicator para estadísticas */}
+        {loading && (
+          <div className="text-center text-slate-600 mb-4">
+            <div className="inline-flex items-center gap-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              Cargando estadísticas...
             </div>
           </div>
         )}
