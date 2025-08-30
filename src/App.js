@@ -1,4 +1,4 @@
-// src/App.js - ACTUALIZADO CON RUTA DE HABITACIONES
+// src/App.js - ACTUALIZADO CON IMPORTACIÓN CORRECTA
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
@@ -18,8 +18,9 @@ import Dashboard from './pages/Dashboard.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
 import Reservations from './pages/Reservations.jsx' 
-import Rooms from './pages/Rooms.jsx' // ✅ NUEVA IMPORTACIÓN
-import GuestsPage from './pages/GuestsPage';
+import Rooms from './pages/Rooms.jsx'
+// ✅ CORRECCIÓN: Cambiar la importación
+import GuestsPage from './pages/GuestsPage.jsx'  // Agregar .jsx si es necesario
 import BranchSwitcher from './pages/BranchSwitcher.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
@@ -112,7 +113,7 @@ function App() {
                 }
               />
               
-              {/* ✅ NUEVA RUTA - Habitaciones CON Layout */}
+              {/* Habitaciones CON Layout */}
               <Route
                 path="/rooms"
                 element={
@@ -130,7 +131,7 @@ function App() {
                 element={
                   <ProtectedRoute requireReception>
                     <Layout>
-                      <GuestsPage />  
+                      <GuestsPage />
                     </Layout>
                   </ProtectedRoute>
                 }
