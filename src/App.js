@@ -19,8 +19,8 @@ import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
 import Reservations from './pages/Reservations.jsx' 
 import Rooms from './pages/Rooms.jsx'
-// ✅ CORRECCIÓN: Cambiar la importación
-import GuestsPage from './pages/GuestsPage.jsx'  // Agregar .jsx si es necesario
+import GuestsPage from './pages/GuestsPage.jsx' 
+import ReportsPage from './pages/ReportsPage.jsx'
 import BranchSwitcher from './pages/BranchSwitcher.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
@@ -151,18 +151,15 @@ function App() {
               
               {/* Reportes CON Layout */}
               <Route
-                path="/reports"
-                element={
-                  <ProtectedRoute requireReception>
-                    <Layout>
-                      <div className="p-6">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Reportes</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
+  path="/reports"
+  element={
+    <ProtectedRoute requireReception>
+      <Layout>
+        <ReportsPage />
+      </Layout>
+    </ProtectedRoute>
+  }
+/>
               
               {/* Configuración CON Layout */}
               <Route
