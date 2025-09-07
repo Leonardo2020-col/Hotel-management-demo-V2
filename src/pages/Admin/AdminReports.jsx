@@ -14,11 +14,11 @@ import {
 } from 'lucide-react';
 
 // Importar componentes separados
-import OverviewReport from '../../components/reports/OverviewReport';
-import OccupancyReport from '../../components/reports/OccupancyReport';
-import RevenueReport from '../../components/reports/RevenueReport';
-import ExpensesReport from '../../components/reports/ExpensesReport';
-import DailyReport from '../../components/reports/DailyReport';
+import OverviewReport from '../../components/admin/report/OverviewReport';
+import OccupancyReport from '../../components/admin/report/OccupancyReport';
+import RevenueReport from '../../components/admin/report/RevenueReport';
+import ExpensesReport from '../../components/admin/report/ExpensesReport';
+import DailyReport from '../../components/admin/report/DailyReport';
 
 const AdminReportsPage = () => {
   const { getPrimaryBranch, isAdmin } = useAuth();
