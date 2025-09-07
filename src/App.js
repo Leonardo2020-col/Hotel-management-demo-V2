@@ -25,6 +25,9 @@ import BranchSwitcher from './pages/BranchSwitcher.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 import Supplies from './pages/Supplies.jsx'
+import AdminUsersPage from './pages/Admin/AdminUsers.jsx'
+import AdminBranchesPage from './pages/Admin/AdminBranches.jsx'
+import AdminReportsPage from './pages/Admin/AdminReports.jsx'
 
 function App() {
   console.log('🚀 App rendering...')
@@ -65,29 +68,23 @@ function App() {
                 }
               />
               
-              {/* Panel de administrador CON Layout */}
-              <Route
-                path="/admin"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <Layout>
-                      <AdminPanel />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
+              <Route path="/admin/users" element={
+  <ProtectedRoute requireAdmin>
+    <Layout><AdminUsersPage /></Layout>
+  </ProtectedRoute>
+} />
 
-              {/* Cambio de sucursal CON Layout */}
-              <Route
-                path="/admin/branch-switcher"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <Layout>
-                      <BranchSwitcher />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
+<Route path="/admin/branches" element={
+  <ProtectedRoute requireAdmin>
+    <Layout><AdminBranchesPage /></Layout>
+  </ProtectedRoute>
+} />
+
+<Route path="/admin/reports" element={
+  <ProtectedRoute requireAdmin>
+    <Layout><AdminReportsPage /></Layout>
+  </ProtectedRoute>
+} />
               
               {/* Check-in CON Layout */}
               <Route
