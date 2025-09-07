@@ -1,4 +1,4 @@
-// src/App.js - ACTUALIZADO CON IMPORTACIÓN CORRECTA
+// src/App.js - ACTUALIZADO CON RUTAS DE ADMIN CORREGIDAS
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
@@ -68,23 +68,60 @@ function App() {
                 }
               />
               
-              <Route path="/admin/users" element={
-  <ProtectedRoute requireAdmin>
-    <Layout><AdminUsersPage /></Layout>
-  </ProtectedRoute>
-} />
+              {/* RUTAS DE ADMINISTRACIÓN */}
+              {/* Ruta principal de admin - redirige a users por defecto */}
+              <Route 
+                path="/admin" 
+                element={<Navigate to="/admin/users" replace />} 
+              />
+              
+              {/* Panel de administración general */}
+              <Route
+                path="/admin/panel"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Layout>
+                      <AdminPanel />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Gestión de usuarios */}
+              <Route 
+                path="/admin/users" 
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Layout>
+                      <AdminUsersPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
 
-<Route path="/admin/branches" element={
-  <ProtectedRoute requireAdmin>
-    <Layout><AdminBranchesPage /></Layout>
-  </ProtectedRoute>
-} />
+              {/* Gestión de sucursales */}
+              <Route 
+                path="/admin/branches" 
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Layout>
+                      <AdminBranchesPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
 
-<Route path="/admin/reports" element={
-  <ProtectedRoute requireAdmin>
-    <Layout><AdminReportsPage /></Layout>
-  </ProtectedRoute>
-} />
+              {/* Reportes avanzados */}
+              <Route 
+                path="/admin/reports" 
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Layout>
+                      <AdminReportsPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
               
               {/* Check-in CON Layout */}
               <Route
@@ -148,15 +185,15 @@ function App() {
               
               {/* Reportes CON Layout */}
               <Route
-  path="/reports"
-  element={
-    <ProtectedRoute requireReception>
-      <Layout>
-        <ReportsPage />
-      </Layout>
-    </ProtectedRoute>
-  }
-/>
+                path="/reports"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <ReportsPage />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
               
               {/* Configuración CON Layout */}
               <Route
