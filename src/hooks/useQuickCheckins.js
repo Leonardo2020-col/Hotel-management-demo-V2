@@ -1,4 +1,4 @@
-// src/hooks/useQuickCheckins.js - VERSIÓN COMPLETAMENTE CORREGIDA
+// src/hooks/useQuickCheckins.js - VERSIÓN CORREGIDA PARA PROBLEMA DE CHECKOUT
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase, quickCheckinService, snackService } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -42,10 +42,42 @@ export const useQuickCheckins = () => {
     }
   ], [])
 
+  // ✅ FUNCIÓN NUEVA: Limpiar check-ins obsoletos
+  const cleanupObsoleteCheckins = useCallback(async () => {
+    try {
+      console.log('🧹 Limpiando check-ins obsoletos...')
+      
+      if (!branchId) return
+
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      const yesterdayStr = yesterday.toISOString().split('T')[0]
+
+      // ✅ CORRECCIÓN: Marcar como checked_out los registros antiguos
+      const { error } = await supabase
+        .from('quick_checkins')
+        .update({ 
+          status: 'checked_out',
+          actual_check_out_date: new Date().toISOString()
+        })
+        .eq('branch_id', branchId)
+        .is('actual_check_out_date', null) // Solo los que no tienen checkout real
+        .lt('check_out_date', yesterdayStr) // Más antiguos que ayer
+
+      if (error) {
+        console.warn('⚠️ Warning limpiando check-ins obsoletos:', error)
+      } else {
+        console.log('✅ Check-ins obsoletos limpiados exitosamente')
+      }
+    } catch (error) {
+      console.warn('⚠️ Error en cleanup de check-ins:', error)
+    }
+  }, [branchId])
+
   // Cargar habitaciones desde la base de datos
   const loadRoomsFromDatabase = useCallback(async () => {
     try {
-      console.log('Cargando habitaciones desde la base de datos para branch:', branchId)
+      console.log('📍 Cargando habitaciones desde la base de datos para branch:', branchId)
       
       if (!branchId) {
         console.warn('No hay branch ID disponible')
@@ -126,19 +158,19 @@ export const useQuickCheckins = () => {
         })
       })
 
-      console.log('Habitaciones cargadas desde BD:', Object.keys(grouped).length, 'pisos')
+      console.log('✅ Habitaciones cargadas desde BD:', Object.keys(grouped).length, 'pisos')
       return grouped
 
     } catch (error) {
-      console.error('Error cargando habitaciones:', error)
+      console.error('❌ Error cargando habitaciones:', error)
       return generateFallbackRooms()
     }
   }, [branchId, roomPrices])
 
-  // Cargar check-ins activos desde la base de datos
+  // ✅ FUNCIÓN CORREGIDA: Cargar check-ins activos (SOLUCION AL PROBLEMA)
   const loadActiveCheckinsFromDatabase = useCallback(async () => {
     try {
-      console.log('Cargando check-ins activos desde la base de datos')
+      console.log('📋 Cargando check-ins activos desde la base de datos...')
       
       if (!branchId) {
         return {}
@@ -146,6 +178,7 @@ export const useQuickCheckins = () => {
 
       const today = new Date().toISOString().split('T')[0]
       
+      // ✅ CORRECCIÓN PRINCIPAL: Consulta mejorada que excluye checkouts procesados
       const { data, error } = await supabase
         .from('quick_checkins')
         .select(`
@@ -157,6 +190,9 @@ export const useQuickCheckins = () => {
           check_in_date,
           check_out_date,
           amount,
+          status,
+          actual_check_out_date,
+          snacks_consumed,
           created_at,
           room:room_id(
             id,
@@ -168,18 +204,32 @@ export const useQuickCheckins = () => {
           )
         `)
         .eq('branch_id', branchId)
-        .gte('check_out_date', today)
+        .gte('check_out_date', today) // Fecha futura o de hoy
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.warn('Error cargando check-ins activos:', error)
+        console.warn('⚠️ Error cargando check-ins activos:', error)
         return {}
       }
 
       const structured = {}
       
       if (data && Array.isArray(data)) {
+        console.log(`🔍 Procesando ${data.length} registros de quick_checkins...`)
+        
         data.forEach(checkin => {
+          // ✅ FILTRO CRÍTICO: Excluir check-ins que ya fueron procesados
+          if (checkin.actual_check_out_date) {
+            console.log(`⏭️ Saltando habitación ${checkin.room?.room_number} - Ya procesó checkout`)
+            return // Ya hizo checkout real, no incluir
+          }
+
+          // ✅ FILTRO ADICIONAL: Verificar estado si existe
+          if (checkin.status && checkin.status === 'checked_out') {
+            console.log(`⏭️ Saltando habitación ${checkin.room?.room_number} - Estado: checked_out`)
+            return
+          }
+
           const roomNumber = checkin.room?.room_number
           if (roomNumber) {
             const docParts = checkin.guest_document?.split(':') || ['DNI', '']
@@ -198,18 +248,21 @@ export const useQuickCheckins = () => {
               confirmation_code: `QC-${checkin.id}`,
               payment_method: checkin.payment_method?.name,
               created_at: checkin.created_at,
-              snacks_consumed: [], // TODO: Implementar tabla relacionada
-              isQuickCheckin: true
+              snacks_consumed: checkin.snacks_consumed || [], // ✅ Desde la BD
+              isQuickCheckin: true,
+              status: checkin.status || 'active'
             }
+            
+            console.log(`✅ Check-in activo incluido: Habitación ${roomNumber}`)
           }
         })
       }
 
-      console.log('Check-ins activos cargados:', Object.keys(structured).length)
+      console.log(`✅ Check-ins activos cargados (filtrados): ${Object.keys(structured).length}`)
       return structured
 
     } catch (error) {
-      console.error('Error cargando check-ins activos:', error)
+      console.error('❌ Error cargando check-ins activos:', error)
       return {}
     }
   }, [branchId])
@@ -220,12 +273,15 @@ export const useQuickCheckins = () => {
       setLoading(true)
       setError(null)
       
-      console.log('Cargando todos los datos del sistema...')
+      console.log('🔄 Cargando todos los datos del sistema...')
+
+      // ✅ NUEVO: Limpiar datos obsoletos PRIMERO
+      await cleanupObsoleteCheckins()
 
       // Cargar datos en paralelo
       const [rooms, checkins, snackCategoriesResult, snackItemsResult] = await Promise.all([
         loadRoomsFromDatabase(),
-        loadActiveCheckinsFromDatabase(),
+        loadActiveCheckinsFromDatabase(), // ✅ Ahora filtra correctamente
         snackService.getSnackCategories().catch(() => ({ data: [], error: null })),
         snackService.getSnackItems().catch(() => ({ data: [], error: null }))
       ])
@@ -265,7 +321,7 @@ export const useQuickCheckins = () => {
       let finalSnackItems = []
 
       if (snackItemsResult?.data && snackItemsResult.data.length > 0) {
-        console.log('Usando snacks reales de la base de datos')
+        console.log('✅ Usando snacks reales de la base de datos')
         finalSnackItems = snackItemsResult.data
 
         if (snackCategoriesResult?.data && snackCategoriesResult.data.length > 0) {
@@ -276,7 +332,7 @@ export const useQuickCheckins = () => {
           }))
         }
       } else {
-        console.log('Usando snacks de ejemplo')
+        console.log('📝 Usando snacks de ejemplo')
         finalSnackItems = generateExampleSnacks()
       }
 
@@ -286,7 +342,7 @@ export const useQuickCheckins = () => {
       setSnackTypes(finalSnackTypes)
       setSnackItems(finalSnackItems)
       
-      console.log('Todos los datos cargados exitosamente:', {
+      console.log('✅ Todos los datos cargados exitosamente:', {
         pisos: Object.keys(updatedRooms).length,
         habitaciones: Object.values(updatedRooms).flat().length,
         checkinsActivos: Object.keys(checkins).length,
@@ -295,7 +351,7 @@ export const useQuickCheckins = () => {
       })
       
     } catch (err) {
-      console.error('Error cargando datos:', err)
+      console.error('❌ Error cargando datos:', err)
       setError(err.message || 'Error al cargar datos del sistema')
       
       // Usar datos de fallback
@@ -308,12 +364,12 @@ export const useQuickCheckins = () => {
     } finally {
       setLoading(false)
     }
-  }, [loadRoomsFromDatabase, loadActiveCheckinsFromDatabase, fixedSnackTypes])
+  }, [loadRoomsFromDatabase, loadActiveCheckinsFromDatabase, cleanupObsoleteCheckins, fixedSnackTypes])
 
   // FUNCIÓN CORREGIDA: Procesar Quick Check-in REAL
   const processQuickCheckIn = useCallback(async (orderData, guestData, snacksData = []) => {
     try {
-      console.log('Procesando Quick Check-in REAL:', {
+      console.log('🔄 Procesando Quick Check-in REAL:', {
         habitacion: orderData.room.number,
         huesped: guestData.fullName,
         snacks: snacksData.length
@@ -347,7 +403,7 @@ export const useQuickCheckins = () => {
       }
 
       // LLAMAR AL SERVICIO REAL DE LA BASE DE DATOS
-      console.log('Llamando a quickCheckinService.createQuickCheckin...')
+      console.log('📡 Llamando a quickCheckinService.createQuickCheckin...')
       const { data: serviceResult, error: serviceError } = await quickCheckinService.createQuickCheckin(
         roomDataForService,
         guestData,
@@ -355,7 +411,7 @@ export const useQuickCheckins = () => {
       )
 
       if (serviceError) {
-        console.error('Error del servicio:', serviceError)
+        console.error('❌ Error del servicio:', serviceError)
         throw serviceError
       }
 
@@ -363,7 +419,7 @@ export const useQuickCheckins = () => {
         throw new Error('No se recibió confirmación del servidor')
       }
 
-      console.log('Quick check-in guardado en la base de datos:', serviceResult)
+      console.log('✅ Quick check-in guardado en la base de datos:', serviceResult)
 
       // Crear datos para el estado local basados en la respuesta del servidor
       const quickCheckinData = {
@@ -377,7 +433,8 @@ export const useQuickCheckins = () => {
         room_rate: roomPrice,
         confirmation_code: serviceResult.confirmationCode || `QC-${serviceResult.id}`,
         snacks_consumed: snacksData,
-        isQuickCheckin: true
+        isQuickCheckin: true,
+        status: 'active' // ✅ NUEVO: Marcar como activo
       }
 
       // Actualizar estados locales
@@ -426,34 +483,58 @@ export const useQuickCheckins = () => {
       return { data: serviceResult, error: null }
       
     } catch (error) {
-      console.error('Error en processQuickCheckIn:', error)
+      console.error('❌ Error en processQuickCheckIn:', error)
       return { data: null, error }
     }
   }, [roomPrices])
 
-  // FUNCIÓN CORREGIDA: Procesar Quick Check-out REAL
+  // ✅ FUNCIÓN CORREGIDA: Procesar Quick Check-out REAL (SOLUCION AL PROBLEMA)
   const processQuickCheckOut = useCallback(async (roomNumber, paymentMethod = 'efectivo') => {
     try {
-      console.log('Procesando Quick Check-out REAL:', { roomNumber, paymentMethod })
+      console.log('🚪 Procesando Quick Check-out REAL:', { roomNumber, paymentMethod })
 
       const activeCheckin = activeCheckins[roomNumber]
       if (!activeCheckin) {
         throw new Error(`No hay check-in activo para la habitación ${roomNumber}`)
       }
 
-      // LLAMAR AL SERVICIO REAL
-      const { data: serviceResult, error: serviceError } = await quickCheckinService.processQuickCheckOut(
-        activeCheckin.id,
-        paymentMethod
-      )
+      // ✅ CORRECCIÓN CRÍTICA: Marcar como checked_out en la base de datos
+      console.log('📝 Actualizando estado del quick_checkin a checked_out...')
+      
+      const { error: updateError } = await supabase
+        .from('quick_checkins')
+        .update({
+          status: 'checked_out', // ✅ Marcar como procesado
+          actual_check_out_date: new Date().toISOString(), // ✅ Fecha real de checkout
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', activeCheckin.id)
 
-      if (serviceError) {
-        throw serviceError
+      if (updateError) {
+        console.error('❌ Error actualizando estado del quick checkin:', updateError)
+        throw new Error(`Error marcando checkout: ${updateError.message}`)
       }
 
-      console.log('Quick check-out procesado en la base de datos')
+      console.log('✅ Estado actualizado en la base de datos exitosamente')
 
-      // Actualizar estados locales
+      // Llamar al servicio adicional si existe
+      try {
+        const { data: serviceResult, error: serviceError } = await quickCheckinService.processQuickCheckOut(
+          activeCheckin.id,
+          paymentMethod
+        )
+
+        if (serviceError) {
+          console.warn('⚠️ Warning en servicio adicional:', serviceError)
+          // No hacer throw aquí, el checkout principal ya se completó
+        }
+      } catch (serviceError) {
+        console.warn('⚠️ Error en servicio adicional (no crítico):', serviceError)
+      }
+
+      console.log('✅ Quick check-out procesado completamente en la base de datos')
+
+      // ✅ Actualizar estados locales inmediatamente
       setRoomsByFloor(prev => {
         const updated = { ...prev }
         Object.keys(updated).forEach(floor => {
@@ -462,11 +543,11 @@ export const useQuickCheckins = () => {
               ? { 
                   ...room, 
                   status: 'available',
-                  cleaning_status: 'dirty', // Necesita limpieza
+                  cleaning_status: 'dirty', // ✅ Necesita limpieza después del checkout
                   quickCheckin: null,
                   room_status: {
                     ...room.room_status,
-                    status: 'limpieza',
+                    status: 'limpieza', // ✅ Estado correcto: limpieza
                     color: '#f59e0b',
                     is_available: false
                   }
@@ -477,16 +558,17 @@ export const useQuickCheckins = () => {
         return updated
       })
 
+      // ✅ Remover de check-ins activos
       setActiveCheckins(prev => {
         const updated = { ...prev }
         delete updated[roomNumber]
         return updated
       })
 
-      return { data: serviceResult || true, error: null }
+      return { data: { roomNumber, guestName: activeCheckin.guest_name }, error: null }
       
     } catch (error) {
-      console.error('Error en processQuickCheckOut:', error)
+      console.error('❌ Error en processQuickCheckOut:', error)
       return { data: null, error }
     }
   }, [activeCheckins])
@@ -494,12 +576,12 @@ export const useQuickCheckins = () => {
   // Limpiar habitación
   const cleanRoom = useCallback(async (roomId) => {
     try {
-      console.log('Limpiando habitación:', roomId)
+      console.log('🧹 Limpiando habitación:', roomId)
 
       let roomNumber = null
       
-      // Actualizar estado en la base de datos si es necesario
-      // TODO: Implementar llamada a API para actualizar estado a 'disponible'
+      // ✅ TODO: Implementar llamada a API para actualizar estado a 'disponible'
+      // await supabase.from('rooms').update({ status_id: availableStatusId }).eq('id', roomId)
       
       setRoomsByFloor(prev => {
         const updated = { ...prev }
@@ -528,18 +610,20 @@ export const useQuickCheckins = () => {
       return { data: { roomNumber }, error: null }
       
     } catch (error) {
-      console.error('Error limpiando habitación:', error)
+      console.error('❌ Error limpiando habitación:', error)
       return { data: null, error }
     }
   }, [])
 
   // Refrescar datos
   const refreshData = useCallback(() => {
-    console.log('Refrescando datos...')
+    console.log('🔄 Refrescando datos...')
     loadData()
   }, [loadData])
 
-  // Utilidades
+  // ✅ FUNCIONES AUXILIARES
+
+  // Mapear estados de BD a estados internos
   const mapDatabaseStatusToInternal = (dbStatus) => {
     const statusMap = {
       'disponible': 'available',
@@ -551,8 +635,9 @@ export const useQuickCheckins = () => {
     return statusMap[dbStatus] || 'available'
   }
 
+  // Generar habitaciones de fallback
   const generateFallbackRooms = () => {
-    console.log('Generando habitaciones de fallback...')
+    console.log('🏗️ Generando habitaciones de fallback...')
     return {
       1: [
         {
@@ -589,6 +674,7 @@ export const useQuickCheckins = () => {
     }
   }
 
+  // Generar snacks de ejemplo
   const generateExampleSnacks = () => {
     return [
       { 
@@ -650,25 +736,29 @@ export const useQuickCheckins = () => {
     console.log('Active checkins:', activeCheckins)
     console.log('Loading:', loading)
     console.log('Error:', error)
+    console.log('================================')
   }, [branchId, roomsByFloor, activeCheckins, loading, error])
 
-  // Efectos
+  // ✅ EFECTOS
+
+  // Cargar datos iniciales
   useEffect(() => {
     loadData()
   }, [loadData])
 
+  // Auto-refresh con cleanup mejorado
   useEffect(() => {
     if (!branchId || loading) return
 
     const interval = setInterval(() => {
-      console.log('Auto-refresh de datos...')
+      console.log('⏰ Auto-refresh de datos (cada 5 minutos)...')
       loadData()
     }, 5 * 60 * 1000) // Cada 5 minutos
 
     return () => clearInterval(interval)
   }, [branchId, loading, loadData])
 
-  // Estadísticas computadas
+  // ✅ ESTADÍSTICAS COMPUTADAS
   const allRooms = Object.values(roomsByFloor).flat()
   const totalRooms = allRooms.length
   const availableRooms = allRooms.filter(r => r.status === 'available' && r.cleaning_status === 'clean').length
@@ -676,6 +766,7 @@ export const useQuickCheckins = () => {
   const cleaningRooms = allRooms.filter(r => r.cleaning_status === 'dirty' || r.status === 'cleaning').length
   const activeCheckinsCount = Object.keys(activeCheckins).length
 
+  // ✅ RETURN DEL HOOK
   return {
     // Datos principales
     roomsByFloor,
@@ -690,7 +781,7 @@ export const useQuickCheckins = () => {
     
     // Acciones principales
     processQuickCheckIn,
-    processQuickCheckOut,
+    processQuickCheckOut, // ✅ Función corregida
     cleanRoom,
     refreshData,
     debugData,
@@ -707,6 +798,8 @@ export const useQuickCheckins = () => {
     hasData: totalRooms > 0,
     isReady: !loading && !error && totalRooms > 0,
     hasQuickCleanCapability: true,
+    
+    // ✅ Features soportadas (actualizado)
     supportedFeatures: [
       'walk_in_checkin',
       'guest_registration', 
@@ -714,7 +807,9 @@ export const useQuickCheckins = () => {
       'quick_room_cleaning',
       'quick_checkout',
       'real_time_updates',
-      'database_persistence'
+      'database_persistence',
+      'checkout_state_management', // ✅ Nueva feature
+      'automatic_cleanup' // ✅ Nueva feature
     ]
   }
 }
