@@ -256,26 +256,39 @@ const CheckIn = () => {
 
   // ✅ LIMPIEZA RÁPIDA
   const handleQuickClean = async (roomId, roomNumber) => {
-    try {
-      const { data, error } = await cleanRoom(roomId)
-      
-      if (error) {
-        toast.error(`Error al limpiar habitación: ${error.message}`)
-        return
-      }
-      
-      const finalRoomNumber = roomNumber || data?.roomNumber || 'desconocida'
-      
-      toast.success(`Habitación ${finalRoomNumber} limpia y disponible`, {
-        icon: '✨',
-        duration: 3000
-      })
-      
-    } catch (error) {
-      console.error('❌ Error in handleQuickClean:', error)
-      toast.error('Error al limpiar habitación: ' + error.message)
+  try {
+    console.log('🧹 Iniciando limpieza de habitación:', { roomId, roomNumber })
+    
+    // Validar que tenemos los datos necesarios
+    if (!roomId) {
+      throw new Error('ID de habitación no válido')
     }
+
+    const { data, error } = await cleanRoom(roomId)
+    
+    if (error) {
+      console.error('❌ Error al limpiar habitación:', error)
+      toast.error(`Error al limpiar habitación: ${error.message}`)
+      return
+    }
+    
+    const finalRoomNumber = roomNumber || data?.roomNumber || 'desconocida'
+    
+    toast.success(`Habitación ${finalRoomNumber} limpia y disponible`, {
+      icon: '✨',
+      duration: 3000
+    })
+
+    // Opcional: Refrescar datos para sincronizar con la base de datos
+    setTimeout(() => {
+      refreshData()
+    }, 1000)
+    
+  } catch (error) {
+    console.error('❌ Error en handleQuickClean:', error)
+    toast.error('Error al limpiar habitación: ' + error.message)
   }
+}
 
   // ✅ HANDLERS PARA SNACKS
   const handleGuestDataChange = (newGuestData) => {

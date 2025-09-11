@@ -596,45 +596,115 @@ export const useQuickCheckins = () => {
 
   // Limpiar habitación
   const cleanRoom = useCallback(async (roomId) => {
-    try {
-      console.log('🧹 Limpiando habitación:', roomId)
+  try {
+    console.log('🧹 Limpiando habitación en base de datos:', roomId)
 
-      let roomNumber = null
-      
-      // ✅ TODO: Implementar llamada a API para actualizar estado a 'disponible'
-      // await supabase.from('rooms').update({ status_id: availableStatusId }).eq('id', roomId)
-      
-      setRoomsByFloor(prev => {
-        const updated = { ...prev }
-        Object.keys(updated).forEach(floor => {
-          updated[floor] = updated[floor].map(room => {
-            if (room.id === roomId || room.room_id === roomId) {
-              roomNumber = room.number || room.room_number
-              return { 
-                ...room, 
-                status: 'available',
-                cleaning_status: 'clean',
-                room_status: {
-                  ...room.room_status,
-                  status: 'disponible',
-                  color: '#22c55e',
-                  is_available: true
-                }
+    // ✅ ACTUALIZAR EN LA BASE DE DATOS PRIMERO
+    // Obtener el ID del estado "disponible"
+    const { data: availableStatus, error: statusError } = await supabase
+      .from('room_status')
+      .select('id')
+      .eq('status', 'disponible')
+      .single()
+
+    if (statusError) {
+      console.error('❌ Error obteniendo estado disponible:', statusError)
+      throw new Error('No se pudo obtener el estado disponible')
+    }
+
+    // Actualizar el estado de la habitación en la base de datos
+    const { data: updatedRoom, error: updateError } = await supabase
+      .from('rooms')
+      .update({ 
+        status_id: availableStatus.id,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', roomId)
+      .select(`
+        id,
+        room_number,
+        floor,
+        base_price,
+        room_status:status_id(
+          id,
+          status,
+          color,
+          is_available
+        )
+      `)
+      .single()
+
+    if (updateError) {
+      console.error('❌ Error actualizando habitación:', updateError)
+      throw new Error(`Error actualizando habitación: ${updateError.message}`)
+    }
+
+    console.log('✅ Habitación actualizada en base de datos:', updatedRoom)
+
+    let roomNumber = null
+    
+    // ✅ ACTUALIZAR ESTADO LOCAL DESPUÉS DE CONFIRMAR EL CAMBIO EN BD
+    setRoomsByFloor(prev => {
+      const updated = { ...prev }
+      Object.keys(updated).forEach(floor => {
+        updated[floor] = updated[floor].map(room => {
+          if (room.id === roomId || room.room_id === roomId) {
+            roomNumber = room.number || room.room_number
+            return { 
+              ...room, 
+              status: 'available',
+              cleaning_status: 'clean',
+              room_status: {
+                id: availableStatus.id,
+                status: 'disponible',
+                color: '#22c55e',
+                is_available: true
               }
             }
-            return room
-          })
+          }
+          return room
         })
-        return updated
       })
+      return updated
+    })
 
-      return { data: { roomNumber }, error: null }
-      
-    } catch (error) {
-      console.error('❌ Error limpiando habitación:', error)
-      return { data: null, error }
+    console.log(`✅ Habitación ${roomNumber || roomId} limpia y disponible`)
+    return { data: { roomNumber: roomNumber || updatedRoom.room_number }, error: null }
+    
+  } catch (error) {
+    console.error('❌ Error limpiando habitación:', error)
+    return { data: null, error }
+  }
+}, [])
+
+const cleanRoomByNumber = useCallback(async (roomNumber) => {
+  try {
+    console.log('🧹 Limpiando habitación por número:', roomNumber)
+
+    if (!branchId) {
+      throw new Error('No hay branch ID disponible')
     }
-  }, [])
+
+    // Buscar la habitación por número
+    const { data: room, error: roomError } = await supabase
+      .from('rooms')
+      .select('id, room_number')
+      .eq('room_number', roomNumber)
+      .eq('branch_id', branchId)
+      .single()
+
+    if (roomError || !room) {
+      throw new Error(`Habitación ${roomNumber} no encontrada`)
+    }
+
+    // Usar la función cleanRoom existente
+    return await cleanRoom(room.id)
+
+  } catch (error) {
+    console.error('❌ Error limpiando habitación por número:', error)
+    return { data: null, error }
+  }
+}, [cleanRoom, branchId])
 
   // Refrescar datos
   const refreshData = useCallback(() => {

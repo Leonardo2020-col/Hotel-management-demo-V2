@@ -3407,25 +3407,97 @@ export const db = {
     }
   },
 
-  async updateRoomStatus(roomId, status, cleaningStatus = null) {
+  async updateRoomStatus(roomId, statusName) {
     try {
+      console.log('🔄 Updating room status:', { roomId, statusName })
+
+      // Obtener el ID del estado por nombre
       const { data: statusData, error: statusError } = await supabase
         .from('room_status')
-        .select('id')
-        .eq('status', status)
+        .select('id, status, color, is_available')
+        .eq('status', statusName)
         .single()
 
-      if (statusError) return { data: null, error: statusError }
+      if (statusError) {
+        console.error('❌ Error obteniendo estado:', statusError)
+        throw new Error(`Estado "${statusName}" no encontrado`)
+      }
 
+      // Actualizar la habitación
       const { data, error } = await supabase
         .from('rooms')
-        .update({ status_id: statusData.id })
+        .update({ 
+          status_id: statusData.id,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', roomId)
-        .select()
+        .select(`
+          id,
+          room_number,
+          floor,
+          base_price,
+          room_status:status_id(
+            id,
+            status,
+            color,
+            is_available
+          )
+        `)
         .single()
 
-      return { data, error }
+      if (error) {
+        console.error('❌ Error actualizando habitación:', error)
+        throw error
+      }
+
+      console.log('✅ Room status updated successfully:', data.room_number, '→', statusName)
+      return { data, error: null }
     } catch (error) {
+      console.error('❌ Error updating room status:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ Nueva función para limpiar habitación específicamente
+  async cleanRoom(roomId) {
+    try {
+      console.log('🧹 Cleaning room:', roomId)
+      
+      const result = await this.updateRoomStatus(roomId, 'disponible')
+      
+      if (result.error) {
+        throw result.error
+      }
+
+      console.log('✅ Room cleaned successfully:', result.data.room_number)
+      return result
+    } catch (error) {
+      console.error('❌ Error cleaning room:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ Nueva función para limpiar por número de habitación
+  async cleanRoomByNumber(roomNumber, branchId) {
+    try {
+      console.log('🧹 Cleaning room by number:', { roomNumber, branchId })
+
+      // Buscar la habitación por número
+      const { data: room, error: roomError } = await supabase
+        .from('rooms')
+        .select('id, room_number, branch_id')
+        .eq('room_number', roomNumber)
+        .eq('branch_id', branchId)
+        .single()
+
+      if (roomError || !room) {
+        throw new Error(`Habitación ${roomNumber} no encontrada en la sucursal`)
+      }
+
+      // Limpiar usando el ID
+      return await this.cleanRoom(room.id)
+    } catch (error) {
+      console.error('❌ Error cleaning room by number:', error)
       return { data: null, error }
     }
   },
