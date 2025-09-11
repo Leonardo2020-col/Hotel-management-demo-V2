@@ -44,35 +44,33 @@ export const useQuickCheckins = () => {
 
   // ✅ FUNCIÓN NUEVA: Limpiar check-ins obsoletos
   const cleanupObsoleteCheckins = useCallback(async () => {
-    try {
-      console.log('🧹 Limpiando check-ins obsoletos...')
-      
-      if (!branchId) return
+  try {
+    console.log('🧹 Limpiando check-ins obsoletos...')
+    
+    if (!branchId) return
 
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      const yesterdayStr = yesterday.toISOString().split('T')[0]
+    const twoDaysAgo = new Date()
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+    const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0]
 
-      // ✅ CORRECCIÓN: Marcar como checked_out los registros antiguos
-      const { error } = await supabase
-        .from('quick_checkins')
-        .update({ 
-          status: 'checked_out',
-          actual_check_out_date: new Date().toISOString()
-        })
-        .eq('branch_id', branchId)
-        .is('actual_check_out_date', null) // Solo los que no tienen checkout real
-        .lt('check_out_date', yesterdayStr) // Más antiguos que ayer
+    // ✅ SIMPLIFICADO: Solo marcar como muy viejos cambiando la fecha
+    const { error } = await supabase
+      .from('quick_checkins')
+      .update({ 
+        check_out_date: twoDaysAgoStr
+      })
+      .eq('branch_id', branchId)
+      .lt('check_out_date', twoDaysAgoStr)
 
-      if (error) {
-        console.warn('⚠️ Warning limpiando check-ins obsoletos:', error)
-      } else {
-        console.log('✅ Check-ins obsoletos limpiados exitosamente')
-      }
-    } catch (error) {
-      console.warn('⚠️ Error en cleanup de check-ins:', error)
+    if (error) {
+      console.warn('⚠️ Warning limpiando check-ins obsoletos:', error)
+    } else {
+      console.log('✅ Check-ins obsoletos limpiados exitosamente')
     }
-  }, [branchId])
+  } catch (error) {
+    console.warn('⚠️ Error en cleanup de check-ins:', error)
+  }
+}, [branchId])
 
   // Cargar habitaciones desde la base de datos
   const loadRoomsFromDatabase = useCallback(async () => {
@@ -179,7 +177,7 @@ export const useQuickCheckins = () => {
 
     const today = new Date().toISOString().split('T')[0]
     
-    // ✅ CONSULTA CORREGIDA - MÁS PERMISIVA
+    // ✅ CONSULTA SIMPLIFICADA - Solo usar campos que existen
     const { data, error } = await supabase
       .from('quick_checkins')
       .select(`
@@ -191,8 +189,6 @@ export const useQuickCheckins = () => {
         check_in_date,
         check_out_date,
         amount,
-        status,
-        actual_check_out_date,
         snacks_consumed,
         created_at,
         room:room_id(
@@ -205,8 +201,7 @@ export const useQuickCheckins = () => {
         )
       `)
       .eq('branch_id', branchId)
-      // ✅ CAMBIO CRÍTICO: Incluir registros de hoy también
-      .gte('check_out_date', today) 
+      .gte('check_out_date', today) // Solo los que tienen check_out_date >= hoy
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -216,26 +211,10 @@ export const useQuickCheckins = () => {
 
     console.log(`🔍 Procesando ${data?.length || 0} registros de quick_checkins...`)
     
-    // ✅ DEBUGGING MEJORADO
-    if (data && data.length > 0) {
-      data.forEach((checkin, index) => {
-        console.log(`📝 Quick checkin ${index + 1}:`, {
-          id: checkin.id,
-          room: checkin.room?.room_number,
-          guest: checkin.guest_name,
-          status: checkin.status,
-          actual_checkout: checkin.actual_check_out_date,
-          check_out_date: checkin.check_out_date,
-          created_at: checkin.created_at
-        })
-      })
-    }
-
     const structured = {}
     
     if (data && Array.isArray(data)) {
       data.forEach(checkin => {
-        // ✅ LÓGICA DE FILTRADO CORREGIDA
         const roomNumber = checkin.room?.room_number
         
         if (!roomNumber) {
@@ -243,62 +222,41 @@ export const useQuickCheckins = () => {
           return
         }
 
-        // ✅ NUEVO: Condiciones más claras para incluir/excluir
-        const hasActualCheckout = checkin.actual_check_out_date !== null
-        const statusIsCheckedOut = checkin.status === 'checked_out'
-        const checkOutDatePassed = new Date(checkin.check_out_date) < new Date(today)
+        // ✅ LÓGICA SIMPLIFICADA: Si check_out_date es hoy o futuro, está activo
+        const checkOutDate = new Date(checkin.check_out_date)
+        const todayDate = new Date(today)
         
-        // ✅ DEBUGGING POR HABITACIÓN
-        console.log(`🔍 Evaluando habitación ${roomNumber}:`, {
-          hasActualCheckout,
-          statusIsCheckedOut,
-          checkOutDatePassed,
-          shouldInclude: !hasActualCheckout && !statusIsCheckedOut && !checkOutDatePassed
-        })
-
-        // ✅ CONDICIÓN CORREGIDA: Solo excluir si realmente hizo checkout
-        if (hasActualCheckout || statusIsCheckedOut) {
-          console.log(`⏭️ Excluyendo habitación ${roomNumber} - Ya procesó checkout`)
-          return
+        // Solo incluir si el checkout es hoy o en el futuro
+        if (checkOutDate >= todayDate) {
+          const docParts = checkin.guest_document?.split(':') || ['DNI', '']
+          
+          structured[roomNumber] = {
+            id: checkin.id,
+            guest_name: checkin.guest_name,
+            guest_document: checkin.guest_document,
+            guest_phone: checkin.guest_phone,
+            documentType: docParts[0],
+            documentNumber: docParts[1],
+            check_in_date: checkin.check_in_date,
+            check_out_date: checkin.check_out_date,
+            total_amount: checkin.amount,
+            room_rate: checkin.amount,
+            confirmation_code: `QC-${checkin.id}`,
+            payment_method: checkin.payment_method?.name,
+            created_at: checkin.created_at,
+            snacks_consumed: checkin.snacks_consumed || [],
+            isQuickCheckin: true,
+            status: 'active'
+          }
+          
+          console.log(`✅ Check-in activo incluido: Habitación ${roomNumber}`)
+        } else {
+          console.log(`⏭️ Excluyendo habitación ${roomNumber} - Check-out pasado`)
         }
-
-        // ✅ INCLUIR ESTE CHECK-IN COMO ACTIVO
-        const docParts = checkin.guest_document?.split(':') || ['DNI', '']
-        
-        structured[roomNumber] = {
-          id: checkin.id,
-          guest_name: checkin.guest_name,
-          guest_document: checkin.guest_document,
-          guest_phone: checkin.guest_phone,
-          documentType: docParts[0],
-          documentNumber: docParts[1],
-          check_in_date: checkin.check_in_date,
-          check_out_date: checkin.check_out_date,
-          total_amount: checkin.amount,
-          room_rate: checkin.amount, // Simplificado por ahora
-          confirmation_code: `QC-${checkin.id}`,
-          payment_method: checkin.payment_method?.name,
-          created_at: checkin.created_at,
-          snacks_consumed: checkin.snacks_consumed || [],
-          isQuickCheckin: true,
-          status: checkin.status || 'active'
-        }
-        
-        console.log(`✅ Check-in activo incluido: Habitación ${roomNumber}`, structured[roomNumber])
       })
     }
 
-    console.log(`✅ Check-ins activos cargados (filtrados): ${Object.keys(structured).length}`)
-    
-    // ✅ DEBUGGING FINAL
-    Object.keys(structured).forEach(roomNumber => {
-      console.log(`🏨 Habitación ${roomNumber} tiene check-in activo:`, {
-        guest: structured[roomNumber].guest_name,
-        id: structured[roomNumber].id,
-        amount: structured[roomNumber].total_amount
-      })
-    })
-
+    console.log(`✅ Check-ins activos cargados: ${Object.keys(structured).length}`)
     return structured
 
   } catch (error) {
@@ -530,88 +488,111 @@ export const useQuickCheckins = () => {
 
   // ✅ FUNCIÓN CORREGIDA: Procesar Quick Check-out REAL (SOLUCION AL PROBLEMA)
   const processQuickCheckOut = useCallback(async (roomNumber, paymentMethod = 'efectivo') => {
-    try {
-      console.log('🚪 Procesando Quick Check-out REAL:', { roomNumber, paymentMethod })
+  try {
+    console.log('🚪 Procesando Quick Check-out:', { roomNumber, paymentMethod })
 
-      const activeCheckin = activeCheckins[roomNumber]
-      if (!activeCheckin) {
-        throw new Error(`No hay check-in activo para la habitación ${roomNumber}`)
-      }
-
-      // ✅ CORRECCIÓN CRÍTICA: Marcar como checked_out en la base de datos
-      console.log('📝 Actualizando estado del quick_checkin a checked_out...')
-      
-      const { error: updateError } = await supabase
-        .from('quick_checkins')
-        .update({
-          status: 'checked_out', // ✅ Marcar como procesado
-          actual_check_out_date: new Date().toISOString(), // ✅ Fecha real de checkout
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', activeCheckin.id)
-
-      if (updateError) {
-        console.error('❌ Error actualizando estado del quick checkin:', updateError)
-        throw new Error(`Error marcando checkout: ${updateError.message}`)
-      }
-
-      console.log('✅ Estado actualizado en la base de datos exitosamente')
-
-      // Llamar al servicio adicional si existe
-      try {
-        const { data: serviceResult, error: serviceError } = await quickCheckinService.processQuickCheckOut(
-          activeCheckin.id,
-          paymentMethod
-        )
-
-        if (serviceError) {
-          console.warn('⚠️ Warning en servicio adicional:', serviceError)
-          // No hacer throw aquí, el checkout principal ya se completó
-        }
-      } catch (serviceError) {
-        console.warn('⚠️ Error en servicio adicional (no crítico):', serviceError)
-      }
-
-      console.log('✅ Quick check-out procesado completamente en la base de datos')
-
-      // ✅ Actualizar estados locales inmediatamente
-      setRoomsByFloor(prev => {
-        const updated = { ...prev }
-        Object.keys(updated).forEach(floor => {
-          updated[floor] = updated[floor].map(room => 
-            (room.number === roomNumber || room.room_number === roomNumber)
-              ? { 
-                  ...room, 
-                  status: 'available',
-                  cleaning_status: 'dirty', // ✅ Necesita limpieza después del checkout
-                  quickCheckin: null,
-                  room_status: {
-                    ...room.room_status,
-                    status: 'limpieza', // ✅ Estado correcto: limpieza
-                    color: '#f59e0b',
-                    is_available: false
-                  }
-                }
-              : room
-          )
-        })
-        return updated
-      })
-
-      // ✅ Remover de check-ins activos
-      setActiveCheckins(prev => {
-        const updated = { ...prev }
-        delete updated[roomNumber]
-        return updated
-      })
-
-      return { data: { roomNumber, guestName: activeCheckin.guest_name }, error: null }
-      
-    } catch (error) {
-      console.error('❌ Error en processQuickCheckOut:', error)
-      return { data: null, error }
+    const activeCheckin = activeCheckins[roomNumber]
+    if (!activeCheckin) {
+      throw new Error(`No hay check-in activo para la habitación ${roomNumber}`)
     }
-  }, [activeCheckins])
+
+    console.log('📝 Actualizando check-out en la base de datos...')
+    
+    // ✅ SOLUCIÓN: Marcar como procesado cambiando check_out_date al pasado
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+    
+    const { error: updateError } = await supabase
+      .from('quick_checkins')
+      .update({
+        check_out_date: yesterdayStr, // ✅ Cambiar a ayer para marcarlo como procesado
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', activeCheckin.id)
+
+    if (updateError) {
+      console.error('❌ Error actualizando check-out:', updateError)
+      throw new Error(`Error marcando checkout: ${updateError.message}`)
+    }
+
+    console.log('✅ Check-out actualizado en la base de datos exitosamente')
+
+    // Actualizar estado de la habitación a limpieza
+    try {
+      const { data: cleaningStatus } = await supabase
+        .from('room_status')
+        .select('id')
+        .eq('status', 'limpieza')
+        .single()
+
+      if (cleaningStatus) {
+        // Buscar el room_id correcto
+        const { data: roomData } = await supabase
+          .from('rooms')
+          .select('id')
+          .eq('room_number', roomNumber)
+          .eq('branch_id', branchId)
+          .single()
+
+        if (roomData) {
+          await supabase
+            .from('rooms')
+            .update({ status_id: cleaningStatus.id })
+            .eq('id', roomData.id)
+        }
+      }
+    } catch (roomError) {
+      console.warn('⚠️ Warning actualizando estado de habitación:', roomError)
+    }
+
+    console.log('✅ Quick check-out procesado completamente')
+
+    // ✅ Actualizar estados locales inmediatamente
+    setRoomsByFloor(prev => {
+      const updated = { ...prev }
+      Object.keys(updated).forEach(floor => {
+        updated[floor] = updated[floor].map(room => 
+          (room.number === roomNumber || room.room_number === roomNumber)
+            ? { 
+                ...room, 
+                status: 'available',
+                cleaning_status: 'dirty',
+                quickCheckin: null,
+                room_status: {
+                  ...room.room_status,
+                  status: 'limpieza',
+                  color: '#f59e0b',
+                  is_available: false
+                }
+              }
+            : room
+        )
+      })
+      return updated
+    })
+
+    // ✅ Remover de check-ins activos
+    setActiveCheckins(prev => {
+      const updated = { ...prev }
+      delete updated[roomNumber]
+      return updated
+    })
+
+    return { 
+      data: { 
+        roomNumber, 
+        guestName: activeCheckin.guest_name,
+        amount: activeCheckin.total_amount
+      }, 
+      error: null 
+    }
+    
+  } catch (error) {
+    console.error('❌ Error en processQuickCheckOut:', error)
+    return { data: null, error }
+  }
+}, [activeCheckins, branchId])
 
   // Limpiar habitación
   const cleanRoom = useCallback(async (roomId) => {

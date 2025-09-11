@@ -1499,101 +1499,101 @@ export const quickCheckinService = {
 
   // Obtener quick checkins activos
   async getActiveQuickCheckins(branchId = null) {
-    try {
-      console.log('📋 Loading active quick checkins...', { branchId })
-      
-      let query = supabase
-        .from('quick_checkins')
-        .select(`
+  try {
+    console.log('📋 Loading active quick checkins...', { branchId })
+    
+    let query = supabase
+      .from('quick_checkins')
+      .select(`
+        id,
+        branch_id,
+        room_id,
+        guest_name,
+        guest_document,
+        guest_phone,
+        check_in_date,
+        check_out_date,
+        amount,
+        snacks_consumed,
+        created_at,
+        created_by,
+        room:room_id(
           id,
-          branch_id,
-          room_id,
-          guest_name,
-          guest_document,
-          guest_phone,
-          check_in_date,
-          check_out_date,
-          amount,
-          snacks_consumed,
-          created_at,
-          created_by,
-          room:room_id(
-            id,
-            room_number,
-            floor,
-            base_price
-          ),
-          payment_method:payment_method_id(
-            id,
-            name
-          ),
-          branch:branch_id(
-            id,
-            name
-          )
-        `)
-        .gte('check_out_date', new Date().toISOString().split('T')[0])
-        .order('created_at', { ascending: false })
+          room_number,
+          floor,
+          base_price
+        ),
+        payment_method:payment_method_id(
+          id,
+          name
+        ),
+        branch:branch_id(
+          id,
+          name
+        )
+      `)
+      // ✅ CAMBIO CLAVE: Solo traer los que tienen check_out_date >= hoy
+      .gte('check_out_date', new Date().toISOString().split('T')[0])
+      .order('created_at', { ascending: false })
 
-      // Filtrar por sucursal si se especifica
-      if (branchId) {
-        query = query.eq('branch_id', branchId)
-      }
-
-      const { data, error } = await query
-
-      if (error) {
-        console.error('❌ Error loading quick checkins:', error)
-        throw error
-      }
-
-      console.log('✅ Quick checkins loaded:', data?.length || 0)
-
-      // ✅ ESTRUCTURAR DATOS PARA EL FRONTEND
-      const structuredData = {}
-      
-      if (data && Array.isArray(data)) {
-        data.forEach(checkin => {
-          const roomNumber = checkin.room?.room_number
-          if (roomNumber) {
-            // Parsear documento
-            const docParts = checkin.guest_document?.split(':') || ['DNI', '']
-            
-            structuredData[roomNumber] = {
-              id: checkin.id,
-              room: {
-                id: checkin.room.id,
-                number: roomNumber,
-                floor: checkin.room.floor,
-                base_price: checkin.room.base_price
-              },
-              guest_name: checkin.guest_name,
-              guest_document: checkin.guest_document,
-              guest_phone: checkin.guest_phone,
-              documentType: docParts[0],
-              documentNumber: docParts[1],
-              check_in_date: checkin.check_in_date,
-              check_out_date: checkin.check_out_date,
-              total_amount: checkin.amount,
-              room_rate: checkin.room?.base_price || 0,
-              confirmation_code: `QC-${checkin.id}-${checkin.created_at.slice(-4)}`,
-              payment_method: checkin.payment_method?.name,
-              branch_name: checkin.branch?.name,
-              created_at: checkin.created_at,
-              snacks_consumed: checkin.snacks_consumed || [], // ✅ AHORA DESDE LA BD
-              isQuickCheckin: true
-            }
-          }
-        })
-      }
-
-      return { data: structuredData, error: null }
-
-    } catch (error) {
-      console.error('❌ Error in getActiveQuickCheckins:', error)
-      return { data: {}, error }
+    // Filtrar por sucursal si se especifica
+    if (branchId) {
+      query = query.eq('branch_id', branchId)
     }
-  },
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('❌ Error loading quick checkins:', error)
+      throw error
+    }
+
+    console.log('✅ Quick checkins loaded:', data?.length || 0)
+
+    const structuredData = {}
+    
+    if (data && Array.isArray(data)) {
+      data.forEach(checkin => {
+        const roomNumber = checkin.room?.room_number
+        if (roomNumber) {
+          const docParts = checkin.guest_document?.split(':') || ['DNI', '']
+          
+          structuredData[roomNumber] = {
+            id: checkin.id,
+            room: {
+              id: checkin.room.id,
+              number: roomNumber,
+              floor: checkin.room.floor,
+              base_price: checkin.room.base_price
+            },
+            guest_name: checkin.guest_name,
+            guest_document: checkin.guest_document,
+            guest_phone: checkin.guest_phone,
+            documentType: docParts[0],
+            documentNumber: docParts[1],
+            check_in_date: checkin.check_in_date,
+            check_out_date: checkin.check_out_date,
+            total_amount: checkin.amount,
+            room_rate: checkin.room?.base_price || 0,
+            confirmation_code: `QC-${checkin.id}-${checkin.created_at.slice(-4)}`,
+            payment_method: checkin.payment_method?.name,
+            branch_name: checkin.branch?.name,
+            created_at: checkin.created_at,
+            snacks_consumed: checkin.snacks_consumed || [],
+            isQuickCheckin: true
+          }
+        }
+      })
+    }
+
+    return { data: structuredData, error: null }
+
+  } catch (error) {
+    console.error('❌ Error in getActiveQuickCheckins:', error)
+    return { data: {}, error }
+  }
+},
+
 
   // ✅ CREAR QUICK CHECKIN - VERSIÓN CORREGIDA CON SNACKS_CONSUMED
 async createQuickCheckin(roomData, guestData, snacksData = []) {
@@ -1829,71 +1829,82 @@ if (!branchId) {
 
   // ✅ FUNCIÓN PARA PROCESAR CHECK-OUT
   async processQuickCheckOut(quickCheckinId, paymentMethod = 'efectivo') {
+  try {
+    console.log('🚪 Processing quick checkout...', { quickCheckinId, paymentMethod })
+
+    // Obtener el quick checkin
+    const { data: quickCheckin, error: fetchError } = await supabase
+      .from('quick_checkins')
+      .select(`
+        id,
+        room_id,
+        guest_name,
+        amount,
+        snacks_consumed,
+        check_out_date,
+        room:room_id(room_number)
+      `)
+      .eq('id', quickCheckinId)
+      .single()
+
+    if (fetchError || !quickCheckin) {
+      throw new Error('Quick check-in no encontrado')
+    }
+
+    // ✅ MARCAR COMO PROCESADO: Cambiar check_out_date al pasado
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+
+    const { error: updateError } = await supabase
+      .from('quick_checkins')
+      .update({
+        check_out_date: yesterdayStr, // Marcarlo como procesado
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', quickCheckinId)
+
+    if (updateError) {
+      console.error('❌ Error updating checkout:', updateError)
+      throw new Error(`Error marcando checkout: ${updateError.message}`)
+    }
+
+    // Actualizar estado de habitación a limpieza
     try {
-      console.log('🚪 Processing quick checkout...', { quickCheckinId, paymentMethod })
-
-      // Obtener el quick checkin
-      const { data: quickCheckin, error: fetchError } = await supabase
-        .from('quick_checkins')
-        .select(`
-          id,
-          room_id,
-          guest_name,
-          amount,
-          snacks_consumed,
-          room:room_id(room_number)
-        `)
-        .eq('id', quickCheckinId)
-        .single()
-
-      if (fetchError || !quickCheckin) {
-        throw new Error('Quick check-in no encontrado')
-      }
-
-      // Marcar como completado (actualizar fecha de checkout)
-      const { error: updateError } = await supabase
-        .from('quick_checkins')
-        .update({
-          check_out_date: new Date().toISOString().split('T')[0]
-        })
-        .eq('id', quickCheckinId)
-
-      if (updateError) {
-        console.warn('⚠️ Warning updating checkout:', updateError)
-      }
-
-      // Liberar habitación
-      const { data: availableStatus } = await supabase
+      const { data: cleaningStatus } = await supabase
         .from('room_status')
         .select('id')
         .eq('status', 'limpieza')
         .single()
 
-      if (availableStatus) {
+      if (cleaningStatus && quickCheckin.room_id) {
         await supabase
           .from('rooms')
-          .update({ status_id: availableStatus.id })
+          .update({ status_id: cleaningStatus.id })
           .eq('id', quickCheckin.room_id)
       }
-
-      console.log('✅ Quick checkout processed successfully')
-      return { 
-        data: {
-          id: quickCheckinId,
-          roomNumber: quickCheckin.room?.room_number,
-          guestName: quickCheckin.guest_name,
-          amount: quickCheckin.amount,
-          snacksConsumed: quickCheckin.snacks_consumed || [],
-          paymentMethod
-        }, 
-        error: null 
-      }
-
-    } catch (error) {
-      console.error('❌ Error in processQuickCheckOut:', error)
-      return { data: null, error }
+    } catch (roomError) {
+      console.warn('⚠️ Warning updating room status:', roomError)
     }
-  },
+
+    console.log('✅ Quick checkout processed successfully')
+    return { 
+      data: {
+        id: quickCheckinId,
+        roomNumber: quickCheckin.room?.room_number,
+        guestName: quickCheckin.guest_name,
+        amount: quickCheckin.amount,
+        snacksConsumed: quickCheckin.snacks_consumed || [],
+        paymentMethod
+      }, 
+      error: null 
+    }
+
+  } catch (error) {
+    console.error('❌ Error in processQuickCheckOut:', error)
+    return { data: null, error }
+  }
+},
 
   // ✅ NUEVA FUNCIÓN: Obtener snacks consumidos de un quick checkin específico
   async getQuickCheckinSnacks(quickCheckinId) {
