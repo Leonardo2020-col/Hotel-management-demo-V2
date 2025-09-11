@@ -1,8 +1,13 @@
-// src/lib/supabase.js - VERSIÓN COMPLETAMENTE CORREGIDA
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ Missing Supabase environment variables')
+  console.error('Required: REACT_APP_SUPABASE_URL, REACT_APP_SUPABASE_ANON_KEY')
+  throw new Error('Supabase configuration missing')
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
@@ -1119,6 +1124,20 @@ export const snackService = {
   try {
     console.log('🍿 Loading snack items from database...')
     
+    // ✅ Helper function para generar slug
+    const generateCategorySlug = (categoryName) => {
+      if (!categoryName) return 'sin-categoria'
+      
+      return categoryName
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[áéíóúñ]/g, match => {
+          const accents = { 'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ñ': 'n' }
+          return accents[match] || match
+        })
+        .replace(/[^a-z0-9-]/g, '')
+    }
+    
     const { data, error } = await supabase
       .from('snack_items')
       .select(`
@@ -1132,11 +1151,11 @@ export const snackService = {
         category_id,
         created_at,
         updated_at,
-        snack_categories!inner(
+        snack_category:category_id(
           id,
           name
         )
-      `) // ✅ CORRECTO: snack_categories (plural) con !inner
+      `)
       .eq('is_active', true)
       .order('name')
 
@@ -1145,24 +1164,26 @@ export const snackService = {
       throw error
     }
 
-    console.log('🔍 Raw data from Supabase:', data?.slice(0, 2)) // Debug
+    console.log('🔍 Raw data from Supabase:', data?.slice(0, 2))
 
-    // Enriquecer datos con campos calculados
+    // ✅ Enriquecer datos con campos calculados
     const enrichedData = (data || []).map(item => ({
       ...item,
-      category_name: item.snack_categories?.name || 'Sin categoría',
-      category_slug: this.generateCategorySlug(item.snack_categories?.name),
+      category_name: item.snack_category?.name || 'Sin categoría',
+      category_slug: generateCategorySlug(item.snack_category?.name),
       in_stock: item.stock > 0,
       low_stock: item.stock <= item.minimum_stock,
       stock_percentage: item.minimum_stock > 0 
         ? Math.round((item.stock / item.minimum_stock) * 100) 
         : 100,
-      formatted_price: this.formatPrice(item.price),
+      formatted_price: new Intl.NumberFormat('es-PE', {
+        style: 'currency',
+        currency: 'PEN'
+      }).format(item.price),
       stock_status: this.getStockStatus(item.stock, item.minimum_stock)
     }))
     
     console.log('✅ Snack items loaded and enriched:', enrichedData.length)
-    console.log('🔍 Sample enriched item:', enrichedData[0])
     
     return { data: enrichedData, error: null }
   } catch (error) {
@@ -1684,12 +1705,17 @@ async createQuickCheckin(roomData, guestData, snacksData = []) {
     const documentInfo = guestData.documentNumber 
       ? `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`
       : null
+    
+    // ✅ CORRECTO: Validar branchId obligatorio
+if (!branchId) {
+  throw new Error('Branch ID es requerido para crear quick checkin')
+}
 
     // ✅ PREPARAR DATOS PARA INSERCIÓN
     const insertData = {
-      branch_id: branchId,
-      room_id: roomId,
-      guest_name: guestData.fullName.trim(),
+  branch_id: branchId,
+  room_id: roomId,
+  guest_name: guestData.fullName.trim(),
       guest_document: documentInfo,
       guest_phone: guestData.phone?.trim() || '',
       check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
