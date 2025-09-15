@@ -853,67 +853,68 @@ export const reservationService = {
 
   // Función para obtener estadísticas de check-in/check-out
   async getCheckinCheckoutStats(branchId, date = null) {
-    try {
-      const targetDate = date || new Date().toISOString().split('T')[0]
-      console.log('📊 Fetching checkin/checkout stats for:', targetDate)
-      
-      // Check-ins del día
-      const { data: checkins, error: checkinsError } = await supabase
-        .from('checkin_orders')
-        .select(`
-          id,
+  try {
+    const targetDate = date || new Date().toISOString().split('T')[0]
+    console.log('📊 Fetching checkin/checkout stats for:', targetDate)
+    
+    // Check-ins del día
+    const { data: checkins, error: checkinsError } = await supabase
+      .from('checkin_orders')
+      .select(`
+        id,
+        reservation:reservation_id(branch_id),
+        quick_checkin:quick_checkin_id(branch_id)
+      `)
+      .gte('check_in_time', `${targetDate}T00:00:00.000Z`)
+      .lt('check_in_time', `${targetDate}T23:59:59.999Z`)
+
+    if (checkinsError) throw checkinsError
+
+    // Filtrar por sucursal
+    const branchCheckins = checkins?.filter(c => 
+      c.reservation?.branch_id === branchId || 
+      c.quick_checkin?.branch_id === branchId
+    ) || []
+
+    // Check-outs del día
+    const { data: checkouts, error: checkoutsError } = await supabase
+      .from('checkout_orders')
+      .select(`
+        id,
+        checkin_order:checkin_order_id(
           reservation:reservation_id(branch_id),
           quick_checkin:quick_checkin_id(branch_id)
-        `)
-        .gte('check_in_time', `${targetDate}T00:00:00.000Z`)
-        .lt('check_in_time', `${targetDate}T23:59:59.999Z`)
+        )
+      `)
+      .gte('checkout_time', `${targetDate}T00:00:00.000Z`)
+      .lt('checkout_time', `${targetDate}T23:59:59.999Z`)
 
-      if (checkinsError) throw checkinsError
+    if (checkoutsError) throw checkoutsError
 
-      // Filtrar por sucursal
-      const branchCheckins = checkins?.filter(c => 
-        c.reservation?.branch_id === branchId || 
-        c.quick_checkin?.branch_id === branchId
-      ) || []
+    // Filtrar por sucursal
+    const branchCheckouts = checkouts?.filter(c => 
+      c.checkin_order?.reservation?.branch_id === branchId || 
+      c.checkin_order?.quick_checkin?.branch_id === branchId
+    ) || []
 
-      // Check-outs del día
-      const { data: checkouts, error: checkoutsError } = await supabase
-        .from('checkout_orders')
-        .select(`
-          id,
-          checkin_order:checkin_order_id(
-            reservation:reservation_id(branch_id),
-            quick_checkin:quick_checkin_id(branch_id)
-          )
-        `)
-        .gte('checkout_time', `${targetDate}T00:00:00.000Z`)
-        .lt('checkout_time', `${targetDate}T23:59:59.999Z`)
-
-      if (checkoutsError) throw checkoutsError
-
-      // Filtrar por sucursal
-      const branchCheckouts = checkouts?.filter(c => 
-        c.checkin_order?.reservation?.branch_id === branchId || 
-        c.checkin_order?.quick_checkin?.branch_id === branchId
-      ) || []
-
-      const stats = {
-        date: targetDate,
-        checkins: branchCheckins.length,
-        checkouts: branchCheckouts.length,
-        netOccupancy: branchCheckins.length - branchCheckouts.length
-      }
-
-      console.log('✅ Stats calculated:', stats)
-      return { data: stats, error: null }
-    } catch (error) {
-      console.error('❌ Error fetching stats:', error)
-      return { 
-        data: { date: targetDate, checkins: 0, checkouts: 0, netOccupancy: 0 }, 
-        error 
-      }
+    const stats = {
+      date: targetDate,
+      checkins: branchCheckins.length,
+      checkouts: branchCheckouts.length,
+      netOccupancy: branchCheckins.length - branchCheckouts.length
     }
-  },
+
+    console.log('✅ Stats calculated:', stats)
+    return { data: stats, error: null }
+  } catch (error) {
+    console.error('❌ Error fetching stats:', error)
+    const fallbackDate = date || new Date().toISOString().split('T')[0]
+    return { 
+      data: { date: fallbackDate, checkins: 0, checkouts: 0, netOccupancy: 0 }, 
+      error 
+    }
+  }
+},
 
   // Función para verificar si una reservación puede hacer check-in
   async canPerformCheckin(reservationId) {
