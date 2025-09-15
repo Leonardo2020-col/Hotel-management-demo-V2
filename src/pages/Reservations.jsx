@@ -1,4 +1,4 @@
-// src/pages/Reservations.jsx
+// src/pages/Reservations.jsx - VERSIÓN CORREGIDA
 import React, { useState } from 'react'
 import { 
   Plus, 
@@ -10,8 +10,8 @@ import {
   DollarSign,
   AlertCircle,
   Clock,
-  LogIn,    // ✅ NUEVO: Icono para check-in
-  LogOut    // ✅ NUEVO: Icono para check-out
+  LogIn,
+  LogOut
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -42,8 +42,9 @@ const Reservations = () => {
     createReservation,
     confirmReservation,
     cancelReservation,
+    updateReservationStatus,  // ✅ CORREGIDO: Usar esta función
     addPayment,
-    getReservationPayments,
+    getReservationPayments,   // ✅ Verificar que esté en el hook
     searchGuests,
     loadAvailableRooms,
     updateFilters,
@@ -57,8 +58,6 @@ const Reservations = () => {
   // Estados locales para modales
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [showCheckInModal, setShowCheckInModal] = useState(false)
-  const [showCheckOutModal, setShowCheckOutModal] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState(null)
 
   // Estadísticas calculadas
@@ -109,7 +108,6 @@ const Reservations = () => {
   }
 
   const handleEditReservation = (reservation) => {
-    // TODO: Implementar edición de reservaciones
     toast.info('Funcionalidad de edición próximamente')
   }
 
@@ -124,7 +122,7 @@ const Reservations = () => {
   }
 
   // =====================================================
-  // ✅ NUEVOS HANDLERS PARA CHECK-IN Y CHECK-OUT
+  // ✅ HANDLERS CORREGIDOS PARA CHECK-IN Y CHECK-OUT
   // =====================================================
 
   const handleCheckIn = async (reservation) => {
@@ -153,23 +151,12 @@ const Reservations = () => {
       
       if (!confirmed) return
 
-      // Simular llamada a API para hacer check-in
-      // En tu implementación real, necesitarás crear esta función en useReservations
-      const checkInData = {
-        reservationId: reservation.id,
-        checkInTime: new Date().toISOString(),
-        processedBy: userInfo.id
-      }
-
-      // Aquí llamarías a tu función de check-in
-      // const result = await processCheckIn(checkInData)
-      
-      // Por ahora, simulamos la actualización del estado
+      // ✅ CORREGIDO: Usar updateReservationStatus en lugar de función inexistente
       const result = await updateReservationStatus(reservation.id, 'en_uso')
       
       if (result.success) {
         toast.success(`Check-in realizado exitosamente para ${reservation.guestName}`)
-        await refreshReservations() // Actualizar la lista
+        await refreshReservations()
       } else {
         toast.error('Error al realizar check-in')
       }
@@ -208,24 +195,12 @@ const Reservations = () => {
       
       if (!confirmed) return
 
-      // Simular llamada a API para hacer check-out
-      const checkOutData = {
-        reservationId: reservation.id,
-        checkOutTime: new Date().toISOString(),
-        processedBy: userInfo.id,
-        additionalCharges: [], // Aquí podrías agregar cargos adicionales
-        depositReturned: 0
-      }
-
-      // Aquí llamarías a tu función de check-out
-      // const result = await processCheckOut(checkOutData)
-      
-      // Por ahora, simulamos la actualización del estado
+      // ✅ CORREGIDO: Usar updateReservationStatus
       const result = await updateReservationStatus(reservation.id, 'completada')
       
       if (result.success) {
         toast.success(`Check-out realizado exitosamente para ${reservation.guestName}`)
-        await refreshReservations() // Actualizar la lista
+        await refreshReservations()
       } else {
         toast.error('Error al realizar check-out')
       }
@@ -237,32 +212,11 @@ const Reservations = () => {
   }
 
   // =====================================================
-  // FUNCIÓN AUXILIAR PARA ACTUALIZAR ESTADO
-  // =====================================================
-
-  const updateReservationStatus = async (reservationId, newStatus) => {
-    try {
-      // Aquí usarías tu hook o servicio real
-      // Por ahora simulo la respuesta
-      console.log(`🔄 Actualizando reservación ${reservationId} a estado: ${newStatus}`)
-      
-      // Simulación de delay de API
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      return { success: true }
-    } catch (error) {
-      console.error('Error actualizando estado:', error)
-      return { success: false, error: error.message }
-    }
-  }
-
-  // =====================================================
   // HANDLER PARA EXPORTACIÓN CSV
   // =====================================================
 
   const handleExportCSV = () => {
     try {
-      // Preparar datos para CSV
       const csvData = reservations.map(reservation => ({
         'Código': reservation.reservation_code,
         'Huésped': reservation.guestName,
@@ -277,7 +231,6 @@ const Reservations = () => {
         'Creada': new Date(reservation.created_at).toLocaleDateString('es-PE')
       }))
 
-      // Convertir a CSV
       if (csvData.length === 0) {
         toast.error('No hay datos para exportar')
         return
@@ -291,7 +244,6 @@ const Reservations = () => {
         )
       ].join('\n')
 
-      // Descargar archivo
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
@@ -502,8 +454,8 @@ const Reservations = () => {
         onEditReservation={handleEditReservation}
         onConfirmReservation={handleConfirmReservation}
         onCancelReservation={handleCancelReservation}
-        onCheckIn={handleCheckIn}           // ✅ NUEVO: Handler de check-in
-        onCheckOut={handleCheckOut}         // ✅ NUEVO: Handler de check-out
+        onCheckIn={handleCheckIn}
+        onCheckOut={handleCheckOut}
         currentUser={userInfo}
       />
 

@@ -1,4 +1,4 @@
-// src/components/reservations/ReservationDetailsModal.jsx
+// src/components/reservations/ReservationDetailsModal.jsx - VERSIÓN COMPLETA CORREGIDA
 import React, { useState, useEffect } from 'react'
 import { 
   X, 
@@ -85,8 +85,27 @@ const ReservationDetailsModal = ({
       return
     }
 
+    // Validaciones
+    const amount = parseFloat(paymentForm.amount)
+    if (amount <= 0) {
+      alert('El monto debe ser mayor a 0')
+      return
+    }
+
+    if (amount > (reservation.balance || 0)) {
+      alert('El monto no puede ser mayor al saldo pendiente')
+      return
+    }
+
+    // Validar referencia para métodos que la requieren
+    const selectedMethod = paymentMethods.find(m => m.id === paymentForm.paymentMethodId)
+    if (selectedMethod?.requires_reference && !paymentForm.reference?.trim()) {
+      alert('La referencia es obligatoria para este método de pago')
+      return
+    }
+
     const result = await onAddPayment(reservation.id, {
-      amount: parseFloat(paymentForm.amount),
+      amount: amount,
       paymentMethodId: paymentForm.paymentMethodId,
       reference: paymentForm.reference,
       paymentDate: paymentForm.paymentDate
@@ -131,6 +150,44 @@ const ReservationDetailsModal = ({
       'no_show': 'text-red-900 bg-red-100 border-red-300'
     }
     return colors[status] || 'text-gray-800 bg-gray-100 border-gray-200'
+  }
+
+  // Función para obtener el nombre del método de pago con emoji
+  const getPaymentMethodName = (methodId) => {
+    switch (methodId) {
+      case 'efectivo':
+        return '💵 Efectivo'
+      case 'transferencia':
+        return '🏦 Transferencia Bancaria'
+      case 'billetera_digital':
+        return '📱 Billetera Digital'
+      default:
+        return methodId
+    }
+  }
+
+  // Función para obtener el placeholder de referencia
+  const getReferenceePlaceholder = (methodId) => {
+    switch (methodId) {
+      case 'transferencia':
+        return 'Ej: OP-123456789'
+      case 'billetera_digital':
+        return 'Ej: YAPE-987654321'
+      default:
+        return 'Referencia'
+    }
+  }
+
+  // Función para obtener el label de referencia
+  const getReferenceLabel = (methodId) => {
+    switch (methodId) {
+      case 'transferencia':
+        return 'Número de operación'
+      case 'billetera_digital':
+        return 'Código de transacción'
+      default:
+        return 'Referencia'
+    }
   }
 
   if (!isOpen || !reservation) return null
@@ -337,14 +394,15 @@ const ReservationDetailsModal = ({
                 )}
               </div>
 
-              {/* Formulario para agregar pago */}
+              {/* Formulario para agregar pago - SIMPLIFICADO */}
               {showAddPayment && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <h4 className="text-md font-medium text-gray-900 mb-3">Registrar nuevo pago</h4>
-                  <form onSubmit={handleAddPayment} className="space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <form onSubmit={handleAddPayment} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Monto */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">Monto</label>
+                        <label className="block text-sm font-medium text-gray-700">Monto a pagar</label>
                         <input
                           type="number"
                           step="0.01"
@@ -361,23 +419,30 @@ const ReservationDetailsModal = ({
                         </p>
                       </div>
 
+                      {/* Método de pago simplificado */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Método de pago</label>
                         <select
                           value={paymentForm.paymentMethodId}
-                          onChange={(e) => setPaymentForm(prev => ({ ...prev, paymentMethodId: e.target.value }))}
+                          onChange={(e) => setPaymentForm(prev => ({ 
+                            ...prev, 
+                            paymentMethodId: e.target.value,
+                            // Limpiar referencia si es efectivo
+                            reference: e.target.value === 'efectivo' ? '' : prev.reference
+                          }))}
                           className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                           required
                         >
-                          <option value="">Seleccionar...</option>
+                          <option value="">Seleccionar método...</option>
                           {paymentMethods.map((method) => (
                             <option key={method.id} value={method.id}>
-                              {method.name}
+                              {getPaymentMethodName(method.id)}
                             </option>
                           ))}
                         </select>
                       </div>
 
+                      {/* Fecha de pago */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Fecha de pago</label>
                         <input
@@ -389,29 +454,76 @@ const ReservationDetailsModal = ({
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Referencia (opcional)</label>
-                        <input
-                          type="text"
-                          value={paymentForm.reference}
-                          onChange={(e) => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                          placeholder="Ej: TXN-123456"
-                        />
-                      </div>
+                      {/* Referencia - Solo si no es efectivo */}
+                      {paymentForm.paymentMethodId && paymentForm.paymentMethodId !== 'efectivo' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            {getReferenceLabel(paymentForm.paymentMethodId)}
+                          </label>
+                          <input
+                            type="text"
+                            value={paymentForm.reference}
+                            onChange={(e) => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))}
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            placeholder={getReferenceePlaceholder(paymentForm.paymentMethodId)}
+                            required
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            {paymentForm.paymentMethodId === 'transferencia' 
+                              ? 'Número de operación del banco'
+                              : 'Código de la transacción digital'
+                            }
+                          </p>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex justify-end space-x-2">
+                    {/* Resumen del pago */}
+                    {paymentForm.amount && paymentForm.paymentMethodId && (
+                      <div className="bg-white border border-gray-200 rounded-lg p-3">
+                        <h5 className="text-sm font-medium text-gray-900 mb-2">Resumen del pago</h5>
+                        <div className="space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Monto:</span>
+                            <span className="font-medium">S/ {parseFloat(paymentForm.amount || 0).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Método:</span>
+                            <span className="font-medium">
+                              {getPaymentMethodName(paymentForm.paymentMethodId)}
+                            </span>
+                          </div>
+                          {paymentForm.reference && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Referencia:</span>
+                              <span className="font-medium text-xs">{paymentForm.reference}</span>
+                            </div>
+                          )}
+                          <div className="border-t pt-1 mt-2">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Saldo restante:</span>
+                              <span className="font-semibold">
+                                S/ {((reservation.balance || 0) - parseFloat(paymentForm.amount || 0)).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Botones de acción */}
+                    <div className="flex justify-end space-x-3">
                       <button
                         type="button"
                         onClick={() => setShowAddPayment(false)}
-                        className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                        className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                       >
                         Cancelar
                       </button>
                       <button
                         type="submit"
-                        className="px-3 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                        disabled={!paymentForm.amount || !paymentForm.paymentMethodId}
+                        className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Registrar pago
                       </button>
@@ -420,7 +532,7 @@ const ReservationDetailsModal = ({
                 </div>
               )}
 
-              {/* Lista de pagos */}
+              {/* Lista de pagos con iconos mejorados */}
               {loadingPayments ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
@@ -429,7 +541,7 @@ const ReservationDetailsModal = ({
               ) : payments.length > 0 ? (
                 <div className="space-y-3">
                   {payments.map((payment, index) => (
-                    <div key={payment.id || index} className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div key={payment.id || index} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center justify-between">

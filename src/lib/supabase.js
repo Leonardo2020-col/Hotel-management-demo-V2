@@ -178,25 +178,51 @@ export const roomService = {
 
   async updateRoomStatus(roomId, statusName) {
     try {
+      console.log('🔄 Updating room status:', { roomId, statusName })
+
+      // Obtener el ID del estado por nombre
       const { data: statusData, error: statusError } = await supabase
         .from('room_status')
-        .select('id')
+        .select('id, status, color, is_available')
         .eq('status', statusName)
         .single()
 
-      if (statusError) throw statusError
+      if (statusError) {
+        console.error('❌ Error getting room status:', statusError)
+        throw new Error(`Estado de habitación "${statusName}" no encontrado`)
+      }
 
+      // Actualizar la habitación
       const { data, error } = await supabase
         .from('rooms')
-        .update({ status_id: statusData.id })
+        .update({ 
+          status_id: statusData.id,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', roomId)
-        .select()
+        .select(`
+          id,
+          room_number,
+          floor,
+          base_price,
+          room_status:status_id(
+            id,
+            status,
+            color,
+            is_available
+          )
+        `)
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error updating room:', error)
+        throw error
+      }
+
+      console.log('✅ Room status updated successfully:', data.room_number, '→', statusName)
       return { data, error: null }
     } catch (error) {
-      console.error('Error updating room status:', error)
+      console.error('❌ Error in updateRoomStatus:', error)
       return { data: null, error }
     }
   },
@@ -391,14 +417,21 @@ export const reservationService = {
 
   async updateReservationStatus(reservationId, newStatus, userId) {
     try {
+      console.log('🔄 Updating reservation status:', { reservationId, newStatus, userId })
+
+      // Obtener el ID del estado por nombre
       const { data: statusData, error: statusError } = await supabase
         .from('reservation_status')
-        .select('id')
+        .select('id, status, color')
         .eq('status', newStatus)
         .single()
 
-      if (statusError) throw statusError
+      if (statusError) {
+        console.error('❌ Error getting status:', statusError)
+        throw new Error(`Estado "${newStatus}" no encontrado`)
+      }
 
+      // Actualizar la reservación
       const { data, error } = await supabase
         .from('reservations')
         .update({ 
@@ -408,15 +441,550 @@ export const reservationService = {
         .eq('id', reservationId)
         .select(`
           *,
-          status:status_id(status, color)
+          status:status_id(id, status, color, description)
+        `)
+        .single()
+
+      if (error) {
+        console.error('❌ Error updating reservation:', error)
+        throw error
+      }
+
+      // Si el estado cambia a 'en_uso', actualizar habitación a 'ocupada'
+      if (newStatus === 'en_uso') {
+        await this.updateRoomStatusForReservation(reservationId, 'ocupada')
+      }
+      
+      // Si el estado cambia a 'completada', actualizar habitación a 'limpieza'
+      if (newStatus === 'completada') {
+        await this.updateRoomStatusForReservation(reservationId, 'limpieza')
+      }
+
+      console.log('✅ Reservation status updated successfully:', data.status.status)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in updateReservationStatus:', error)
+      return { data: null, error }
+    }
+  },
+
+  async updateRoomStatusForReservation(reservationId, roomStatus) {
+    try {
+      console.log('🏨 Updating room status for reservation:', { reservationId, roomStatus })
+
+      // Obtener la habitación de la reservación
+      const { data: reservation, error: reservationError } = await supabase
+        .from('reservations')
+        .select('room_id')
+        .eq('id', reservationId)
+        .single()
+
+      if (reservationError || !reservation.room_id) {
+        console.warn('⚠️ Could not find room for reservation:', reservationError)
+        return
+      }
+
+      // Obtener el ID del estado de habitación
+      const { data: roomStatusData, error: roomStatusError } = await supabase
+        .from('room_status')
+        .select('id')
+        .eq('status', roomStatus)
+        .single()
+
+      if (roomStatusError) {
+        console.warn('⚠️ Room status not found:', roomStatus)
+        return
+      }
+
+      // Actualizar la habitación
+      const { error: updateError } = await supabase
+        .from('rooms')
+        .update({ 
+          status_id: roomStatusData.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', reservation.room_id)
+
+      if (updateError) {
+        console.warn('⚠️ Error updating room status:', updateError)
+      } else {
+        console.log('✅ Room status updated successfully:', roomStatus)
+      }
+    } catch (error) {
+      console.warn('⚠️ Error in updateRoomStatusForReservation:', error)
+    }
+  },
+
+  async addPayment(reservationId, paymentData) {
+    try {
+      console.log('💳 Adding payment to reservation:', { reservationId, paymentData })
+      
+      // Obtener o crear método de pago simplificado
+      let paymentMethodId = await this.getOrCreatePaymentMethod(paymentData.paymentMethodId)
+      
+      const { data, error } = await supabase
+        .from('reservation_payments')
+        .insert({
+          reservation_id: reservationId,
+          payment_method_id: paymentMethodId,
+          amount: paymentData.amount,
+          payment_reference: paymentData.reference || null,
+          payment_date: paymentData.paymentDate || new Date().toISOString(),
+          processed_by: paymentData.processedBy
+        })
+        .select(`
+          *,
+          payment_method:payment_method_id(id, name),
+          processed_by_user:processed_by(first_name, last_name)
+        `)
+        .single()
+
+      if (error) {
+        console.error('❌ Error adding payment:', error)
+        throw error
+      }
+
+      console.log('✅ Payment added successfully:', data.id)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in addPayment:', error)
+      return { data: null, error }
+    }
+  },
+
+  async getOrCreatePaymentMethod(methodId) {
+    try {
+      // Mapeo de métodos simplificados
+      const methodMap = {
+        'efectivo': 'efectivo',
+        'transferencia': 'transferencia',
+        'billetera_digital': 'pago_movil'
+      }
+
+      const mappedMethod = methodMap[methodId] || 'efectivo'
+
+      // Buscar método existente
+      const { data: existingMethod, error: searchError } = await supabase
+        .from('payment_methods')
+        .select('id')
+        .eq('name', mappedMethod)
+        .single()
+
+      if (!searchError && existingMethod) {
+        return existingMethod.id
+      }
+
+      // Crear método si no existe
+      const { data: newMethod, error: createError } = await supabase
+        .from('payment_methods')
+        .insert({
+          name: mappedMethod,
+          description: `Método de pago: ${mappedMethod}`,
+          is_active: true,
+          requires_reference: methodId !== 'efectivo'
+        })
+        .select('id')
+        .single()
+
+      if (createError) {
+        console.warn('⚠️ Could not create payment method, using default')
+        return null
+      }
+
+      return newMethod.id
+    } catch (error) {
+      console.warn('⚠️ Error handling payment method:', error)
+      return null
+    }
+  },
+
+   async getReservationPayments(reservationId) {
+    try {
+      console.log('💰 Fetching payments for reservation:', reservationId)
+      
+      const { data, error } = await supabase
+        .from('reservation_payments')
+        .select(`
+          *,
+          payment_method:payment_method_id(id, name),
+          processed_by_user:processed_by(first_name, last_name)
+        `)
+        .eq('reservation_id', reservationId)
+        .order('payment_date', { ascending: false })
+
+      if (error) {
+        console.error('❌ Error fetching payments:', error)
+        throw error
+      }
+
+      console.log('✅ Payments fetched successfully:', data?.length || 0)
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error in getReservationPayments:', error)
+      return { data: [], error }
+    }
+  },
+
+  async createCheckinOrder(checkinData) {
+    try {
+      console.log('🎯 Creating checkin order:', checkinData)
+      
+      const { data, error } = await supabase
+        .from('checkin_orders')
+        .insert({
+          reservation_id: checkinData.reservationId,
+          quick_checkin_id: null, // Solo para reservaciones normales
+          room_id: checkinData.roomId,
+          guest_id: checkinData.guestId,
+          check_in_time: checkinData.checkInTime || new Date().toISOString(),
+          expected_checkout: checkinData.expectedCheckout,
+          key_cards_issued: checkinData.keyCardsIssued || 1,
+          deposit_amount: checkinData.depositAmount || 0,
+          processed_by: checkinData.processedBy
+        })
+        .select(`
+          *,
+          reservation:reservation_id(reservation_code),
+          room:room_id(room_number),
+          guest:guest_id(full_name),
+          processed_by_user:processed_by(first_name, last_name)
         `)
         .single()
 
       if (error) throw error
+
+      console.log('✅ Checkin order created successfully:', data.id)
       return { data, error: null }
     } catch (error) {
-      console.error('❌ Error actualizando estado de reservación:', error)
+      console.error('❌ Error creating checkin order:', error)
       return { data: null, error }
+    }
+  },
+
+  async createCheckoutOrder(checkoutData) {
+    try {
+      console.log('🚪 Creating checkout order:', checkoutData)
+      
+      // Primero necesitamos encontrar la orden de checkin
+      const { data: checkinOrder, error: checkinError } = await supabase
+        .from('checkin_orders')
+        .select('id')
+        .eq('reservation_id', checkoutData.reservationId)
+        .single()
+
+      if (checkinError || !checkinOrder) {
+        throw new Error('No se encontró la orden de check-in asociada')
+      }
+
+      const { data, error } = await supabase
+        .from('checkout_orders')
+        .insert({
+          checkin_order_id: checkinOrder.id,
+          checkout_time: checkoutData.checkoutTime || new Date().toISOString(),
+          total_charges: checkoutData.totalCharges || 0,
+          deposit_returned: checkoutData.depositReturned || 0,
+          additional_charges: checkoutData.additionalCharges || [],
+          room_condition: checkoutData.roomCondition || 'good',
+          key_cards_returned: checkoutData.keyCardsReturned || 1,
+          processed_by: checkoutData.processedBy
+        })
+        .select(`
+          *,
+          checkin_order:checkin_order_id(
+            reservation:reservation_id(reservation_code),
+            room:room_id(room_number),
+            guest:guest_id(full_name)
+          ),
+          processed_by_user:processed_by(first_name, last_name)
+        `)
+        .single()
+
+      if (error) throw error
+
+      console.log('✅ Checkout order created successfully:', data.id)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error creating checkout order:', error)
+      return { data: null, error }
+    }
+  },
+
+  async getCheckinOrders(branchId, filters = {}) {
+    try {
+      console.log('🎯 Fetching checkin orders:', { branchId, filters })
+      
+      let query = supabase
+        .from('checkin_orders')
+        .select(`
+          *,
+          reservation:reservation_id(
+            reservation_code,
+            check_in_date,
+            check_out_date,
+            total_amount,
+            branch_id
+          ),
+          quick_checkin:quick_checkin_id(
+            guest_name,
+            amount,
+            branch_id
+          ),
+          room:room_id(room_number, floor),
+          guest:guest_id(full_name, phone),
+          processed_by_user:processed_by(first_name, last_name)
+        `)
+
+      // Filtrar por sucursal a través de la reservación o quick_checkin
+      if (branchId) {
+        query = query.or(`reservation.branch_id.eq.${branchId},quick_checkin.branch_id.eq.${branchId}`)
+      }
+
+      // Filtros adicionales
+      if (filters.dateFrom) {
+        query = query.gte('check_in_time', filters.dateFrom)
+      }
+
+      if (filters.dateTo) {
+        query = query.lte('check_in_time', filters.dateTo)
+      }
+
+      if (filters.activeOnly) {
+        query = query.is('actual_checkout', null)
+      }
+
+      const { data, error } = await query
+        .order('check_in_time', { ascending: false })
+        .limit(filters.limit || 50)
+
+      if (error) throw error
+
+      console.log('✅ Checkin orders fetched successfully:', data?.length || 0)
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error fetching checkin orders:', error)
+      return { data: [], error }
+    }
+  },
+
+  async getCheckoutOrders(branchId, filters = {}) {
+    try {
+      console.log('🚪 Fetching checkout orders:', { branchId, filters })
+      
+      let query = supabase
+        .from('checkout_orders')
+        .select(`
+          *,
+          checkin_order:checkin_order_id(
+            reservation:reservation_id(
+              reservation_code,
+              branch_id
+            ),
+            quick_checkin:quick_checkin_id(
+              guest_name,
+              branch_id
+            ),
+            room:room_id(room_number, floor),
+            guest:guest_id(full_name, phone)
+          ),
+          processed_by_user:processed_by(first_name, last_name)
+        `)
+
+      // Filtrar por sucursal
+      if (branchId) {
+        query = query.or(
+          `checkin_order.reservation.branch_id.eq.${branchId},checkin_order.quick_checkin.branch_id.eq.${branchId}`
+        )
+      }
+
+      // Filtros adicionales
+      if (filters.dateFrom) {
+        query = query.gte('checkout_time', filters.dateFrom)
+      }
+
+      if (filters.dateTo) {
+        query = query.lte('checkout_time', filters.dateTo)
+      }
+
+      const { data, error } = await query
+        .order('checkout_time', { ascending: false })
+        .limit(filters.limit || 50)
+
+      if (error) throw error
+
+      console.log('✅ Checkout orders fetched successfully:', data?.length || 0)
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error fetching checkout orders:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Función para buscar reservaciones
+  async searchReservations(branchId, searchTerm) {
+    try {
+      console.log('🔍 Searching reservations:', { branchId, searchTerm })
+      
+      const { data, error } = await supabase
+        .from('reservations')
+        .select(`
+          id,
+          reservation_code,
+          check_in_date,
+          check_out_date,
+          total_amount,
+          guest:guest_id(full_name, phone, document_number),
+          room:room_id(room_number),
+          status:status_id(status)
+        `)
+        .eq('branch_id', branchId)
+        .or(`reservation_code.ilike.%${searchTerm}%,guest.full_name.ilike.%${searchTerm}%,guest.document_number.ilike.%${searchTerm}%,room.room_number.ilike.%${searchTerm}%`)
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (error) throw error
+
+      console.log('✅ Search completed:', data?.length || 0, 'results')
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error searching reservations:', error)
+      return { data: [], error }
+    }
+  },
+
+  // Función para obtener estadísticas de check-in/check-out
+  async getCheckinCheckoutStats(branchId, date = null) {
+    try {
+      const targetDate = date || new Date().toISOString().split('T')[0]
+      console.log('📊 Fetching checkin/checkout stats for:', targetDate)
+      
+      // Check-ins del día
+      const { data: checkins, error: checkinsError } = await supabase
+        .from('checkin_orders')
+        .select(`
+          id,
+          reservation:reservation_id(branch_id),
+          quick_checkin:quick_checkin_id(branch_id)
+        `)
+        .gte('check_in_time', `${targetDate}T00:00:00.000Z`)
+        .lt('check_in_time', `${targetDate}T23:59:59.999Z`)
+
+      if (checkinsError) throw checkinsError
+
+      // Filtrar por sucursal
+      const branchCheckins = checkins?.filter(c => 
+        c.reservation?.branch_id === branchId || 
+        c.quick_checkin?.branch_id === branchId
+      ) || []
+
+      // Check-outs del día
+      const { data: checkouts, error: checkoutsError } = await supabase
+        .from('checkout_orders')
+        .select(`
+          id,
+          checkin_order:checkin_order_id(
+            reservation:reservation_id(branch_id),
+            quick_checkin:quick_checkin_id(branch_id)
+          )
+        `)
+        .gte('checkout_time', `${targetDate}T00:00:00.000Z`)
+        .lt('checkout_time', `${targetDate}T23:59:59.999Z`)
+
+      if (checkoutsError) throw checkoutsError
+
+      // Filtrar por sucursal
+      const branchCheckouts = checkouts?.filter(c => 
+        c.checkin_order?.reservation?.branch_id === branchId || 
+        c.checkin_order?.quick_checkin?.branch_id === branchId
+      ) || []
+
+      const stats = {
+        date: targetDate,
+        checkins: branchCheckins.length,
+        checkouts: branchCheckouts.length,
+        netOccupancy: branchCheckins.length - branchCheckouts.length
+      }
+
+      console.log('✅ Stats calculated:', stats)
+      return { data: stats, error: null }
+    } catch (error) {
+      console.error('❌ Error fetching stats:', error)
+      return { 
+        data: { date: targetDate, checkins: 0, checkouts: 0, netOccupancy: 0 }, 
+        error 
+      }
+    }
+  },
+
+  // Función para verificar si una reservación puede hacer check-in
+  async canPerformCheckin(reservationId) {
+    try {
+      const { data: reservation, error } = await supabase
+        .from('reservations')
+        .select(`
+          check_in_date,
+          status:status_id(status)
+        `)
+        .eq('id', reservationId)
+        .single()
+
+      if (error) throw error
+
+      const today = new Date()
+      const checkInDate = new Date(reservation.check_in_date)
+      const status = reservation.status?.status
+
+      const canCheckin = status === 'confirmada' && checkInDate <= today
+
+      return { 
+        data: { 
+          canCheckin,
+          reason: !canCheckin ? (
+            status !== 'confirmada' ? 'Reservación no confirmada' :
+            checkInDate > today ? 'Fecha de check-in no alcanzada' : 'Motivo desconocido'
+          ) : null
+        }, 
+        error: null 
+      }
+    } catch (error) {
+      console.error('❌ Error checking checkin eligibility:', error)
+      return { data: { canCheckin: false, reason: 'Error verificando elegibilidad' }, error }
+    }
+  },
+
+  // Función para verificar si una reservación puede hacer check-out
+  async canPerformCheckout(reservationId) {
+    try {
+      const { data: reservation, error } = await supabase
+        .from('reservations')
+        .select(`
+          check_out_date,
+          status:status_id(status)
+        `)
+        .eq('id', reservationId)
+        .single()
+
+      if (error) throw error
+
+      const today = new Date()
+      const checkOutDate = new Date(reservation.check_out_date)
+      const status = reservation.status?.status
+
+      const canCheckout = status === 'en_uso'
+      const isOverdue = checkOutDate < today
+
+      return { 
+        data: { 
+          canCheckout,
+          isOverdue,
+          reason: !canCheckout ? (
+            status !== 'en_uso' ? 'Reservación no está en uso' : 'Motivo desconocido'
+          ) : null
+        }, 
+        error: null 
+      }
+    } catch (error) {
+      console.error('❌ Error checking checkout eligibility:', error)
+      return { data: { canCheckout: false, isOverdue: false, reason: 'Error verificando elegibilidad' }, error }
     }
   }
 }
@@ -1076,17 +1644,59 @@ export const guestService = {
 export const paymentService = {
   async getPaymentMethods() {
     try {
+      // Retornar métodos simplificados por defecto
+      const simplifiedMethods = [
+        { 
+          id: 'efectivo', 
+          name: 'efectivo', 
+          description: 'Pago en efectivo',
+          is_active: true, 
+          requires_reference: false 
+        },
+        { 
+          id: 'transferencia', 
+          name: 'transferencia', 
+          description: 'Transferencia bancaria',
+          is_active: true, 
+          requires_reference: true 
+        },
+        { 
+          id: 'billetera_digital', 
+          name: 'pago_movil', 
+          description: 'Yape/Plin/Billetera Digital',
+          is_active: true, 
+          requires_reference: true 
+        }
+      ]
+
+      // Intentar obtener métodos de la base de datos
       const { data, error } = await supabase
         .from('payment_methods')
         .select('*')
         .eq('is_active', true)
         .order('name')
 
-      if (error) throw error
-      return { data, error: null }
+      if (error) {
+        console.warn('⚠️ Could not fetch payment methods from DB, using simplified methods:', error)
+        return { data: simplifiedMethods, error: null }
+      }
+
+      // Si hay métodos en DB, usarlos; si no, usar los simplificados
+      const methods = data && data.length > 0 ? data : simplifiedMethods
+
+      console.log('✅ Payment methods loaded:', methods.length)
+      return { data: methods, error: null }
     } catch (error) {
-      console.error('Error fetching payment methods:', error)
-      return { data: null, error }
+      console.error('❌ Error in getPaymentMethods:', error)
+      // Fallback a métodos simplificados
+      return { 
+        data: [
+          { id: 'efectivo', name: 'efectivo', requires_reference: false },
+          { id: 'transferencia', name: 'transferencia', requires_reference: true },
+          { id: 'billetera_digital', name: 'pago_movil', requires_reference: true }
+        ], 
+        error: null 
+      }
     }
   }
 }
@@ -3348,6 +3958,134 @@ export const suppliesService = {
 }
 
 // =====================================================
+// 🔧 UTILIDADES DE VALIDACIÓN
+// =====================================================
+export const validationService = {
+  validateReservationStatus(currentStatus, targetStatus) {
+    const validTransitions = {
+      'pendiente': ['confirmada', 'cancelada'],
+      'confirmada': ['en_uso', 'cancelada', 'no_show'],
+      'en_uso': ['completada'],
+      'completada': [], // Estado final
+      'cancelada': [], // Estado final
+      'no_show': []    // Estado final
+    }
+
+    const allowed = validTransitions[currentStatus] || []
+    return {
+      isValid: allowed.includes(targetStatus),
+      allowedTransitions: allowed
+    }
+  },
+
+  validateCheckInData(reservation) {
+    const errors = []
+    
+    if (!reservation) {
+      errors.push('Reservación no encontrada')
+      return { isValid: false, errors }
+    }
+
+    const status = reservation.status?.status
+    if (status !== 'confirmada') {
+      errors.push('La reservación debe estar confirmada para hacer check-in')
+    }
+
+    const checkInDate = new Date(reservation.check_in_date)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    if (checkInDate > today) {
+      errors.push('No se puede hacer check-in antes de la fecha programada')
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  },
+
+  validateCheckOutData(reservation) {
+    const errors = []
+    
+    if (!reservation) {
+      errors.push('Reservación no encontrada')
+      return { isValid: false, errors }
+    }
+
+    const status = reservation.status?.status
+    if (status !== 'en_uso') {
+      errors.push('La reservación debe estar en uso para hacer check-out')
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings: (reservation.balance || 0) > 0 ? ['Hay saldo pendiente'] : []
+    }
+  },
+
+  validatePaymentData(paymentData, reservation) {
+    const errors = []
+    
+    if (!paymentData.amount || paymentData.amount <= 0) {
+      errors.push('El monto debe ser mayor a 0')
+    }
+
+    if (!paymentData.paymentMethodId) {
+      errors.push('Debe seleccionar un método de pago')
+    }
+
+    if (paymentData.amount > (reservation?.balance || 0)) {
+      errors.push('El monto no puede ser mayor al saldo pendiente')
+    }
+
+    // Validar referencia para métodos que la requieren
+    if (paymentData.paymentMethodId !== 'efectivo' && !paymentData.reference?.trim()) {
+      errors.push('La referencia es obligatoria para este método de pago')
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  }
+}
+
+// =====================================================
+// 📊 SERVICIOS DE ESTADÍSTICAS BÁSICAS
+// =====================================================
+export const statsService = {
+  calculateReservationStats(reservations) {
+    return {
+      total: reservations.length,
+      byStatus: {
+        pendiente: reservations.filter(r => r.status?.status === 'pendiente').length,
+        confirmada: reservations.filter(r => r.status?.status === 'confirmada').length,
+        en_uso: reservations.filter(r => r.status?.status === 'en_uso').length,
+        completada: reservations.filter(r => r.status?.status === 'completada').length,
+        cancelada: reservations.filter(r => r.status?.status === 'cancelada').length
+      },
+      financial: {
+        totalRevenue: reservations.reduce((sum, r) => sum + (r.total_amount || 0), 0),
+        totalPaid: reservations.reduce((sum, r) => sum + (r.paid_amount || 0), 0),
+        pendingBalance: reservations.reduce((sum, r) => sum + (r.balance || 0), 0)
+      },
+      today: {
+        checkIns: reservations.filter(r => {
+          const checkIn = new Date(r.check_in_date).toDateString()
+          return checkIn === new Date().toDateString()
+        }).length,
+        checkOuts: reservations.filter(r => {
+          const checkOut = new Date(r.check_out_date).toDateString()
+          return checkOut === new Date().toDateString()
+        }).length
+      }
+    }
+  }
+}
+
+// =====================================================
 // 📦 OBJETO DB PRINCIPAL PARA COMPATIBILIDAD
 // =====================================================
 
@@ -3407,56 +4145,6 @@ export const db = {
     }
   },
 
-  async updateRoomStatus(roomId, statusName) {
-    try {
-      console.log('🔄 Updating room status:', { roomId, statusName })
-
-      // Obtener el ID del estado por nombre
-      const { data: statusData, error: statusError } = await supabase
-        .from('room_status')
-        .select('id, status, color, is_available')
-        .eq('status', statusName)
-        .single()
-
-      if (statusError) {
-        console.error('❌ Error obteniendo estado:', statusError)
-        throw new Error(`Estado "${statusName}" no encontrado`)
-      }
-
-      // Actualizar la habitación
-      const { data, error } = await supabase
-        .from('rooms')
-        .update({ 
-          status_id: statusData.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', roomId)
-        .select(`
-          id,
-          room_number,
-          floor,
-          base_price,
-          room_status:status_id(
-            id,
-            status,
-            color,
-            is_available
-          )
-        `)
-        .single()
-
-      if (error) {
-        console.error('❌ Error actualizando habitación:', error)
-        throw error
-      }
-
-      console.log('✅ Room status updated successfully:', data.room_number, '→', statusName)
-      return { data, error: null }
-    } catch (error) {
-      console.error('❌ Error updating room status:', error)
-      return { data: null, error }
-    }
-  },
 
   // ✅ Nueva función para limpiar habitación específicamente
   async cleanRoom(roomId) {
@@ -3530,10 +4218,12 @@ export default {
   reservationService,
   guestService,
   paymentService,
+  validationService,
+  statsService,
   reportService,
   quickCheckinService,
-  snackService, // ✅ Servicio de snacks corregido
-  suppliesService, // ✅ Servicio de suministros agregado
+  snackService, 
+  suppliesService, 
   utilityService,
   realtimeService,
   branchService,
