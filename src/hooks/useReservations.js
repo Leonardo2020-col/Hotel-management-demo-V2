@@ -1,4 +1,4 @@
-// src/hooks/useReservations.js
+// src/hooks/useReservations.js - ACTUALIZACIÓN CON CHECK-IN/CHECK-OUT
 import { useState, useEffect, useCallback } from 'react'
 import { reservationService, paymentService, roomService, guestService } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -218,8 +218,8 @@ export const useReservations = () => {
       const statusMessages = {
         'confirmada': 'Reservación confirmada',
         'cancelada': 'Reservación cancelada',
-        'en_uso': 'Check-in realizado',
-        'completada': 'Check-out completado'
+        'en_uso': 'Check-in realizado exitosamente',
+        'completada': 'Check-out completado exitosamente'
       }
 
       toast.success(statusMessages[newStatus] || 'Estado actualizado')
@@ -241,6 +241,185 @@ export const useReservations = () => {
 
   const cancelReservation = async (reservationId, reason = '') => {
     return updateReservationStatus(reservationId, 'cancelada', reason)
+  }
+
+  // =====================================================
+  // ✅ NUEVAS FUNCIONES DE CHECK-IN Y CHECK-OUT
+  // =====================================================
+
+  const processCheckIn = async (reservationId, checkInData = {}) => {
+    if (!userInfo?.id) {
+      toast.error('Error de autenticación')
+      return { success: false }
+    }
+
+    try {
+      setUpdating(true)
+
+      console.log('🎯 Procesando check-in...', { reservationId, checkInData })
+
+      // Obtener la reservación actual
+      const reservation = reservations.find(r => r.id === reservationId)
+      if (!reservation) {
+        throw new Error('Reservación no encontrada')
+      }
+
+      // Verificar que se puede hacer check-in
+      const status = reservation.status?.status
+      if (status !== 'confirmada') {
+        throw new Error('La reservación debe estar confirmada para hacer check-in')
+      }
+
+      const checkInDate = new Date(reservation.check_in_date)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      
+      if (checkInDate > today) {
+        throw new Error('No se puede hacer check-in antes de la fecha programada')
+      }
+
+      // 1. Actualizar estado de la reservación a 'en_uso'
+      const statusResult = await updateReservationStatus(reservationId, 'en_uso')
+      if (!statusResult.success) {
+        throw new Error('Error actualizando estado de reservación')
+      }
+
+      // 2. Cambiar estado de la habitación a 'ocupada'
+      if (reservation.room?.id) {
+        try {
+          await roomService.updateRoomStatus(reservation.room.id, 'ocupada')
+          console.log('✅ Estado de habitación actualizado a ocupada')
+        } catch (roomError) {
+          console.warn('⚠️ Error actualizando estado de habitación:', roomError)
+          // No falla el proceso si no se puede actualizar la habitación
+        }
+      }
+
+      // 3. Crear registro de check-in en checkin_orders (si existe esta tabla)
+      try {
+        const checkinOrderData = {
+          reservationId: reservationId,
+          roomId: reservation.room?.id,
+          guestId: reservation.guest?.id,
+          checkInTime: new Date().toISOString(),
+          expectedCheckout: reservation.check_out_date,
+          keyCardsIssued: checkInData.keyCardsIssued || 1,
+          depositAmount: checkInData.depositAmount || 0,
+          processedBy: userInfo.id
+        }
+
+        // Aquí llamarías a tu servicio para crear el registro de check-in
+        // await checkinService.createCheckinOrder(checkinOrderData)
+        console.log('📝 Datos de check-in preparados:', checkinOrderData)
+      } catch (checkinError) {
+        console.warn('⚠️ Error creando orden de check-in:', checkinError)
+        // No falla el proceso principal
+      }
+
+      // 4. Recargar reservaciones
+      await loadReservations()
+
+      console.log('✅ Check-in procesado exitosamente')
+      return { 
+        success: true, 
+        data: {
+          reservationId,
+          guestName: reservation.guestName,
+          roomNumber: reservation.roomNumber,
+          checkInTime: new Date().toISOString()
+        }
+      }
+
+    } catch (err) {
+      console.error('❌ Error procesando check-in:', err)
+      toast.error(err.message || 'Error al procesar check-in')
+      return { success: false, error: err.message }
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const processCheckOut = async (reservationId, checkOutData = {}) => {
+    if (!userInfo?.id) {
+      toast.error('Error de autenticación')
+      return { success: false }
+    }
+
+    try {
+      setUpdating(true)
+
+      console.log('🚪 Procesando check-out...', { reservationId, checkOutData })
+
+      // Obtener la reservación actual
+      const reservation = reservations.find(r => r.id === reservationId)
+      if (!reservation) {
+        throw new Error('Reservación no encontrada')
+      }
+
+      // Verificar que se puede hacer check-out
+      const status = reservation.status?.status
+      if (status !== 'en_uso') {
+        throw new Error('La reservación debe estar en uso para hacer check-out')
+      }
+
+      // 1. Actualizar estado de la reservación a 'completada'
+      const statusResult = await updateReservationStatus(reservationId, 'completada')
+      if (!statusResult.success) {
+        throw new Error('Error actualizando estado de reservación')
+      }
+
+      // 2. Cambiar estado de la habitación a 'limpieza'
+      if (reservation.room?.id) {
+        try {
+          await roomService.updateRoomStatus(reservation.room.id, 'limpieza')
+          console.log('✅ Estado de habitación actualizado a limpieza')
+        } catch (roomError) {
+          console.warn('⚠️ Error actualizando estado de habitación:', roomError)
+        }
+      }
+
+      // 3. Crear registro de check-out (si existe esta tabla)
+      try {
+        const checkoutOrderData = {
+          reservationId: reservationId,
+          checkoutTime: new Date().toISOString(),
+          totalCharges: checkOutData.additionalCharges || 0,
+          depositReturned: checkOutData.depositReturned || 0,
+          additionalCharges: checkOutData.chargesList || [],
+          roomCondition: checkOutData.roomCondition || 'good',
+          keyCardsReturned: checkOutData.keyCardsReturned || 1,
+          processedBy: userInfo.id
+        }
+
+        // Aquí llamarías a tu servicio para crear el registro de check-out
+        // await checkoutService.createCheckoutOrder(checkoutOrderData)
+        console.log('📝 Datos de check-out preparados:', checkoutOrderData)
+      } catch (checkoutError) {
+        console.warn('⚠️ Error creando orden de check-out:', checkoutError)
+      }
+
+      // 4. Recargar reservaciones
+      await loadReservations()
+
+      console.log('✅ Check-out procesado exitosamente')
+      return { 
+        success: true, 
+        data: {
+          reservationId,
+          guestName: reservation.guestName,
+          roomNumber: reservation.roomNumber,
+          checkOutTime: new Date().toISOString(),
+          totalCharges: checkOutData.additionalCharges || 0
+        }
+      }
+
+    } catch (err) {
+      console.error('❌ Error procesando check-out:', err)
+      toast.error(err.message || 'Error al procesar check-out')
+      return { success: false, error: err.message }
+    } finally {
+      setUpdating(false)
+    }
   }
 
   // =====================================================
@@ -421,12 +600,74 @@ export const useReservations = () => {
       ),
       checkOutFormatted: new Intl.DateTimeFormat('es-PE').format(
         new Date(reservation.check_out_date)
+      ),
+      // Agregar campos útiles para check-in/check-out
+      canCheckIn: reservation.status?.status === 'confirmada' && 
+                  new Date(reservation.check_in_date) <= new Date(),
+      canCheckOut: reservation.status?.status === 'en_uso' && 
+                   new Date(reservation.check_out_date) <= new Date(),
+      isToday: new Date(reservation.check_in_date).toDateString() === new Date().toDateString() ||
+               new Date(reservation.check_out_date).toDateString() === new Date().toDateString(),
+      isPending: reservation.status?.status === 'pendiente'
+    }
+  }
+
+  // =====================================================
+  // ✅ FUNCIONES AUXILIARES PARA CHECK-IN/CHECK-OUT
+  // =====================================================
+
+  const getCheckinEligibleReservations = () => {
+    const today = new Date()
+    return reservations.filter(r => 
+      r.status?.status === 'confirmada' && 
+      new Date(r.check_in_date) <= today
+    )
+  }
+
+  const getCheckoutEligibleReservations = () => {
+    const today = new Date()
+    return reservations.filter(r => 
+      r.status?.status === 'en_uso' && 
+      new Date(r.check_out_date) <= today
+    )
+  }
+
+  const getActiveReservations = () => {
+    return reservations.filter(r => 
+      r.status?.status === 'en_uso'
+    )
+  }
+
+  const getReservationsByStatus = (status) => {
+    return reservations.filter(r => r.status?.status === status)
+  }
+
+  // Función para obtener reservaciones que requieren atención
+  const getAttentionRequiredReservations = () => {
+    const today = new Date()
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+
+    return {
+      pendingConfirmation: reservations.filter(r => 
+        r.status?.status === 'pendiente' && 
+        new Date(r.check_in_date) <= tomorrow
+      ),
+      readyForCheckin: getCheckinEligibleReservations(),
+      readyForCheckout: getCheckoutEligibleReservations(),
+      overdueCheckout: reservations.filter(r => 
+        r.status?.status === 'en_uso' && 
+        new Date(r.check_out_date) < today
+      ),
+      unpaidBalance: reservations.filter(r => 
+        (r.balance || 0) > 0 && 
+        ['confirmada', 'en_uso'].includes(r.status?.status)
       )
     }
   }
 
   // =====================================================
-  // 🎯 RETORNO DEL HOOK
+  // 🎯 RETORNO DEL HOOK ACTUALIZADO
   // =====================================================
 
   return {
@@ -452,6 +693,10 @@ export const useReservations = () => {
     confirmReservation,
     cancelReservation,
 
+    // ✅ NUEVAS FUNCIONES DE CHECK-IN/CHECK-OUT
+    processCheckIn,
+    processCheckOut,
+
     // Funciones de pagos
     addPayment,
     getReservationPayments,
@@ -469,6 +714,13 @@ export const useReservations = () => {
     // Funciones de estadísticas
     getReservationStats,
     getTodayReservations,
+    
+    // ✅ NUEVAS FUNCIONES AUXILIARES
+    getCheckinEligibleReservations,
+    getCheckoutEligibleReservations,
+    getActiveReservations,
+    getReservationsByStatus,
+    getAttentionRequiredReservations,
 
     // Funciones de refrescado
     refreshReservations,

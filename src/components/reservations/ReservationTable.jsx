@@ -12,7 +12,9 @@ import {
   Clock,
   MoreVertical,
   FileText,
-  AlertCircle
+  AlertCircle,
+  LogIn,     // ✅ NUEVO: Icono para Check-in
+  LogOut     // ✅ NUEVO: Icono para Check-out
 } from 'lucide-react'
 
 const ReservationTable = ({
@@ -22,7 +24,8 @@ const ReservationTable = ({
   onEditReservation,
   onConfirmReservation,
   onCancelReservation,
-  onCheckIn,
+  onCheckIn,        // ✅ NUEVO: Función de check-in
+  onCheckOut,       // ✅ NUEVO: Función de check-out
   currentUser
 }) => {
   const [selectedReservation, setSelectedReservation] = useState(null)
@@ -88,11 +91,12 @@ const ReservationTable = ({
     }
   }
 
-  // Verificar si se puede realizar una acción
+  // ✅ NUEVO: Verificar si se puede realizar una acción
   const canPerformAction = (action, reservation) => {
     const status = reservation.status?.status
     const today = new Date()
     const checkInDate = new Date(reservation.check_in_date)
+    const checkOutDate = new Date(reservation.check_out_date)
     
     switch (action) {
       case 'confirm':
@@ -100,7 +104,11 @@ const ReservationTable = ({
       case 'cancel':
         return ['pendiente', 'confirmada'].includes(status)
       case 'checkIn':
+        // Se puede hacer check-in si está confirmada y es el día de check-in o después
         return status === 'confirmada' && checkInDate <= today
+      case 'checkOut':
+        // Se puede hacer check-out si está en uso y es el día de check-out o después
+        return status === 'en_uso' && checkOutDate <= today
       case 'edit':
         return ['pendiente', 'confirmada'].includes(status)
       default:
@@ -108,7 +116,7 @@ const ReservationTable = ({
     }
   }
 
-  // Renderizar acciones según el estado
+  // ✅ ACTUALIZADO: Renderizar acciones con check-in/check-out
   const renderActions = (reservation) => {
     return (
       <div className="relative">
@@ -159,6 +167,7 @@ const ReservationTable = ({
                 </button>
               )}
 
+              {/* ✅ NUEVO: Botón de Check-in */}
               {canPerformAction('checkIn', reservation) && (
                 <button
                   onClick={() => {
@@ -167,8 +176,22 @@ const ReservationTable = ({
                   }}
                   className="flex items-center w-full px-4 py-2 text-sm text-blue-700 hover:bg-blue-50"
                 >
-                  <Calendar className="h-4 w-4 mr-2" />
+                  <LogIn className="h-4 w-4 mr-2" />
                   Check-in
+                </button>
+              )}
+
+              {/* ✅ NUEVO: Botón de Check-out */}
+              {canPerformAction('checkOut', reservation) && (
+                <button
+                  onClick={() => {
+                    onCheckOut(reservation)
+                    setShowActionMenu(null)
+                  }}
+                  className="flex items-center w-full px-4 py-2 text-sm text-purple-700 hover:bg-purple-50"
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Check-out
                 </button>
               )}
 
@@ -274,12 +297,14 @@ const ReservationTable = ({
               const isToday = reservation.isToday
               const isPending = reservation.isPending
               const canCheckInToday = reservation.canCheckIn && isToday
+              const canCheckOutToday = canPerformAction('checkOut', reservation)
 
               return (
                 <tr 
                   key={reservation.id} 
                   className={`hover:bg-gray-50 transition-colors ${
                     canCheckInToday ? 'bg-blue-50' : 
+                    canCheckOutToday ? 'bg-purple-50' :
                     isToday ? 'bg-yellow-50' : ''
                   }`}
                 >
@@ -342,6 +367,12 @@ const ReservationTable = ({
                           Listo para check-in
                         </span>
                       )}
+                      {canCheckOutToday && (
+                        <span className="inline-flex items-center text-xs text-purple-600">
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          Listo para check-out
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -371,7 +402,7 @@ const ReservationTable = ({
                     </div>
                   </td>
 
-                  {/* Acciones */}
+                  {/* ✅ ACTUALIZADO: Acciones con botones rápidos */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex items-center justify-end space-x-2">
                       {/* Acciones rápidas */}
@@ -385,13 +416,25 @@ const ReservationTable = ({
                         </button>
                       )}
 
+                      {/* ✅ NUEVO: Check-in rápido */}
                       {canCheckInToday && (
                         <button
                           onClick={() => onCheckIn(reservation)}
                           className="p-1 text-blue-600 hover:text-blue-800 transition-colors"
                           title="Realizar check-in"
                         >
-                          <Calendar className="h-4 w-4" />
+                          <LogIn className="h-4 w-4" />
+                        </button>
+                      )}
+
+                      {/* ✅ NUEVO: Check-out rápido */}
+                      {canCheckOutToday && (
+                        <button
+                          onClick={() => onCheckOut(reservation)}
+                          className="p-1 text-purple-600 hover:text-purple-800 transition-colors"
+                          title="Realizar check-out"
+                        >
+                          <LogOut className="h-4 w-4" />
                         </button>
                       )}
 
@@ -414,7 +457,7 @@ const ReservationTable = ({
         </table>
       </div>
 
-      {/* Footer con información adicional */}
+      {/* ✅ ACTUALIZADO: Footer con información adicional */}
       <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
         <div className="flex items-center justify-between text-sm text-gray-600">
           <div className="flex items-center space-x-4">
@@ -426,6 +469,10 @@ const ReservationTable = ({
             <span>•</span>
             <span>
               Check-ins hoy: {reservations.filter(r => r.isToday && r.canCheckIn).length}
+            </span>
+            <span>•</span>
+            <span>
+              Check-outs hoy: {reservations.filter(r => canPerformAction('checkOut', r)).length}
             </span>
           </div>
           

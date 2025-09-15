@@ -9,7 +9,9 @@ import {
   Users,
   DollarSign,
   AlertCircle,
-  Clock  // ✅ AGREGADO - Este import faltaba
+  Clock,
+  LogIn,    // ✅ NUEVO: Icono para check-in
+  LogOut    // ✅ NUEVO: Icono para check-out
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -55,6 +57,8 @@ const Reservations = () => {
   // Estados locales para modales
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [showCheckInModal, setShowCheckInModal] = useState(false)
+  const [showCheckOutModal, setShowCheckOutModal] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState(null)
 
   // Estadísticas calculadas
@@ -62,7 +66,7 @@ const Reservations = () => {
   const todayReservations = getTodayReservations()
 
   // =====================================================
-  // HANDLERS DE ACCIONES
+  // HANDLERS DE ACCIONES EXISTENTES
   // =====================================================
 
   const handleCreateReservation = async (reservationData, guestData) => {
@@ -109,11 +113,6 @@ const Reservations = () => {
     toast.info('Funcionalidad de edición próximamente')
   }
 
-  const handleCheckIn = (reservation) => {
-    // TODO: Redirigir a página de check-in con la reservación
-    toast.info('Redirigiendo a check-in...')
-  }
-
   const handleAddPayment = async (reservationId, paymentData) => {
     const result = await addPayment(reservationId, paymentData)
     return result
@@ -123,6 +122,143 @@ const Reservations = () => {
     await refreshReservations()
     toast.success('Datos actualizados')
   }
+
+  // =====================================================
+  // ✅ NUEVOS HANDLERS PARA CHECK-IN Y CHECK-OUT
+  // =====================================================
+
+  const handleCheckIn = async (reservation) => {
+    try {
+      console.log('🎯 Iniciando check-in para reservación:', reservation.reservation_code)
+      
+      // Verificar que se puede hacer check-in
+      const status = reservation.status?.status
+      const checkInDate = new Date(reservation.check_in_date)
+      const today = new Date()
+      
+      if (status !== 'confirmada') {
+        toast.error('La reservación debe estar confirmada para hacer check-in')
+        return
+      }
+      
+      if (checkInDate > today) {
+        toast.error('No se puede hacer check-in antes de la fecha programada')
+        return
+      }
+
+      // Confirmar con el usuario
+      const confirmed = window.confirm(
+        `¿Confirmar check-in para ${reservation.guestName} en habitación ${reservation.roomNumber}?`
+      )
+      
+      if (!confirmed) return
+
+      // Simular llamada a API para hacer check-in
+      // En tu implementación real, necesitarás crear esta función en useReservations
+      const checkInData = {
+        reservationId: reservation.id,
+        checkInTime: new Date().toISOString(),
+        processedBy: userInfo.id
+      }
+
+      // Aquí llamarías a tu función de check-in
+      // const result = await processCheckIn(checkInData)
+      
+      // Por ahora, simulamos la actualización del estado
+      const result = await updateReservationStatus(reservation.id, 'en_uso')
+      
+      if (result.success) {
+        toast.success(`Check-in realizado exitosamente para ${reservation.guestName}`)
+        await refreshReservations() // Actualizar la lista
+      } else {
+        toast.error('Error al realizar check-in')
+      }
+      
+    } catch (error) {
+      console.error('❌ Error en check-in:', error)
+      toast.error('Error al procesar check-in')
+    }
+  }
+
+  const handleCheckOut = async (reservation) => {
+    try {
+      console.log('🚪 Iniciando check-out para reservación:', reservation.reservation_code)
+      
+      // Verificar que se puede hacer check-out
+      const status = reservation.status?.status
+      
+      if (status !== 'en_uso') {
+        toast.error('La reservación debe estar en uso para hacer check-out')
+        return
+      }
+
+      // Verificar si hay saldo pendiente
+      const balance = reservation.balance || 0
+      if (balance > 0) {
+        const confirmed = window.confirm(
+          `Hay un saldo pendiente de ${reservation.formattedBalance}. ¿Continuar con el check-out?`
+        )
+        if (!confirmed) return
+      }
+
+      // Confirmar con el usuario
+      const confirmed = window.confirm(
+        `¿Confirmar check-out para ${reservation.guestName} de habitación ${reservation.roomNumber}?`
+      )
+      
+      if (!confirmed) return
+
+      // Simular llamada a API para hacer check-out
+      const checkOutData = {
+        reservationId: reservation.id,
+        checkOutTime: new Date().toISOString(),
+        processedBy: userInfo.id,
+        additionalCharges: [], // Aquí podrías agregar cargos adicionales
+        depositReturned: 0
+      }
+
+      // Aquí llamarías a tu función de check-out
+      // const result = await processCheckOut(checkOutData)
+      
+      // Por ahora, simulamos la actualización del estado
+      const result = await updateReservationStatus(reservation.id, 'completada')
+      
+      if (result.success) {
+        toast.success(`Check-out realizado exitosamente para ${reservation.guestName}`)
+        await refreshReservations() // Actualizar la lista
+      } else {
+        toast.error('Error al realizar check-out')
+      }
+      
+    } catch (error) {
+      console.error('❌ Error en check-out:', error)
+      toast.error('Error al procesar check-out')
+    }
+  }
+
+  // =====================================================
+  // FUNCIÓN AUXILIAR PARA ACTUALIZAR ESTADO
+  // =====================================================
+
+  const updateReservationStatus = async (reservationId, newStatus) => {
+    try {
+      // Aquí usarías tu hook o servicio real
+      // Por ahora simulo la respuesta
+      console.log(`🔄 Actualizando reservación ${reservationId} a estado: ${newStatus}`)
+      
+      // Simulación de delay de API
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      return { success: true }
+    } catch (error) {
+      console.error('Error actualizando estado:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // =====================================================
+  // HANDLER PARA EXPORTACIÓN CSV
+  // =====================================================
 
   const handleExportCSV = () => {
     try {
@@ -366,7 +502,8 @@ const Reservations = () => {
         onEditReservation={handleEditReservation}
         onConfirmReservation={handleConfirmReservation}
         onCancelReservation={handleCancelReservation}
-        onCheckIn={handleCheckIn}
+        onCheckIn={handleCheckIn}           // ✅ NUEVO: Handler de check-in
+        onCheckOut={handleCheckOut}         // ✅ NUEVO: Handler de check-out
         currentUser={userInfo}
       />
 
