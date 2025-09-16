@@ -1,4 +1,4 @@
-// src/components/reservations/ReservationDetailsModal.jsx - VERSIÓN COMPLETA CORREGIDA
+// src/components/reservations/ReservationDetailsModal.jsx - VERSIÓN COMPLETA ACTUALIZADA
 import React, { useState, useEffect } from 'react'
 import { 
   X, 
@@ -394,118 +394,202 @@ const ReservationDetailsModal = ({
                 )}
               </div>
 
-              {/* Formulario para agregar pago - SIMPLIFICADO */}
+              {/* Formulario para agregar pago - NUEVO DISEÑO */}
               {showAddPayment && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="text-md font-medium text-gray-900 mb-3">Registrar nuevo pago</h4>
-                  <form onSubmit={handleAddPayment} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Monto */}
+                  <h4 className="text-md font-medium text-gray-900 mb-4">Registrar nuevo pago</h4>
+                  <form onSubmit={handleAddPayment} className="space-y-6">
+                    
+                    {/* Total a Cobrar - Estilo Verde */}
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                      <p className="text-sm text-green-700 font-medium mb-1">Total a Cobrar</p>
+                      <p className="text-2xl font-bold text-green-800">
+                        {paymentForm.amount ? `S/ ${parseFloat(paymentForm.amount).toFixed(2)}` : reservation.formattedBalance}
+                      </p>
+                      <p className="text-xs text-green-600 mt-1">
+                        Saldo pendiente: {reservation.formattedBalance}
+                      </p>
+                    </div>
+
+                    {/* Monto a pagar */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Monto a pagar</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max={reservation.balance}
+                        value={paymentForm.amount}
+                        onChange={(e) => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))}
+                        className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        placeholder="0.00"
+                        required
+                      />
+                    </div>
+
+                    {/* Método de Pago - Estilo con iconos y radio buttons */}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-700 mb-3">Método de Pago</h3>
+                      <div className="space-y-2">
+                        {paymentMethods.map((method) => {
+                          // Configuración de iconos y colores para cada método
+                          const methodConfig = {
+                            'efectivo': {
+                              icon: '💵',
+                              name: 'Efectivo',
+                              description: 'Pago en efectivo',
+                              bgColor: 'bg-green-50',
+                              iconBg: 'bg-green-500',
+                              borderColor: 'border-green-200'
+                            },
+                            'transferencia': {
+                              icon: '🏦',
+                              name: 'Transferencia',
+                              description: 'Transferencia bancaria',
+                              bgColor: 'bg-gray-50',
+                              iconBg: 'bg-gray-500',
+                              borderColor: 'border-gray-200'
+                            },
+                            'billetera_digital': {
+                              icon: '📱',
+                              name: 'Digital',
+                              description: 'Yape/Plin',
+                              bgColor: 'bg-gray-50',
+                              iconBg: 'bg-gray-500',
+                              borderColor: 'border-gray-200'
+                            }
+                          }
+
+                          const config = methodConfig[method.id] || {
+                            icon: '💳',
+                            name: method.name,
+                            description: method.name,
+                            bgColor: 'bg-gray-50',
+                            iconBg: 'bg-gray-500',
+                            borderColor: 'border-gray-200'
+                          }
+
+                          return (
+                            <button
+                              key={method.id}
+                              type="button"
+                              onClick={() => setPaymentForm(prev => ({ 
+                                ...prev, 
+                                paymentMethodId: method.id,
+                                reference: method.id === 'efectivo' ? '' : prev.reference
+                              }))}
+                              className={`w-full p-4 rounded-lg border-2 transition-all duration-200 ${
+                                paymentForm.paymentMethodId === method.id
+                                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                                  : `${config.borderColor} ${config.bgColor} hover:border-blue-300`
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                  {/* Icono */}
+                                  <div className={`w-10 h-10 rounded-full ${config.iconBg} flex items-center justify-center text-white text-lg`}>
+                                    {config.icon}
+                                  </div>
+                                  
+                                  {/* Información */}
+                                  <div className="text-left">
+                                    <p className="font-semibold text-gray-800">{config.name}</p>
+                                    <p className="text-sm text-gray-600">{config.description}</p>
+                                  </div>
+                                </div>
+                                
+                                {/* Radio Button */}
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                  paymentForm.paymentMethodId === method.id
+                                    ? 'border-blue-500 bg-blue-500'
+                                    : 'border-gray-300 bg-white'
+                                }`}>
+                                  {paymentForm.paymentMethodId === method.id && (
+                                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Fecha de pago */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de pago</label>
+                      <input
+                        type="date"
+                        value={paymentForm.paymentDate}
+                        onChange={(e) => setPaymentForm(prev => ({ ...prev, paymentDate: e.target.value }))}
+                        className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        required
+                      />
+                    </div>
+
+                    {/* Referencia - Solo si no es efectivo */}
+                    {paymentForm.paymentMethodId && paymentForm.paymentMethodId !== 'efectivo' && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">Monto a pagar</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {getReferenceLabel(paymentForm.paymentMethodId)}
+                        </label>
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          max={reservation.balance}
-                          value={paymentForm.amount}
-                          onChange={(e) => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                          placeholder="0.00"
+                          type="text"
+                          value={paymentForm.reference}
+                          onChange={(e) => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))}
+                          className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          placeholder={getReferenceePlaceholder(paymentForm.paymentMethodId)}
                           required
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Saldo pendiente: {reservation.formattedBalance}
+                          {paymentForm.paymentMethodId === 'transferencia' 
+                            ? 'Número de operación del banco'
+                            : 'Código de la transacción digital'
+                          }
                         </p>
                       </div>
+                    )}
 
-                      {/* Método de pago simplificado */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Método de pago</label>
-                        <select
-                          value={paymentForm.paymentMethodId}
-                          onChange={(e) => setPaymentForm(prev => ({ 
-                            ...prev, 
-                            paymentMethodId: e.target.value,
-                            // Limpiar referencia si es efectivo
-                            reference: e.target.value === 'efectivo' ? '' : prev.reference
-                          }))}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                          required
-                        >
-                          <option value="">Seleccionar método...</option>
-                          {paymentMethods.map((method) => (
-                            <option key={method.id} value={method.id}>
-                              {getPaymentMethodName(method.id)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Fecha de pago */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Fecha de pago</label>
-                        <input
-                          type="date"
-                          value={paymentForm.paymentDate}
-                          onChange={(e) => setPaymentForm(prev => ({ ...prev, paymentDate: e.target.value }))}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                          required
-                        />
-                      </div>
-
-                      {/* Referencia - Solo si no es efectivo */}
-                      {paymentForm.paymentMethodId && paymentForm.paymentMethodId !== 'efectivo' && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            {getReferenceLabel(paymentForm.paymentMethodId)}
-                          </label>
-                          <input
-                            type="text"
-                            value={paymentForm.reference}
-                            onChange={(e) => setPaymentForm(prev => ({ ...prev, reference: e.target.value }))}
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            placeholder={getReferenceePlaceholder(paymentForm.paymentMethodId)}
-                            required
-                          />
-                          <p className="text-xs text-gray-500 mt-1">
-                            {paymentForm.paymentMethodId === 'transferencia' 
-                              ? 'Número de operación del banco'
-                              : 'Código de la transacción digital'
-                            }
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Resumen del pago */}
+                    {/* Resumen del pago - Mejorado */}
                     {paymentForm.amount && paymentForm.paymentMethodId && (
-                      <div className="bg-white border border-gray-200 rounded-lg p-3">
-                        <h5 className="text-sm font-medium text-gray-900 mb-2">Resumen del pago</h5>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex justify-between">
+                      <div className="bg-white border border-gray-200 rounded-lg p-4">
+                        <h5 className="text-sm font-medium text-gray-900 mb-3">Resumen del pago</h5>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between items-center">
                             <span className="text-gray-600">Monto:</span>
-                            <span className="font-medium">S/ {parseFloat(paymentForm.amount || 0).toFixed(2)}</span>
+                            <span className="font-semibold text-lg">S/ {parseFloat(paymentForm.amount || 0).toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between">
+                          <div className="flex justify-between items-center">
                             <span className="text-gray-600">Método:</span>
                             <span className="font-medium">
                               {getPaymentMethodName(paymentForm.paymentMethodId)}
                             </span>
                           </div>
                           {paymentForm.reference && (
-                            <div className="flex justify-between">
+                            <div className="flex justify-between items-center">
                               <span className="text-gray-600">Referencia:</span>
-                              <span className="font-medium text-xs">{paymentForm.reference}</span>
+                              <span className="font-medium text-xs bg-gray-100 px-2 py-1 rounded">
+                                {paymentForm.reference}
+                              </span>
                             </div>
                           )}
-                          <div className="border-t pt-1 mt-2">
-                            <div className="flex justify-between">
+                          <div className="border-t border-gray-200 pt-2 mt-3">
+                            <div className="flex justify-between items-center">
                               <span className="text-gray-600">Saldo restante:</span>
-                              <span className="font-semibold">
+                              <span className={`font-bold text-lg ${
+                                ((reservation.balance || 0) - parseFloat(paymentForm.amount || 0)) <= 0 
+                                  ? 'text-green-600' 
+                                  : 'text-orange-600'
+                              }`}>
                                 S/ {((reservation.balance || 0) - parseFloat(paymentForm.amount || 0)).toFixed(2)}
                               </span>
                             </div>
+                            {((reservation.balance || 0) - parseFloat(paymentForm.amount || 0)) <= 0 && (
+                              <p className="text-xs text-green-600 mt-1 flex items-center">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Reservación completamente pagada
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -516,14 +600,14 @@ const ReservationDetailsModal = ({
                       <button
                         type="button"
                         onClick={() => setShowAddPayment(false)}
-                        className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                        className="px-6 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
                       >
                         Cancelar
                       </button>
                       <button
                         type="submit"
                         disabled={!paymentForm.amount || !paymentForm.paymentMethodId}
-                        className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-6 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         Registrar pago
                       </button>
