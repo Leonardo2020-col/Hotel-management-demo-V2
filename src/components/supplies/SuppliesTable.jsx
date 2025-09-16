@@ -1,4 +1,4 @@
-// src/components/supplies/SuppliesTable.jsx
+// src/components/supplies/SuppliesTable.jsx - CON SOPORTE PARA SNACKS
 import React, { useState } from 'react'
 import { 
   Edit3, 
@@ -12,7 +12,10 @@ import {
   MoreVertical,
   Eye,
   Archive,
-  RefreshCw
+  RefreshCw,
+  Coffee,
+  ShoppingCart,
+  DollarSign
 } from 'lucide-react'
 
 const SuppliesTable = ({
@@ -22,7 +25,8 @@ const SuppliesTable = ({
   onDelete,
   onAddMovement,
   onAdjustStock,
-  currentUser
+  currentUser,
+  isSnacksView = false // Nueva prop para identificar vista de snacks
 }) => {
   const [selectedSupply, setSelectedSupply] = useState(null)
   const [showActionMenu, setShowActionMenu] = useState(null)
@@ -87,7 +91,7 @@ const SuppliesTable = ({
     )
   }
 
-  // Renderizar acciones
+  // Renderizar acciones adaptadas para snacks
   const renderActions = (supply) => {
     return (
       <div className="relative">
@@ -101,7 +105,8 @@ const SuppliesTable = ({
         {showActionMenu === supply.id && (
           <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
             <div className="py-1">
-              {onEdit && (
+              {/* Editar - solo para suministros regulares */}
+              {!isSnacksView && onEdit && (
                 <button
                   onClick={() => {
                     onEdit(supply)
@@ -114,7 +119,8 @@ const SuppliesTable = ({
                 </button>
               )}
 
-              {onAddMovement && (
+              {/* Movimiento - solo para suministros regulares */}
+              {!isSnacksView && onAddMovement && (
                 <button
                   onClick={() => {
                     onAddMovement(supply)
@@ -127,13 +133,14 @@ const SuppliesTable = ({
                 </button>
               )}
 
+              {/* Ajustar Stock - disponible para ambos */}
               {onAdjustStock && (
                 <button
                   onClick={() => {
                     setSelectedSupply(supply)
                     setAdjustData({ 
                       newStock: supply.current_stock.toString(), 
-                      reason: '' 
+                      reason: isSnacksView ? 'Restock de snacks' : 'Ajuste de inventario' 
                     })
                     setShowAdjustModal(true)
                     setShowActionMenu(null)
@@ -141,11 +148,12 @@ const SuppliesTable = ({
                   className="flex items-center w-full px-4 py-2 text-sm text-blue-700 hover:bg-blue-50"
                 >
                   <Package className="h-4 w-4 mr-2" />
-                  Ajustar Stock
+                  {isSnacksView ? 'Ajustar Stock Snack' : 'Ajustar Stock'}
                 </button>
               )}
 
-              {onDelete && (
+              {/* Eliminar - solo para suministros regulares */}
+              {!isSnacksView && onDelete && (
                 <button
                   onClick={() => {
                     if (window.confirm(`¿Estás seguro de que deseas eliminar "${supply.name}"?`)) {
@@ -191,7 +199,9 @@ const SuppliesTable = ({
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-6 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-2 text-sm text-gray-600">Cargando suministros...</p>
+          <p className="mt-2 text-sm text-gray-600">
+            {isSnacksView ? 'Cargando snacks...' : 'Cargando suministros...'}
+          </p>
         </div>
       </div>
     )
@@ -201,10 +211,19 @@ const SuppliesTable = ({
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-6 text-center">
-          <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No hay suministros</h3>
+          {isSnacksView ? (
+            <Coffee className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          ) : (
+            <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          )}
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            {isSnacksView ? 'No hay snacks configurados' : 'No hay suministros'}
+          </h3>
           <p className="text-sm text-gray-600">
-            No se encontraron suministros con los filtros aplicados.
+            {isSnacksView 
+              ? 'No se encontraron snacks para mostrar. Configurar snacks en la gestión de productos.'
+              : 'No se encontraron suministros con los filtros aplicados.'
+            }
           </p>
         </div>
       </div>
@@ -216,8 +235,18 @@ const SuppliesTable = ({
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-          <h3 className="text-lg font-medium text-gray-900">
-            Inventario ({supplies.length} artículos)
+          <h3 className="text-lg font-medium text-gray-900 flex items-center">
+            {isSnacksView ? (
+              <>
+                <Coffee className="h-5 w-5 mr-2 text-green-600" />
+                Inventario de Snacks ({supplies.length} items)
+              </>
+            ) : (
+              <>
+                <Package className="h-5 w-5 mr-2 text-blue-600" />
+                Inventario de Suministros ({supplies.length} artículos)
+              </>
+            )}
           </h3>
         </div>
 
@@ -236,11 +265,13 @@ const SuppliesTable = ({
                   Estado
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Valor
+                  {isSnacksView ? 'Precios' : 'Valor'}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Proveedor
-                </th>
+                {!isSnacksView && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Proveedor
+                  </th>
+                )}
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Acciones
                 </th>
@@ -259,6 +290,9 @@ const SuppliesTable = ({
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="flex items-center">
+                        {isSnacksView && (
+                          <Coffee className="h-4 w-4 text-green-500 mr-2" />
+                        )}
                         <span className="text-sm font-medium text-gray-900">
                           {supply.name}
                         </span>
@@ -273,6 +307,11 @@ const SuppliesTable = ({
                           </span>
                         )}
                         <span>{supply.category?.name || 'Sin categoría'}</span>
+                        {isSnacksView && (
+                          <span className="ml-2 bg-green-100 px-2 py-0.5 rounded text-xs text-green-700">
+                            Check-in
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-gray-400 mt-1">
                         Unidad: {supply.unit_of_measure}
@@ -303,29 +342,52 @@ const SuppliesTable = ({
                     {getStockBadge(supply)}
                   </td>
 
-                  {/* Valor */}
+                  {/* Valor/Precios */}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        S/ {supply.totalValue?.toFixed(2) || '0.00'}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        Unitario: S/ {supply.unit_cost?.toFixed(2) || '0.00'}
-                      </div>
+                      {isSnacksView ? (
+                        <>
+                          <div className="text-sm font-medium text-green-600">
+                            <ShoppingCart className="w-3 h-3 inline mr-1" />
+                            Venta: S/ {supply.price?.toFixed(2) || '0.00'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            <DollarSign className="w-3 h-3 inline mr-1" />
+                            Costo: S/ {supply.unit_cost?.toFixed(2) || '0.00'}
+                          </div>
+                          <div className="text-xs text-blue-600 font-medium">
+                            Margen: {supply.price && supply.unit_cost 
+                              ? `${(((supply.price - supply.unit_cost) / supply.price) * 100).toFixed(1)}%`
+                              : 'N/A'
+                            }
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm font-medium text-gray-900">
+                            S/ {supply.totalValue?.toFixed(2) || '0.00'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Unitario: S/ {supply.unit_cost?.toFixed(2) || '0.00'}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </td>
 
-                  {/* Proveedor */}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {supply.supplier?.name || 'Sin proveedor'}
-                    </div>
-                    {supply.supplier?.contact_person && (
-                      <div className="text-xs text-gray-500">
-                        {supply.supplier.contact_person}
+                  {/* Proveedor - solo para suministros */}
+                  {!isSnacksView && (
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {supply.supplier?.name || 'Sin proveedor'}
                       </div>
-                    )}
-                  </td>
+                      {supply.supplier?.contact_person && (
+                        <div className="text-xs text-gray-500">
+                          {supply.supplier.contact_person}
+                        </div>
+                      )}
+                    </td>
+                  )}
 
                   {/* Acciones */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -341,7 +403,7 @@ const SuppliesTable = ({
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
           <div className="flex items-center justify-between text-sm text-gray-600">
             <div className="flex items-center space-x-4">
-              <span>Total: {supplies.length} artículos</span>
+              <span>Total: {supplies.length} {isSnacksView ? 'snacks' : 'artículos'}</span>
               <span>•</span>
               <span className="text-red-600">
                 Stock bajo: {supplies.filter(s => s.needsRestock).length}
@@ -350,9 +412,22 @@ const SuppliesTable = ({
               <span className="text-orange-600">
                 Agotados: {supplies.filter(s => s.isOutOfStock).length}
               </span>
+              {isSnacksView && (
+                <>
+                  <span>•</span>
+                  <span className="text-green-600">
+                    Valor total: S/ {supplies.reduce((sum, s) => sum + (s.current_stock * (s.unit_cost || 0)), 0).toFixed(2)}
+                  </span>
+                </>
+              )}
             </div>
             
             <div className="text-xs text-gray-500">
+              {isSnacksView && (
+                <span className="mr-4 text-green-600">
+                  ⚡ Consumo automático en check-ins
+                </span>
+              )}
               Última actualización: {new Date().toLocaleTimeString('es-PE')}
             </div>
           </div>
@@ -364,15 +439,30 @@ const SuppliesTable = ({
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
           <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
             <div className="mt-3">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
-                Ajustar Stock - {selectedSupply.name}
+              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                {isSnacksView ? (
+                  <>
+                    <Coffee className="h-5 w-5 mr-2 text-green-600" />
+                    Ajustar Stock Snack - {selectedSupply.name}
+                  </>
+                ) : (
+                  <>
+                    <Package className="h-5 w-5 mr-2 text-blue-600" />
+                    Ajustar Stock - {selectedSupply.name}
+                  </>
+                )}
               </h3>
               
               <div className="space-y-4">
-                <div>
+                <div className={`p-3 rounded-lg ${isSnacksView ? 'bg-green-50 border border-green-200' : 'bg-blue-50 border border-blue-200'}`}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stock Actual: {selectedSupply.current_stock} {selectedSupply.unit_of_measure}
                   </label>
+                  {isSnacksView && (
+                    <p className="text-xs text-green-700">
+                      Este stock se consume automáticamente cuando los huéspedes seleccionan snacks en el check-in
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -391,16 +481,36 @@ const SuppliesTable = ({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Razón del ajuste (opcional)
+                    Razón del ajuste {isSnacksView ? '(opcional)' : ''}
                   </label>
                   <textarea
                     rows={3}
                     value={adjustData.reason}
                     onChange={(e) => setAdjustData(prev => ({ ...prev, reason: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Ej: Inventario físico, producto dañado, etc."
+                    placeholder={
+                      isSnacksView 
+                        ? "Ej: Restock de snacks, inventario físico, producto dañado, etc."
+                        : "Ej: Inventario físico, producto dañado, etc."
+                    }
                   />
                 </div>
+
+                {isSnacksView && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <div className="flex">
+                      <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 flex-shrink-0" />
+                      <div className="text-sm text-yellow-800">
+                        <p className="font-medium">Recuerda:</p>
+                        <p className="text-xs mt-1">
+                          Los snacks se consumen automáticamente cuando los huéspedes los seleccionan 
+                          durante el proceso de check-in. Solo ajusta manualmente para correcciones 
+                          de inventario o restock.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end space-x-3 mt-6">
@@ -416,9 +526,13 @@ const SuppliesTable = ({
                 </button>
                 <button
                   onClick={handleAdjustStock}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                  className={`px-4 py-2 text-sm font-medium text-white rounded-md hover:shadow-lg ${
+                    isSnacksView 
+                      ? 'bg-green-600 hover:bg-green-700' 
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
                 >
-                  Ajustar Stock
+                  {isSnacksView ? 'Ajustar Stock Snack' : 'Ajustar Stock'}
                 </button>
               </div>
             </div>

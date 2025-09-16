@@ -1,6 +1,6 @@
-// src/hooks/useSupplies.js - VERSIÓN CORREGIDA
+// src/hooks/useSupplies.js - VERSIÓN CON SOPORTE PARA SNACKS
 import { useState, useEffect, useCallback } from 'react'
-import { suppliesService } from '../lib/supabase'
+import { suppliesService, snackService } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 
@@ -13,6 +13,11 @@ export const useSupplies = () => {
   const [suppliers, setSuppliers] = useState([])
   const [movements, setMovements] = useState([])
   const [alerts, setAlerts] = useState([])
+  
+  // ✅ NUEVOS: Estados para snacks
+  const [snacks, setSnacks] = useState([])
+  const [snackCategories, setSnackCategories] = useState([])
+  
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [creating, setCreating] = useState(false)
@@ -32,7 +37,7 @@ export const useSupplies = () => {
   const [selectedSupply, setSelectedSupply] = useState(null)
 
   // =====================================================
-  // 📊 FUNCIONES DE CARGA DE DATOS - CORREGIDAS
+  // 📊 FUNCIONES DE CARGA DE DATOS - MEJORADAS CON SNACKS
   // =====================================================
 
   const loadAllData = useCallback(async () => {
@@ -40,19 +45,23 @@ export const useSupplies = () => {
       setLoading(true)
       setError(null)
 
-      console.log('🔄 Cargando datos de suministros para:', primaryBranch?.name)
+      console.log('🔄 Cargando datos completos de suministros y snacks para:', primaryBranch?.name)
 
-      // ✅ Cargar datos en paralelo con manejo de errores individual
+      // ✅ Cargar todos los datos en paralelo incluyendo snacks
       const [
         suppliesResult,
         categoriesResult,
         suppliersResult,
-        alertsResult
+        alertsResult,
+        snackItemsResult,
+        snackCategoriesResult
       ] = await Promise.allSettled([
         suppliesService.getSupplies(filters),
         suppliesService.getCategories(),
         suppliesService.getSuppliers(),
-        suppliesService.getAlerts()
+        suppliesService.getAlerts(),
+        snackService.getSnackItems(), // ✅ NUEVO
+        snackService.getSnackCategories() // ✅ NUEVO
       ])
 
       // ✅ Procesar resultados con manejo de errores mejorado
@@ -88,12 +97,29 @@ export const useSupplies = () => {
         setAlerts([])
       }
 
-      console.log('✅ Datos de suministros cargados exitosamente')
+      // ✅ NUEVO: Procesar snacks
+      if (snackItemsResult.status === 'fulfilled' && !snackItemsResult.value.error) {
+        setSnacks(snackItemsResult.value.data || [])
+        console.log('✅ Snacks loaded:', snackItemsResult.value.data?.length || 0)
+      } else {
+        console.warn('⚠️ Error loading snacks:', snackItemsResult.reason || snackItemsResult.value?.error)
+        setSnacks([])
+      }
+
+      if (snackCategoriesResult.status === 'fulfilled' && !snackCategoriesResult.value.error) {
+        setSnackCategories(snackCategoriesResult.value.data || [])
+        console.log('✅ Snack categories loaded:', snackCategoriesResult.value.data?.length || 0)
+      } else {
+        console.warn('⚠️ Error loading snack categories:', snackCategoriesResult.reason || snackCategoriesResult.value?.error)
+        setSnackCategories([])
+      }
+
+      console.log('✅ Datos completos de suministros y snacks cargados exitosamente')
 
     } catch (err) {
-      console.error('❌ Error crítico cargando datos de suministros:', err)
-      setError(err.message || 'Error al cargar suministros')
-      toast.error('Error al cargar datos de suministros')
+      console.error('❌ Error crítico cargando datos:', err)
+      setError(err.message || 'Error al cargar suministros y snacks')
+      toast.error('Error al cargar datos de inventario')
     } finally {
       setLoading(false)
     }
@@ -130,6 +156,23 @@ export const useSupplies = () => {
     } catch (err) {
       console.error('❌ Error en loadSupplies:', err)
       toast.error('Error al cargar suministros')
+    }
+  }
+
+  // ✅ NUEVA: Función para recargar solo snacks
+  const loadSnacks = async () => {
+    try {
+      console.log('🔄 Recargando snacks...')
+      const { data, error } = await snackService.getSnackItems()
+      if (error) {
+        console.warn('⚠️ Error cargando snacks:', error)
+        toast.error('Error al cargar snacks')
+        return
+      }
+      setSnacks(data || [])
+    } catch (err) {
+      console.error('❌ Error en loadSnacks:', err)
+      toast.error('Error al cargar snacks')
     }
   }
 
@@ -249,6 +292,57 @@ export const useSupplies = () => {
       console.error('❌ Error eliminando suministro:', err)
       const errorMessage = err.message || 'Error al eliminar el suministro'
       toast.error(errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  }
+
+  // =====================================================
+  // 🍿 FUNCIONES NUEVAS PARA GESTIÓN DE SNACKS
+  // =====================================================
+
+  const updateSnackStock = async (snackId, newStock, reason = 'Ajuste manual') => {
+    try {
+      console.log('🔄 Actualizando stock de snack:', { snackId, newStock, reason })
+
+      const { data, error } = await snackService.updateSnackStock(snackId, newStock)
+      if (error) {
+        throw error
+      }
+
+      // Actualizar en el estado local
+      setSnacks(prev => prev.map(snack => 
+        snack.id === snackId ? { ...snack, stock: newStock } : snack
+      ))
+
+      toast.success('Stock de snack actualizado exitosamente')
+      return { success: true, data }
+
+    } catch (err) {
+      console.error('❌ Error actualizando stock de snack:', err)
+      const errorMessage = err.message || 'Error al actualizar stock del snack'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  }
+
+  const processSnackConsumption = async (snacksConsumed) => {
+    try {
+      console.log('🍿 Procesando consumo de snacks:', snacksConsumed.length, 'items')
+
+      const result = await snackService.processSnackConsumption(snacksConsumed)
+      if (result.error) {
+        throw result.error
+      }
+
+      // Recargar snacks para reflejar el nuevo stock
+      await loadSnacks()
+
+      console.log('✅ Consumo de snacks procesado exitosamente')
+      return { success: true, data: result.data }
+
+    } catch (err) {
+      console.error('❌ Error procesando consumo de snacks:', err)
+      const errorMessage = err.message || 'Error al procesar consumo de snacks'
       return { success: false, error: errorMessage }
     }
   }
@@ -428,12 +522,27 @@ export const useSupplies = () => {
     }
   }
 
+  // ✅ NUEVA: Búsqueda de snacks
+  const searchSnacks = async (searchTerm) => {
+    try {
+      const { data, error } = await snackService.searchSnacks(searchTerm)
+      if (error) {
+        throw error
+      }
+      return data || []
+    } catch (err) {
+      console.error('❌ Error buscando snacks:', err)
+      return []
+    }
+  }
+
   // =====================================================
-  // 📊 FUNCIONES DE ESTADÍSTICAS
+  // 📊 FUNCIONES DE ESTADÍSTICAS MEJORADAS
   // =====================================================
 
   const getSuppliesStats = () => {
-    const stats = {
+    // Estadísticas de suministros regulares
+    const suppliesStats = {
       total: supplies.length,
       lowStock: supplies.filter(s => s.current_stock <= s.minimum_stock).length,
       outOfStock: supplies.filter(s => s.current_stock === 0).length,
@@ -443,7 +552,26 @@ export const useSupplies = () => {
       alertsCount: alerts.filter(a => !a.is_resolved).length
     }
 
-    return stats
+    // ✅ NUEVAS: Estadísticas de snacks
+    const snacksStats = {
+      total: snacks.length,
+      lowStock: snacks.filter(s => s.stock <= s.minimum_stock).length,
+      outOfStock: snacks.filter(s => s.stock === 0).length,
+      totalValue: snacks.reduce((sum, s) => sum + (s.stock * (s.cost || 0)), 0),
+      categories: [...new Set(snacks.map(s => s.category_name).filter(Boolean))].length
+    }
+
+    // Combinar estadísticas
+    return {
+      ...suppliesStats,
+      // Totales combinados
+      totalItems: suppliesStats.total + snacksStats.total,
+      totalCombinedValue: suppliesStats.totalValue + snacksStats.totalValue,
+      totalCombinedCategories: suppliesStats.categories + snacksStats.categories,
+      
+      // Estadísticas específicas de snacks
+      snacks: snacksStats
+    }
   }
 
   const getLowStockSupplies = () => {
@@ -454,8 +582,44 @@ export const useSupplies = () => {
     return supplies.filter(supply => supply.current_stock === 0)
   }
 
+  // ✅ NUEVAS: Funciones equivalentes para snacks
+  const getLowStockSnacks = () => {
+    return snacks.filter(snack => snack.stock <= snack.minimum_stock)
+  }
+
+  const getOutOfStockSnacks = () => {
+    return snacks.filter(snack => snack.stock === 0)
+  }
+
+  // ✅ NUEVA: Función para obtener alertas combinadas
+  const getCombinedAlerts = () => {
+    const suppliesAlerts = alerts
+    
+    // Generar alertas virtuales para snacks con stock bajo
+    const snacksAlerts = snacks
+      .filter(snack => snack.stock <= snack.minimum_stock)
+      .map(snack => ({
+        id: `snack-${snack.id}`,
+        alert_type: snack.stock === 0 ? 'out_of_stock' : 'low_stock',
+        message: snack.stock === 0 
+          ? `Snack agotado: ${snack.name}` 
+          : `Snack con stock bajo: ${snack.name} (${snack.stock}/${snack.minimum_stock})`,
+        is_resolved: false,
+        created_at: new Date().toISOString(),
+        supply: {
+          id: snack.id,
+          name: snack.name,
+          current_stock: snack.stock,
+          minimum_stock: snack.minimum_stock
+        },
+        isSnackAlert: true
+      }))
+
+    return [...suppliesAlerts, ...snacksAlerts]
+  }
+
   // =====================================================
-  // 🔄 FUNCIONES DE REFRESCADO
+  // 🔄 FUNCIONES DE REFRESCADO MEJORADAS
   // =====================================================
 
   const refreshData = async () => {
@@ -465,6 +629,10 @@ export const useSupplies = () => {
 
   const refreshSupplies = async () => {
     await loadSupplies()
+  }
+
+  const refreshSnacks = async () => {
+    await loadSnacks()
   }
 
   // =====================================================
@@ -493,7 +661,7 @@ export const useSupplies = () => {
   }
 
   // =====================================================
-  // 🎯 RETORNO DEL HOOK
+  // 🎯 RETORNO DEL HOOK AMPLIADO
   // =====================================================
 
   return {
@@ -507,6 +675,10 @@ export const useSupplies = () => {
     error,
     creating,
     updating,
+
+    // ✅ NUEVOS: Estados de snacks
+    snacks,
+    snackCategories,
 
     // Estados de filtros
     filters,
@@ -526,6 +698,10 @@ export const useSupplies = () => {
     adjustStock,
     loadMovements,
 
+    // ✅ NUEVAS: Funciones de snacks
+    updateSnackStock,
+    processSnackConsumption,
+
     // Funciones de alertas
     resolveAlert,
     dismissAlert,
@@ -538,15 +714,20 @@ export const useSupplies = () => {
     updateFilters,
     clearFilters,
     searchSupplies,
+    searchSnacks, // ✅ NUEVA
 
-    // Funciones de estadísticas
+    // Funciones de estadísticas mejoradas
     getSuppliesStats,
     getLowStockSupplies,
     getOutOfStockSupplies,
+    getLowStockSnacks, // ✅ NUEVA
+    getOutOfStockSnacks, // ✅ NUEVA
+    getCombinedAlerts, // ✅ NUEVA
 
     // Funciones de refrescado
     refreshData,
     refreshSupplies,
+    refreshSnacks, // ✅ NUEVA
 
     // Funciones de modales
     openCreateModal,

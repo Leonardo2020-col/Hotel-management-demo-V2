@@ -1,7 +1,8 @@
-// src/pages/Supplies.jsx - VERSIÓN COMPLETA CON COMPONENTES INTEGRADOS
-import React, { useState } from 'react'
-import { RefreshCw, Plus, AlertTriangle, Eye, EyeOff } from 'lucide-react'
+// src/pages/Supplies.jsx - VERSIÓN CON SNACKS INTEGRADOS
+import React, { useState, useEffect } from 'react'
+import { RefreshCw, Plus, AlertTriangle, Eye, EyeOff, Coffee } from 'lucide-react'
 import { useSupplies } from '../hooks/useSupplies'
+import { snackService } from '../lib/supabase'
 import Button from '../components/common/Button'
 
 // Importar componentes de suministros
@@ -46,15 +47,149 @@ const Supplies = () => {
     selectedSupply
   } = useSupplies()
 
+  // ✅ NUEVO: Estados para snacks
+  const [snacks, setSnacks] = useState([])
+  const [snackCategories, setSnackCategories] = useState([])
+  const [snacksLoading, setSnacksLoading] = useState(false)
+
   // Estados locales para la página
-  const [currentView, setCurrentView] = useState('inventory') // 'inventory', 'alerts'
+  const [currentView, setCurrentView] = useState('inventory') // 'inventory', 'alerts', 'snacks'
   const [showResolvedAlerts, setShowResolvedAlerts] = useState(false)
 
-  const stats = getSuppliesStats()
+  // ✅ NUEVO: Cargar snacks al montar el componente
+  useEffect(() => {
+    loadSnacksData()
+  }, [])
+
+  const loadSnacksData = async () => {
+    try {
+      setSnacksLoading(true)
+      console.log('🍿 Loading snacks data for supplies page...')
+
+      const [snackItemsResult, snackCategoriesResult] = await Promise.all([
+        snackService.getSnackItems(),
+        snackService.getSnackCategories()
+      ])
+
+      if (!snackItemsResult.error) {
+        setSnacks(snackItemsResult.data || [])
+        console.log('✅ Snacks loaded:', snackItemsResult.data?.length || 0)
+      } else {
+        console.error('❌ Error loading snacks:', snackItemsResult.error)
+      }
+
+      if (!snackCategoriesResult.error) {
+        setSnackCategories(snackCategoriesResult.data || [])
+        console.log('✅ Snack categories loaded:', snackCategoriesResult.data?.length || 0)
+      } else {
+        console.error('❌ Error loading snack categories:', snackCategoriesResult.error)
+      }
+
+    } catch (error) {
+      console.error('❌ Error in loadSnacksData:', error)
+      toast.error('Error al cargar datos de snacks')
+    } finally {
+      setSnacksLoading(false)
+    }
+  }
+
+  // ✅ NUEVO: Función para actualizar stock de snacks
+  const handleUpdateSnackStock = async (snackId, newStock, reason = 'Ajuste de inventario') => {
+    try {
+      console.log('🔄 Updating snack stock:', { snackId, newStock, reason })
+      
+      const result = await snackService.updateSnackStock(snackId, newStock)
+      
+      if (result.error) {
+        throw result.error
+      }
+
+      // Recargar snacks
+      await loadSnacksData()
+      toast.success('Stock de snack actualizado exitosamente')
+      
+      return { success: true, data: result.data }
+    } catch (error) {
+      console.error('❌ Error updating snack stock:', error)
+      toast.error('Error al actualizar stock de snack')
+      return { success: false, error }
+    }
+  }
+
+  // ✅ NUEVO: Combinar suministros y snacks para las estadísticas
+  const getCombinedStats = () => {
+    const suppliesStats = getSuppliesStats()
+    
+    // Estadísticas de snacks
+    const snacksLowStock = snacks.filter(s => s.stock <= s.minimum_stock).length
+    const snacksOutOfStock = snacks.filter(s => s.stock === 0).length
+    const snacksValue = snacks.reduce((sum, s) => sum + (s.stock * s.cost), 0)
+    
+    return {
+      ...suppliesStats,
+      total: suppliesStats.total + snacks.length,
+      totalValue: suppliesStats.totalValue + snacksValue,
+      categories: suppliesStats.categories + snackCategories.length,
+      // Mantener los contadores originales para no duplicar
+      lowStock: suppliesStats.lowStock,
+      outOfStock: suppliesStats.outOfStock,
+      // Agregar stats específicos de snacks
+      snacksTotal: snacks.length,
+      snacksLowStock,
+      snacksOutOfStock,
+      snacksValue
+    }
+  }
+
+  // ✅ NUEVO: Convertir snacks al formato de suministros para mostrar en la tabla
+  const convertSnacksToSupplyFormat = () => {
+    return snacks.map(snack => ({
+      id: snack.id,
+      name: snack.name,
+      category: { 
+        id: snack.category_id, 
+        name: snack.category_name || 'Snacks' 
+      },
+      supplier: null, // Los snacks no tienen proveedor en el modelo actual
+      unit_of_measure: 'unidad',
+      minimum_stock: snack.minimum_stock,
+      current_stock: snack.stock,
+      unit_cost: snack.cost || 0,
+      sku: null,
+      is_active: snack.is_active,
+      created_at: snack.created_at,
+      updated_at: snack.updated_at,
+      // Campos calculados
+      stockStatus: snackService.getStockStatus(snack.stock, snack.minimum_stock),
+      totalValue: snack.stock * (snack.cost || 0),
+      needsRestock: snack.stock <= snack.minimum_stock,
+      isOutOfStock: snack.stock === 0,
+      stockPercentage: snack.minimum_stock > 0 
+        ? Math.round((snack.stock / snack.minimum_stock) * 100)
+        : 100,
+      // Marcador para identificar que es un snack
+      isSnack: true,
+      price: snack.price // Precio de venta (adicional para snacks)
+    }))
+  }
+
+  // ✅ NUEVO: Combinar suministros y snacks para mostrar en la tabla
+  const getAllInventoryItems = () => {
+    if (currentView === 'snacks') {
+      return convertSnacksToSupplyFormat()
+    } else {
+      // Vista de inventario normal - solo suministros por ahora
+      // Podrías agregar una opción para mostrar ambos si quieres
+      return supplies
+    }
+  }
+
+  const stats = getCombinedStats()
   const lowStockSupplies = getLowStockSupplies()
   const outOfStockSupplies = getOutOfStockSupplies()
+  const inventoryItems = getAllInventoryItems()
 
-  // ✅ FUNCIONES DE MANEJO DE SUMINISTROS
+  // ✅ FUNCIONES DE MANEJO DE SUMINISTROS (sin cambios)
   const handleCreateSupply = async (supplyData) => {
     const result = await createSupply(supplyData)
     if (result.success) {
@@ -93,7 +228,7 @@ const Supplies = () => {
     return result
   }
 
-  // ✅ FUNCIONES DE MANEJO DE ALERTAS
+  // ✅ FUNCIONES DE MANEJO DE ALERTAS (sin cambios)
   const handleResolveAlert = async (alertId) => {
     const result = await resolveAlert(alertId)
     if (result.success) {
@@ -110,7 +245,7 @@ const Supplies = () => {
     return result
   }
 
-  // ✅ FUNCIONES DE CATEGORÍAS Y PROVEEDORES
+  // ✅ FUNCIONES DE CATEGORÍAS Y PROVEEDORES (sin cambios)
   const handleCreateCategory = async (categoryData) => {
     const result = await createCategory(categoryData)
     return result
@@ -119,6 +254,14 @@ const Supplies = () => {
   const handleCreateSupplier = async (supplierData) => {
     const result = await createSupplier(supplierData)
     return result
+  }
+
+  // ✅ NUEVO: Función de refresh combinada
+  const handleRefreshData = async () => {
+    await Promise.all([
+      refreshData(),
+      loadSnacksData()
+    ])
   }
 
   // Error State
@@ -133,17 +276,17 @@ const Supplies = () => {
             <div className="space-y-4">
               <Button
                 variant="primary"
-                onClick={refreshData}
+                onClick={handleRefreshData}
                 icon={RefreshCw}
-                disabled={loading}
+                disabled={loading || snacksLoading}
               >
-                {loading ? 'Recargando...' : 'Reintentar'}
+                {loading || snacksLoading ? 'Recargando...' : 'Reintentar'}
               </Button>
               
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-left">
                 <h3 className="font-semibold text-yellow-800 mb-2">💡 Posibles soluciones:</h3>
                 <ul className="text-sm text-yellow-700 space-y-1">
-                  <li>• Verifica que las tablas de suministros existan en Supabase</li>
+                  <li>• Verifica que las tablas de suministros y snacks existan en Supabase</li>
                   <li>• Ejecuta el script de "Completar Base de Datos - Suministros"</li>
                   <li>• Revisa los permisos de Row Level Security (RLS)</li>
                   <li>• Comprueba la conexión a internet</li>
@@ -157,7 +300,7 @@ const Supplies = () => {
   }
 
   // Loading State
-  if (loading) {
+  if (loading && snacksLoading) {
     return (
       <div className="min-h-screen bg-gray-100 p-6">
         <div className="max-w-6xl mx-auto">
@@ -170,7 +313,7 @@ const Supplies = () => {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <p className="text-gray-600">Cargando inventario...</p>
             <p className="text-sm text-gray-500 mt-2">
-              Obteniendo suministros, categorías y alertas...
+              Obteniendo suministros, snacks, categorías y alertas...
             </p>
           </div>
         </div>
@@ -187,10 +330,10 @@ const Supplies = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-800 mb-2">Suministros e Inventario</h1>
-          <p className="text-gray-600">Gestión completa de productos y stock del hotel</p>
+          <p className="text-gray-600">Gestión completa de productos, snacks y stock del hotel</p>
         </div>
 
-        {/* Navegación de pestañas */}
+        {/* ✅ NUEVA: Navegación de pestañas con snacks */}
         <div className="mb-6">
           <div className="border-b border-gray-200">
             <nav className="-mb-px flex space-x-8">
@@ -202,9 +345,24 @@ const Supplies = () => {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                Inventario
+                Suministros
                 <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs">
                   {supplies.length}
+                </span>
+              </button>
+              
+              <button
+                onClick={() => setCurrentView('snacks')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center ${
+                  currentView === 'snacks'
+                    ? 'border-green-500 text-green-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Coffee className="w-4 h-4 mr-1" />
+                Snacks Check-in
+                <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs">
+                  {snacks.length}
                 </span>
               </button>
               
@@ -227,17 +385,42 @@ const Supplies = () => {
           </div>
         </div>
 
-        {/* Stats Cards - Siempre visible */}
+        {/* ✅ NUEVA: Stats Cards combinadas */}
         <div className="mb-8">
           <StatsCards 
             stats={stats}
             lowStockCount={lowStockSupplies.length}
             outOfStockCount={outOfStockSupplies.length}
           />
+          
+          {/* Stats adicionales de snacks */}
+          {stats.snacksTotal > 0 && (
+            <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <Coffee className="w-5 h-5 text-green-600" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-green-800">
+                      Inventario de Snacks para Check-in
+                    </h3>
+                    <p className="text-sm text-green-700">
+                      {stats.snacksTotal} items • Stock bajo: {stats.snacksLowStock} • Agotados: {stats.snacksOutOfStock}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-bold text-green-800">
+                    S/ {stats.snacksValue.toFixed(2)}
+                  </div>
+                  <div className="text-xs text-green-600">Valor inventario snacks</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Alerta global si hay stock bajo */}
-        {unresolvedAlertsCount > 0 && currentView === 'inventory' && (
+        {unresolvedAlertsCount > 0 && (currentView === 'inventory' || currentView === 'snacks') && (
           <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
@@ -271,27 +454,41 @@ const Supplies = () => {
           </div>
         )}
 
-        {/* Contenido principal según la vista */}
-        {currentView === 'inventory' ? (
+        {/* ✅ NUEVA: Contenido principal con soporte para snacks */}
+        {(currentView === 'inventory' || currentView === 'snacks') ? (
           <div className="space-y-6">
-            {/* Filtros */}
-            <SuppliesFilters
-              filters={filters}
-              categories={categories}
-              suppliers={suppliers}
-              onFiltersChange={updateFilters}
-              onClearFilters={clearFilters}
-              loading={loading}
-            />
+            {/* Filtros - Solo mostrar para suministros regulares */}
+            {currentView === 'inventory' && (
+              <SuppliesFilters
+                filters={filters}
+                categories={categories}
+                suppliers={suppliers}
+                onFiltersChange={updateFilters}
+                onClearFilters={clearFilters}
+                loading={loading}
+              />
+            )}
 
             {/* Header del inventario con botón de crear */}
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-semibold text-gray-800">
-                  Inventario de Suministros
+                  {currentView === 'snacks' ? (
+                    <div className="flex items-center">
+                      <Coffee className="w-5 h-5 mr-2 text-green-600" />
+                      Inventario de Snacks para Check-in
+                    </div>
+                  ) : (
+                    'Inventario de Suministros'
+                  )}
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  {supplies.length} artículos registrados
+                  {inventoryItems.length} artículos registrados
+                  {currentView === 'snacks' && (
+                    <span className="text-green-600 ml-2">
+                      • Se consumen automáticamente en check-ins
+                    </span>
+                  )}
                 </p>
               </div>
               
@@ -299,42 +496,82 @@ const Supplies = () => {
                 <Button
                   variant="outline"
                   icon={RefreshCw}
-                  onClick={refreshData}
-                  disabled={loading}
+                  onClick={handleRefreshData}
+                  disabled={loading || snacksLoading}
                 >
-                  Actualizar
+                  {loading || snacksLoading ? 'Actualizando...' : 'Actualizar'}
                 </Button>
                 
-                {/* ✅ BOTÓN PRINCIPAL - NUEVO SUMINISTRO */}
-                <Button
-                  variant="primary"
-                  icon={Plus}
-                  onClick={openCreateModal}
-                >
-                  Nuevo Suministro
-                </Button>
+                {/* ✅ Botón de crear - solo para suministros regulares */}
+                {currentView === 'inventory' && (
+                  <Button
+                    variant="primary"
+                    icon={Plus}
+                    onClick={openCreateModal}
+                  >
+                    Nuevo Suministro
+                  </Button>
+                )}
               </div>
             </div>
 
-            {/* Tabla de suministros */}
+            {/* ✅ NUEVA: Tabla con soporte para snacks */}
             <SuppliesTable
-              supplies={supplies}
-              loading={loading}
-              onEdit={openEditModal}
-              onDelete={handleDeleteSupply}
-              onAddMovement={openMovementModal}
-              onAdjustStock={async (supplyId, newStock, reason) => {
-                return handleAddMovement({
-                  supplyId,
-                  movementType: 'adjustment',
-                  quantity: newStock,
-                  reason: reason || 'Ajuste de inventario'
-                })
+              supplies={inventoryItems}
+              loading={loading || snacksLoading}
+              onEdit={currentView === 'snacks' ? null : openEditModal} // No editar snacks desde aquí
+              onDelete={currentView === 'snacks' ? null : handleDeleteSupply} // No eliminar snacks desde aquí
+              onAddMovement={currentView === 'snacks' ? null : openMovementModal} // No movimientos para snacks
+              onAdjustStock={async (itemId, newStock, reason) => {
+                if (currentView === 'snacks') {
+                  return handleUpdateSnackStock(itemId, newStock, reason)
+                } else {
+                  return handleAddMovement({
+                    supplyId: itemId,
+                    movementType: 'adjustment',
+                    quantity: newStock,
+                    reason: reason || 'Ajuste de inventario'
+                  })
+                }
               }}
+              currentUser={null}
+              isSnacksView={currentView === 'snacks'} // Nueva prop para identificar vista
             />
+
+            {/* ✅ NUEVA: Información adicional para snacks */}
+            {currentView === 'snacks' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                <div className="flex items-start space-x-3">
+                  <Coffee className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-blue-800 mb-2">
+                      ¿Cómo funciona el inventario de snacks?
+                    </h3>
+                    <div className="text-sm text-blue-700 space-y-2">
+                      <p>
+                        <strong>✅ Consumo Automático:</strong> Cuando se realiza un check-in y el huésped 
+                        selecciona snacks, el stock se reduce automáticamente.
+                      </p>
+                      <p>
+                        <strong>🔄 Ajuste Manual:</strong> Puedes ajustar el stock manualmente usando 
+                        el botón "Ajustar Stock" en cada fila.
+                      </p>
+                      <p>
+                        <strong>⚠️ Alertas:</strong> Se generan alertas automáticas cuando el stock 
+                        está por debajo del mínimo configurado.
+                      </p>
+                      <p>
+                        <strong>📊 Seguimiento:</strong> Todos los consumos quedan registrados en 
+                        la tabla quick_checkins con el detalle de snacks consumidos.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
-          /* Vista de Alertas */
+          /* Vista de Alertas - sin cambios */
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
@@ -358,8 +595,8 @@ const Supplies = () => {
                 <Button
                   variant="outline"
                   icon={RefreshCw}
-                  onClick={refreshData}
-                  disabled={loading}
+                  onClick={handleRefreshData}
+                  disabled={loading || snacksLoading}
                 >
                   Actualizar
                 </Button>
@@ -376,7 +613,7 @@ const Supplies = () => {
           </div>
         )}
 
-        {/* ✅ MODALES */}
+        {/* ✅ MODALES - solo para suministros regulares */}
         
         {/* Modal de crear/editar suministro */}
         <SupplyFormModal
@@ -400,7 +637,7 @@ const Supplies = () => {
           loading={loading}
         />
 
-        {/* Debug Info - Solo en desarrollo */}
+        {/* ✅ NUEVO: Debug Info mejorado */}
         {process.env.NODE_ENV === 'development' && (
           <div className="mt-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
             <details>
@@ -410,17 +647,18 @@ const Supplies = () => {
               <div className="mt-2 text-sm text-gray-600 space-y-1">
                 <p><strong>Current View:</strong> {currentView}</p>
                 <p><strong>Supplies loaded:</strong> {supplies.length}</p>
+                <p><strong>Snacks loaded:</strong> {snacks.length}</p>
                 <p><strong>Categories loaded:</strong> {categories.length}</p>
+                <p><strong>Snack Categories loaded:</strong> {snackCategories.length}</p>
                 <p><strong>Suppliers loaded:</strong> {suppliers.length}</p>
                 <p><strong>Alerts count:</strong> {alerts.length}</p>
                 <p><strong>Unresolved alerts:</strong> {unresolvedAlertsCount}</p>
+                <p><strong>Inventory items shown:</strong> {inventoryItems.length}</p>
+                <p><strong>Combined stats:</strong> {JSON.stringify(stats)}</p>
                 <p><strong>Current filters:</strong> {JSON.stringify(filters)}</p>
                 <p><strong>Loading state:</strong> {loading ? 'True' : 'False'}</p>
+                <p><strong>Snacks loading:</strong> {snacksLoading ? 'True' : 'False'}</p>
                 <p><strong>Error state:</strong> {error || 'None'}</p>
-                <p><strong>Show Create Modal:</strong> {showCreateModal ? 'True' : 'False'}</p>
-                <p><strong>Show Movement Modal:</strong> {showMovementModal ? 'True' : 'False'}</p>
-                <p><strong>Selected Supply:</strong> {selectedSupply?.name || 'None'}</p>
-                <p><strong>Show Resolved Alerts:</strong> {showResolvedAlerts ? 'True' : 'False'}</p>
               </div>
             </details>
           </div>
