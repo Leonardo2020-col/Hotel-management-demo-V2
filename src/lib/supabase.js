@@ -2023,7 +2023,69 @@ export const snackService = {
       'good_stock': 'Stock Bueno'
     }
     return texts[status] || 'Desconocido'
+  },
+
+  async updateSnackItem(snackId, updateData) {
+  try {
+    console.log('🔄 Updating snack item:', { snackId, updateData })
+    
+    const { data, error } = await supabase
+      .from('snack_items')
+      .update({
+        name: updateData.name,
+        category_id: updateData.categoryId,
+        price: updateData.price,
+        cost: updateData.cost || 0,
+        stock: updateData.stock,
+        minimum_stock: updateData.minimumStock || 0,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', snackId)
+      .select(`
+        *,
+        snack_category:category_id(name)
+      `)
+      .single()
+
+    if (error) {
+      console.error('❌ Error updating snack item:', error)
+      throw error
+    }
+
+    console.log('✅ Snack item updated successfully:', data.name)
+    return { data, error: null }
+  } catch (error) {
+    console.error('❌ Error in updateSnackItem:', error)
+    return { data: null, error }
   }
+},
+
+// Crear categoría de snack
+async createSnackCategory(categoryData) {
+  try {
+    console.log('🏷️ Creating snack category:', categoryData)
+    
+    const { data, error } = await supabase
+      .from('snack_categories')
+      .insert({
+        name: categoryData.name,
+        is_active: true
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('❌ Error creating snack category:', error)
+      throw error
+    }
+
+    console.log('✅ Snack category created successfully:', data.name)
+    return { data, error: null }
+  } catch (error) {
+    console.error('❌ Error in createSnackCategory:', error)
+    return { data: null, error }
+  }
+}
 }
 
 // =====================================================

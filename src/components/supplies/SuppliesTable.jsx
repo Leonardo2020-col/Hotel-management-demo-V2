@@ -1,4 +1,4 @@
-// src/components/supplies/SuppliesTable.jsx - CON SOPORTE PARA SNACKS
+// src/components/supplies/SuppliesTable.jsx - CÓDIGO COMPLETO CON SOPORTE PARA SNACKS
 import React, { useState } from 'react'
 import { 
   Edit3, 
@@ -25,6 +25,7 @@ const SuppliesTable = ({
   onDelete,
   onAddMovement,
   onAdjustStock,
+  onEditSnack, // Nueva prop para editar snacks
   currentUser,
   isSnacksView = false // Nueva prop para identificar vista de snacks
 }) => {
@@ -105,17 +106,21 @@ const SuppliesTable = ({
         {showActionMenu === supply.id && (
           <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10">
             <div className="py-1">
-              {/* Editar - solo para suministros regulares */}
-              {!isSnacksView && onEdit && (
+              {/* Editar - para suministros regulares O para snacks */}
+              {((isSnacksView && onEditSnack) || (!isSnacksView && onEdit)) && (
                 <button
                   onClick={() => {
-                    onEdit(supply)
+                    if (isSnacksView && onEditSnack) {
+                      onEditSnack(supply)
+                    } else if (!isSnacksView && onEdit) {
+                      onEdit(supply)
+                    }
                     setShowActionMenu(null)
                   }}
                   className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                 >
                   <Edit3 className="h-4 w-4 mr-2" />
-                  Editar
+                  {isSnacksView ? 'Editar Snack' : 'Editar'}
                 </button>
               )}
 
@@ -221,7 +226,7 @@ const SuppliesTable = ({
           </h3>
           <p className="text-sm text-gray-600">
             {isSnacksView 
-              ? 'No se encontraron snacks para mostrar. Configurar snacks en la gestión de productos.'
+              ? 'No se encontraron snacks para mostrar. Configura snacks usando el botón "Nuevo Snack".'
               : 'No se encontraron suministros con los filtros aplicados.'
             }
           </p>

@@ -12,6 +12,7 @@ import SuppliesTable from '../components/supplies/SuppliesTable'
 import SupplyFormModal from '../components/supplies/SupplyFormModal'
 import MovementModal from '../components/supplies/MovementModal'
 import AlertsPanel from '../components/supplies/AlertsPanel'
+import SnackFormModal from '../components/supplies/SnackFormModal' // ✅ NUEVO
 
 import toast from 'react-hot-toast'
 
@@ -55,6 +56,10 @@ const Supplies = () => {
   // Estados locales para la página
   const [currentView, setCurrentView] = useState('inventory') // 'inventory', 'alerts', 'snacks'
   const [showResolvedAlerts, setShowResolvedAlerts] = useState(false)
+  
+  // ✅ NUEVOS: Estados para el modal de snacks
+  const [showSnackModal, setShowSnackModal] = useState(false)
+  const [selectedSnack, setSelectedSnack] = useState(null)
 
   // ✅ NUEVO: Cargar snacks al montar el componente
   useEffect(() => {
@@ -93,27 +98,101 @@ const Supplies = () => {
     }
   }
 
-  // ✅ NUEVO: Función para actualizar stock de snacks
-  const handleUpdateSnackStock = async (snackId, newStock, reason = 'Ajuste de inventario') => {
+  // ✅ NUEVAS: Funciones para manejo de snacks
+  const handleCreateSnack = async (snackData) => {
     try {
-      console.log('🔄 Updating snack stock:', { snackId, newStock, reason })
+      console.log('🍿 Creando nuevo snack:', snackData)
       
-      const result = await snackService.updateSnackStock(snackId, newStock)
+      // Usar el servicio de snacks para crear
+      const result = await snackService.createSnackItem({
+        name: snackData.name,
+        categoryId: snackData.categoryId,
+        price: snackData.price,
+        cost: snackData.cost,
+        stock: snackData.stock,
+        minimumStock: snackData.minimumStock
+      })
       
       if (result.error) {
         throw result.error
       }
-
+      
       // Recargar snacks
       await loadSnacksData()
-      toast.success('Stock de snack actualizado exitosamente')
+      setShowSnackModal(false)
+      setSelectedSnack(null)
+      toast.success('Snack creado exitosamente')
       
       return { success: true, data: result.data }
     } catch (error) {
-      console.error('❌ Error updating snack stock:', error)
-      toast.error('Error al actualizar stock de snack')
+      console.error('❌ Error creando snack:', error)
+      toast.error('Error al crear snack')
       return { success: false, error }
     }
+  }
+
+  const handleUpdateSnack = async (snackId, updateData) => {
+    try {
+      console.log('🔄 Actualizando snack completo:', { snackId, updateData })
+      
+      // Usar la nueva función updateSnackItem si está disponible
+      const result = await snackService.updateSnackItem?.(snackId, updateData) || 
+                    await handleUpdateSnackStock(snackId, updateData.stock, 'Actualización de snack')
+      
+      if (result.error) {
+        throw result.error
+      }
+      
+      // Recargar snacks
+      await loadSnacksData()
+      setShowSnackModal(false)
+      setSelectedSnack(null)
+      toast.success('Snack actualizado exitosamente')
+      
+      return { success: true, data: result.data }
+    } catch (error) {
+      console.error('❌ Error actualizando snack:', error)
+      toast.error('Error al actualizar snack')
+      return { success: false, error }
+    }
+  }
+
+  const handleCreateSnackCategory = async (categoryData) => {
+    try {
+      console.log('🏷️ Creando categoría de snack:', categoryData)
+      
+      // Usar la función específica para snacks si está disponible
+      const result = await snackService.createSnackCategory?.(categoryData) ||
+                    await createCategory(categoryData)
+      
+      if (result.success || (result.data && !result.error)) {
+        // Recargar categorías de snacks
+        const { data: newCategories } = await snackService.getSnackCategories()
+        setSnackCategories(newCategories || [])
+        return { success: true, data: result.data }
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ Error creando categoría de snack:', error)
+      return { success: false, error }
+    }
+  }
+
+  // Funciones para abrir/cerrar modales de snacks
+  const openCreateSnackModal = () => {
+    setSelectedSnack(null)
+    setShowSnackModal(true)
+  }
+
+  const openEditSnackModal = (snack) => {
+    setSelectedSnack(snack)
+    setShowSnackModal(true)
+  }
+
+  const closeSnackModal = () => {
+    setShowSnackModal(false)
+    setSelectedSnack(null)
   }
 
   // ✅ NUEVO: Combinar suministros y snacks para las estadísticas
@@ -502,7 +581,7 @@ const Supplies = () => {
                   {loading || snacksLoading ? 'Actualizando...' : 'Actualizar'}
                 </Button>
                 
-                {/* ✅ Botón de crear - solo para suministros regulares */}
+                {/* ✅ BOTÓN MEJORADO - Se adapta según la vista */}
                 {currentView === 'inventory' && (
                   <Button
                     variant="primary"
@@ -512,16 +591,28 @@ const Supplies = () => {
                     Nuevo Suministro
                   </Button>
                 )}
+                
+                {/* ✅ NUEVO - Botón para crear snacks */}
+                {currentView === 'snacks' && (
+                  <Button
+                    variant="success"
+                    icon={Plus}
+                    onClick={openCreateSnackModal}
+                  >
+                    Nuevo Snack
+                  </Button>
+                )}
               </div>
             </div>
 
-            {/* ✅ NUEVA: Tabla con soporte para snacks */}
+            {/* ✅ NUEVA: Tabla con soporte completo para snacks */}
             <SuppliesTable
               supplies={inventoryItems}
               loading={loading || snacksLoading}
-              onEdit={currentView === 'snacks' ? null : openEditModal} // No editar snacks desde aquí
-              onDelete={currentView === 'snacks' ? null : handleDeleteSupply} // No eliminar snacks desde aquí
-              onAddMovement={currentView === 'snacks' ? null : openMovementModal} // No movimientos para snacks
+              onEdit={currentView === 'snacks' ? null : openEditModal}
+              onEditSnack={currentView === 'snacks' ? openEditSnackModal : null} // ✅ NUEVA prop
+              onDelete={currentView === 'snacks' ? null : handleDeleteSupply}
+              onAddMovement={currentView === 'snacks' ? null : openMovementModal}
               onAdjustStock={async (itemId, newStock, reason) => {
                 if (currentView === 'snacks') {
                   return handleUpdateSnackStock(itemId, newStock, reason)
@@ -535,7 +626,7 @@ const Supplies = () => {
                 }
               }}
               currentUser={null}
-              isSnacksView={currentView === 'snacks'} // Nueva prop para identificar vista
+              isSnacksView={currentView === 'snacks'}
             />
 
             {/* ✅ NUEVA: Información adicional para snacks */}
@@ -613,7 +704,7 @@ const Supplies = () => {
           </div>
         )}
 
-        {/* ✅ MODALES - solo para suministros regulares */}
+        {/* ✅ MODALES */}
         
         {/* Modal de crear/editar suministro */}
         <SupplyFormModal
@@ -635,6 +726,17 @@ const Supplies = () => {
           onSubmit={handleAddMovement}
           supply={selectedSupply}
           loading={loading}
+        />
+
+        {/* ✅ NUEVO: Modal de crear/editar snack */}
+        <SnackFormModal
+          isOpen={showSnackModal}
+          onClose={closeSnackModal}
+          onSubmit={selectedSnack ? handleUpdateSnack : handleCreateSnack}
+          snack={selectedSnack}
+          categories={snackCategories}
+          onCreateCategory={handleCreateSnackCategory}
+          loading={loading || snacksLoading}
         />
 
         {/* ✅ NUEVO: Debug Info mejorado */}
