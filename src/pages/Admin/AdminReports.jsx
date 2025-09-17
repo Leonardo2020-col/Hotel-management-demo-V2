@@ -1,165 +1,171 @@
 import React, { useState, useEffect } from 'react';
-import { adminService } from '../../lib/supabase-admin';
-import { reportService } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import { reportService } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import {
   BarChart3,
-  Download,
   Calendar,
-  RefreshCw,
+  Download,
+  FileText,
+  TrendingUp,
   DollarSign,
+  Users,
   Building,
-  FileText
+  Filter,
+  RefreshCw,
+  Eye,
+  Search,
+  Plus,
+  Save
 } from 'lucide-react';
 
-// Importar componentes separados
 import OverviewReport from '../../components/admin/report/OverviewReport';
+import DailyReport from '../../components/admin/report/DailyReport';
 import OccupancyReport from '../../components/admin/report/OccupancyReport';
 import RevenueReport from '../../components/admin/report/RevenueReport';
 import ExpensesReport from '../../components/admin/report/ExpensesReport';
-import DailyReport from '../../components/admin/report/DailyReport';
 
-const AdminReportsPage = () => {
-  const { getPrimaryBranch, isAdmin } = useAuth();
+const AdminReports = () => {
+  const { userInfo, isAdmin, getUserBranches } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedBranch, setSelectedBranch] = useState('');
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 días atrás
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
   });
-  const [selectedBranch, setSelectedBranch] = useState('all');
-  const [branches, setBranches] = useState([]);
+  const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [reportData, setReportData] = useState({
-    overview: null,
-    occupancy: [],
-    revenue: null,
-    expenses: [],
-    daily: []
-  });
-
-  const primaryBranch = getPrimaryBranch();
+  const [branches, setBranches] = useState([]);
 
   useEffect(() => {
     if (isAdmin()) {
-      loadInitialData();
+      const userBranches = getUserBranches();
+      setBranches(userBranches);
+      if (userBranches.length > 0) {
+        setSelectedBranch(userBranches[0].id);
+      }
     }
   }, []);
 
   useEffect(() => {
-    if (branches.length > 0) {
+    if (selectedBranch && isAdmin()) {
       loadReportData();
     }
-  }, [dateRange, selectedBranch, branches]);
-
-  const loadInitialData = async () => {
-    try {
-      const branchesResult = await adminService.getAllBranches();
-      setBranches(branchesResult.data?.filter(b => b.is_active) || []);
-    } catch (error) {
-      console.error('Error loading initial data:', error);
-      toast.error('Error al cargar datos iniciales');
-    }
-  };
+  }, [activeTab, selectedBranch, dateRange]);
 
   const loadReportData = async () => {
+    if (!selectedBranch) return;
+    
     setLoading(true);
     try {
-      const branchId = selectedBranch === 'all' ? primaryBranch?.id : selectedBranch;
+      let data;
       
-      if (!branchId) {
-        console.warn('No branch selected for reports');
-        return;
+      switch (activeTab) {
+        case 'overview':
+          data = await generateOverviewData();
+          break;
+        case 'daily':
+          const dailyResult = await reportService.getDailyReports(selectedBranch, dateRange.startDate, dateRange.endDate);
+          data = dailyResult.data;
+          break;
+        case 'occupancy':
+          const occupancyResult = await reportService.getOccupancyReport(selectedBranch, dateRange.startDate, dateRange.endDate);
+          data = occupancyResult.data;
+          break;
+        case 'revenue':
+          const revenueResult = await reportService.getRevenueReport(selectedBranch, dateRange.startDate, dateRange.endDate);
+          data = revenueResult.data;
+          break;
+        case 'expenses':
+          const expensesResult = await reportService.getExpensesReport(selectedBranch, dateRange.startDate, dateRange.endDate);
+          data = expensesResult.data;
+          break;
+        default:
+          data = null;
       }
-
-      const [
-        occupancyResult,
-        revenueResult,
-        expensesResult,
-        dailyResult
-      ] = await Promise.all([
-        reportService.getOccupancyReport(branchId, dateRange.startDate, dateRange.endDate),
-        reportService.getRevenueReport(branchId, dateRange.startDate, dateRange.endDate),
-        reportService.getExpensesReport(branchId, dateRange.startDate, dateRange.endDate),
-        reportService.getDailyReports(branchId, dateRange.startDate, dateRange.endDate)
-      ]);
-
-      setReportData({
-        overview: {
-          totalRevenue: revenueResult.data?.total_revenue || 0,
-          totalExpenses: revenueResult.data?.total_expenses || 0,
-          netProfit: revenueResult.data?.net_profit || 0,
-          averageOccupancy: occupancyResult.data?.length > 0 
-            ? (occupancyResult.data.reduce((sum, day) => sum + parseFloat(day.occupancy_percentage || 0), 0) / occupancyResult.data.length).toFixed(1)
-            : 0
-        },
-        occupancy: occupancyResult.data || [],
-        revenue: revenueResult.data,
-        expenses: expensesResult.data || [],
-        daily: dailyResult.data || []
-      });
-
+      
+      setReportData(data);
     } catch (error) {
-      console.error('Error loading report data:', error);
-      toast.error('Error al cargar datos de reportes');
+      console.error('Error loading report:', error);
+      toast.error('Error al cargar el reporte');
     } finally {
       setLoading(false);
     }
   };
 
-  const exportReport = async (reportType) => {
+  const generateOverviewData = async () => {
     try {
-      let data;
-      let filename;
+      const [revenueResult, expensesResult, occupancyResult] = await Promise.all([
+        reportService.getRevenueReport(selectedBranch, dateRange.startDate, dateRange.endDate),
+        reportService.getExpensesReport(selectedBranch, dateRange.startDate, dateRange.endDate),
+        reportService.getOccupancyReport(selectedBranch, dateRange.startDate, dateRange.endDate)
+      ]);
 
-      switch (reportType) {
-        case 'occupancy':
-          data = reportData.occupancy;
-          filename = `ocupacion_${dateRange.startDate}_${dateRange.endDate}`;
-          break;
-        case 'revenue':
-          data = reportData.revenue;
-          filename = `ingresos_${dateRange.startDate}_${dateRange.endDate}`;
-          break;
-        case 'expenses':
-          data = reportData.expenses;
-          filename = `gastos_${dateRange.startDate}_${dateRange.endDate}`;
-          break;
-        case 'daily':
-          data = reportData.daily;
-          filename = `diario_${dateRange.startDate}_${dateRange.endDate}`;
-          break;
-        default:
-          throw new Error('Tipo de reporte no válido');
-      }
+      const revenue = revenueResult.data || {};
+      const expenses = expensesResult.data || [];
+      const occupancy = occupancyResult.data || [];
 
-      const result = await reportService.exportToCSV(reportType, data, { filename });
-      
-      if (result.success) {
-        toast.success('Reporte exportado exitosamente');
-      } else {
-        throw result.error;
-      }
+      const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+      const avgOccupancy = occupancy.length > 0
+        ? occupancy.reduce((sum, day) => sum + parseFloat(day.occupancy_percentage || 0), 0) / occupancy.length
+        : 0;
+
+      return {
+        totalRevenue: revenue.total_revenue || 0,
+        totalExpenses: totalExpenses,
+        netProfit: (revenue.total_revenue || 0) - totalExpenses,
+        averageOccupancy: avgOccupancy.toFixed(1)
+      };
     } catch (error) {
-      console.error('Error exporting report:', error);
-      toast.error('Error al exportar reporte');
+      console.error('Error generating overview:', error);
+      return {
+        totalRevenue: 0,
+        totalExpenses: 0,
+        netProfit: 0,
+        averageOccupancy: 0
+      };
     }
   };
 
-  const reportTabs = [
-    { id: 'overview', label: 'Resumen General', icon: BarChart3 },
-    { id: 'occupancy', label: 'Ocupación', icon: Building },
-    { id: 'revenue', label: 'Ingresos', icon: DollarSign },
-    { id: 'expenses', label: 'Gastos', icon: FileText },
-    { id: 'daily', label: 'Reportes Diarios', icon: Calendar }
+  const handleExportReport = async () => {
+    if (!reportData) {
+      toast.error('No hay datos para exportar');
+      return;
+    }
+
+    try {
+      const result = await reportService.exportToCSV(activeTab, reportData, {
+        filename: `reporte_${activeTab}_${selectedBranch}_${new Date().toISOString().split('T')[0]}`
+      });
+
+      if (result.success) {
+        toast.success('Reporte exportado exitosamente');
+      } else {
+        toast.error('Error al exportar el reporte');
+      }
+    } catch (error) {
+      console.error('Error exporting report:', error);
+      toast.error('Error al exportar el reporte');
+    }
+  };
+
+  const tabs = [
+    { id: 'overview', name: 'Resumen General', icon: BarChart3 },
+    { id: 'daily', name: 'Reportes Diarios', icon: Calendar },
+    { id: 'occupancy', name: 'Ocupación', icon: Building },
+    { id: 'revenue', name: 'Ingresos', icon: DollarSign },
+    { id: 'expenses', name: 'Gastos', icon: FileText }
   ];
 
   if (!isAdmin()) {
     return (
       <div className="p-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Acceso Denegado</h1>
-          <p className="text-gray-600">Solo los administradores pueden acceder a los reportes avanzados.</p>
+        <div className="text-center py-12">
+          <BarChart3 className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Acceso Denegado</h1>
+          <p className="text-gray-600 mb-4">
+            No tienes permisos para acceder a los reportes avanzados.
+          </p>
         </div>
       </div>
     );
@@ -172,10 +178,18 @@ const AdminReportsPage = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reportes Avanzados</h1>
           <p className="text-gray-600">
-            Análisis detallado y reportes del sistema
+            Análisis detallado de operaciones y rendimiento
           </p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={handleExportReport}
+            disabled={!reportData || loading}
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Exportar CSV
+          </button>
           <button
             onClick={loadReportData}
             disabled={loading}
@@ -189,7 +203,25 @@ const AdminReportsPage = () => {
 
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Sucursal
+            </label>
+            <select
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Seleccionar sucursal</option>
+              {branches.map(branch => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Fecha Inicio
@@ -199,71 +231,89 @@ const AdminReportsPage = () => {
               value={dateRange.startDate}
               onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Todas las sucursales</option>
-              {branches.map(branch => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </input>
+            />
           </div>
-
-          <div className="flex items-end">
-            <button
-              onClick={() => exportReport(activeTab)}
-              disabled={loading || !reportData[activeTab]}
-              className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Exportar
-            </button>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Fecha Fin
+            </label>
+            <input
+              type="date"
+              value={dateRange.endDate}
+              onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
         </div>
       </div>
 
-      {/* Tabs de navegación */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          {reportTabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <Icon className="h-4 w-4 mr-2" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Icon className="h-4 w-4 mr-2" />
+                  {tab.name}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Contenido del reporte */}
+        <div className="p-6">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+              <span className="ml-2 text-gray-600">Cargando reporte...</span>
+            </div>
+          ) : (
+            <>
+              {activeTab === 'overview' && <OverviewReport data={reportData} />}
+              {activeTab === 'daily' && <DailyReport data={reportData} />}
+              {activeTab === 'occupancy' && <OccupancyReport data={reportData} />}
+              {activeTab === 'revenue' && <RevenueReport data={reportData} />}
+              {activeTab === 'expenses' && <ExpensesReport data={reportData} />}
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Contenido de los reportes */}
-      <div className="min-h-96">
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
-            <span className="ml-2 text-gray-600">Cargando reportes...</span>
+      {/* Reportes programados */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-medium text-gray-900">Reportes Programados</h3>
+            <button className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <Plus className="h-4 w-4 mr-1" />
+              Programar Reporte
+            </button>
           </div>
-        ) : (
-          <div>
-            {activeTab === 'overview' && <OverviewReport data={reportData.overview} />}
-            {activeTab === 'occupancy' && <OccupancyReport data={reportData.occupancy} />}
-            {activeTab === 'revenue' && <RevenueReport data={reportData.revenue} />}
-            {activeTab === 'expenses' && <ExpensesReport data={reportData.expenses} />}
-            {activeTab === 'daily' && <DailyReport data={reportData.daily} />}
+        </div>
+        <div className="p-6">
+          <div className="text-center py-8">
+            <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No hay reportes programados</h3>
+            <p className="text-gray-500">
+              Programa reportes automáticos para recibir análisis periódicos
+            </p>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
 };
 
-export default AdminReportsPage;
+export default AdminReports;

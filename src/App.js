@@ -1,4 +1,4 @@
-// src/App.js - ACTUALIZADO CON RUTAS DE ADMIN CORREGIDAS
+// src/App.js - ACTUALIZADO CON RUTAS DE ADMIN COMPLETAS
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
@@ -25,9 +25,13 @@ import BranchSwitcher from './pages/BranchSwitcher.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
 import Supplies from './pages/Supplies.jsx'
+
+// Admin Pages
 import AdminUsersPage from './pages/Admin/AdminUsers.jsx'
 import AdminBranchesPage from './pages/Admin/AdminBranches.jsx'
 import AdminReportsPage from './pages/Admin/AdminReports.jsx'
+import AdminSettingsPage from './pages/Admin/AdminSettings.jsx'
+import AdminAuditPage from './pages/Admin/AdminAudit.jsx'
 
 function App() {
   console.log('🚀 App rendering...')
@@ -68,11 +72,14 @@ function App() {
                 }
               />
               
-              {/* RUTAS DE ADMINISTRACIÓN */}
-              {/* Ruta principal de admin - redirige a users por defecto */}
+              {/* =====================================================
+                  RUTAS DE ADMINISTRACIÓN
+                  ===================================================== */}
+              
+              {/* Ruta principal de admin - redirige a panel por defecto */}
               <Route 
                 path="/admin" 
-                element={<Navigate to="/admin/users" replace />} 
+                element={<Navigate to="/admin/panel" replace />} 
               />
               
               {/* Panel de administración general */}
@@ -122,6 +129,34 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
+
+              {/* Configuración del sistema */}
+              <Route 
+                path="/admin/settings" 
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Layout>
+                      <AdminSettingsPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
+
+              {/* Sistema de auditoría */}
+              <Route 
+                path="/admin/audit" 
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <Layout>
+                      <AdminAuditPage />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
+              
+              {/* =====================================================
+                  RUTAS DE OPERACIONES (RECEPCIÓN)
+                  ===================================================== */}
               
               {/* Check-in CON Layout */}
               <Route
@@ -195,22 +230,29 @@ function App() {
                 }
               />
               
-              {/* Configuración CON Layout */}
+              {/* =====================================================
+                  CONFIGURACIÓN GENERAL (ALIAS PARA ADMIN/SETTINGS)
+                  ===================================================== */}
               <Route
                 path="/settings"
+                element={<Navigate to="/admin/settings" replace />}
+              />
+              
+              {/* Cambiar sucursal */}
+              <Route
+                path="/branch-switcher"
                 element={
-                  <ProtectedRoute requireAdmin>
+                  <ProtectedRoute requireReception>
                     <Layout>
-                      <div className="p-6">
-                        <h1 className="text-2xl font-bold text-gray-900 mb-4">Configuración</h1>
-                        <p className="text-gray-600">Página en desarrollo</p>
-                      </div>
+                      <BranchSwitcher />
                     </Layout>
                   </ProtectedRoute>
                 }
               />
               
-              {/* Páginas de error SIN Layout */}
+              {/* =====================================================
+                  PÁGINAS DE ERROR
+                  ===================================================== */}
               <Route path="/unauthorized" element={<Unauthorized />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
