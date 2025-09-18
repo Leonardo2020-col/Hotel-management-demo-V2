@@ -1,4 +1,4 @@
-// src/pages/Supplies.jsx - VERSIÓN CON SNACKS INTEGRADOS
+// src/pages/Supplies.jsx - VERSIÓN CON SNACKS INTEGRADOS - FIXED
 import React, { useState, useEffect } from 'react'
 import { RefreshCw, Plus, AlertTriangle, Eye, EyeOff, Coffee } from 'lucide-react'
 import { useSupplies } from '../hooks/useSupplies'
@@ -95,6 +95,29 @@ const Supplies = () => {
       toast.error('Error al cargar datos de snacks')
     } finally {
       setSnacksLoading(false)
+    }
+  }
+
+  // ✅ FIXED: Función faltante handleUpdateSnackStock
+  const handleUpdateSnackStock = async (snackId, newStock, reason = 'Ajuste manual de stock') => {
+    try {
+      console.log('🔄 Updating snack stock:', { snackId, newStock, reason })
+      
+      const result = await snackService.updateSnackStock(snackId, newStock)
+      
+      if (result.error) {
+        throw result.error
+      }
+      
+      // Recargar snacks para reflejar el cambio
+      await loadSnacksData()
+      toast.success('Stock de snack actualizado exitosamente')
+      
+      return { success: true, data: result.data }
+    } catch (error) {
+      console.error('❌ Error updating snack stock:', error)
+      toast.error('Error al actualizar stock del snack')
+      return { success: false, error }
     }
   }
 
