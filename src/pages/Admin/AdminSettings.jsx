@@ -430,6 +430,298 @@ const AdminSettings = () => {
                       onChange={(e) => updateSetting('booking', 'allowSameDayBooking', e.target.checked)}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
+                    <label htmlFor="allowSameDayBooking" className="ml-2 block text-sm text-gray-900">
+                      Permitir reservaciones el mismo día
+                    </label>
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      id="requireDeposit"
+                      type="checkbox"
+                      checked={settings.booking.requireDeposit}
+                      onChange={(e) => updateSetting('booking', 'requireDeposit', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="requireDeposit" className="ml-2 block text-sm text-gray-900">
+                      Requerir depósito para confirmar reservaciones
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Notificaciones */}
+          {activeTab === 'notifications' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Configuración de Notificaciones</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email para notificaciones
+                    </label>
+                    <input
+                      type="email"
+                      value={settings.notifications.notificationEmail}
+                      onChange={(e) => updateSetting('notifications', 'notificationEmail', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="admin@hotellima.com"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center">
+                    <input
+                      id="emailNotifications"
+                      type="checkbox"
+                      checked={settings.notifications.emailNotifications}
+                      onChange={(e) => updateSetting('notifications', 'emailNotifications', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="emailNotifications" className="ml-2 block text-sm text-gray-900">
+                      Habilitar notificaciones por email
+                    </label>
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      id="smsNotifications"
+                      type="checkbox"
+                      checked={settings.notifications.smsNotifications}
+                      onChange={(e) => updateSetting('notifications', 'smsNotifications', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="smsNotifications" className="ml-2 block text-sm text-gray-900">
+                      Habilitar notificaciones por SMS
+                    </label>
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      id="lowStockAlerts"
+                      type="checkbox"
+                      checked={settings.notifications.lowStockAlerts}
+                      onChange={(e) => updateSetting('notifications', 'lowStockAlerts', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="lowStockAlerts" className="ml-2 block text-sm text-gray-900">
+                      Alertas de stock bajo
+                    </label>
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      id="paymentReminders"
+                      type="checkbox"
+                      checked={settings.notifications.paymentReminders}
+                      onChange={(e) => updateSetting('notifications', 'paymentReminders', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="paymentReminders" className="ml-2 block text-sm text-gray-900">
+                      Recordatorios de pago
+                    </label>
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      id="checkInReminders"
+                      type="checkbox"
+                      checked={settings.notifications.checkInReminders}
+                      onChange={(e) => updateSetting('notifications', 'checkInReminders', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="checkInReminders" className="ml-2 block text-sm text-gray-900">
+                      Recordatorios de check-in
+                    </label>
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      id="maintenanceAlerts"
+                      type="checkbox"
+                      checked={settings.notifications.maintenanceAlerts}
+                      onChange={(e) => updateSetting('notifications', 'maintenanceAlerts', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="maintenanceAlerts" className="ml-2 block text-sm text-gray-900">
+                      Alertas de mantenimiento
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Facturación */}
+          {activeTab === 'billing' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Configuración de Facturación</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Prefijo de facturas
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.billing.invoicePrefix}
+                      onChange={(e) => updateSetting('billing', 'invoicePrefix', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="INV"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Prefijo de recibos
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.billing.receiptPrefix}
+                      onChange={(e) => updateSetting('billing', 'receiptPrefix', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="REC"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tasa de impuesto (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={settings.billing.taxRate}
+                      onChange={(e) => updateSetting('billing', 'taxRate', parseFloat(e.target.value))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Términos de pago
+                    </label>
+                    <select
+                      value={settings.billing.paymentTerms}
+                      onChange={(e) => updateSetting('billing', 'paymentTerms', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="immediate">Inmediato</option>
+                      <option value="net_15">Neto 15 días</option>
+                      <option value="net_30">Neto 30 días</option>
+                      <option value="net_60">Neto 60 días</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center">
+                    <input
+                      id="includeIgv"
+                      type="checkbox"
+                      checked={settings.billing.includeIgv}
+                      onChange={(e) => updateSetting('billing', 'includeIgv', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="includeIgv" className="ml-2 block text-sm text-gray-900">
+                      Incluir IGV en facturas
+                    </label>
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      id="autoInvoice"
+                      type="checkbox"
+                      checked={settings.billing.autoInvoice}
+                      onChange={(e) => updateSetting('billing', 'autoInvoice', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="autoInvoice" className="ml-2 block text-sm text-gray-900">
+                      Generar facturas automáticamente
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Seguridad */}
+          {activeTab === 'security' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Configuración de Seguridad</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Longitud mínima de contraseña
+                    </label>
+                    <input
+                      type="number"
+                      value={settings.security.passwordMinLength}
+                      onChange={(e) => updateSetting('security', 'passwordMinLength', parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      min="6"
+                      max="32"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tiempo de sesión (minutos)
+                    </label>
+                    <input
+                      type="number"
+                      value={settings.security.sessionTimeout}
+                      onChange={(e) => updateSetting('security', 'sessionTimeout', parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      min="30"
+                      max="1440"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Máximo intentos de login
+                    </label>
+                    <input
+                      type="number"
+                      value={settings.security.maxLoginAttempts}
+                      onChange={(e) => updateSetting('security', 'maxLoginAttempts', parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      min="3"
+                      max="10"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center">
+                    <input
+                      id="requireUppercase"
+                      type="checkbox"
+                      checked={settings.security.requireUppercase}
+                      onChange={(e) => updateSetting('security', 'requireUppercase', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="requireUppercase" className="ml-2 block text-sm text-gray-900">
+                      Requerir al menos una mayúscula
+                    </label>
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      id="requireNumbers"
+                      type="checkbox"
+                      checked={settings.security.requireNumbers}
+                      onChange={(e) => updateSetting('security', 'requireNumbers', e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
                     <label htmlFor="requireNumbers" className="ml-2 block text-sm text-gray-900">
                       Requerir al menos un número
                     </label>
