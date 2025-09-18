@@ -27,15 +27,18 @@ const AdminSettings = () => {
   const { userInfo, isAdmin, getPrimaryBranch } = useAuth();
   const [activeTab, setActiveTab] = useState('general');
   const [loading, setLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  
   const [settings, setSettings] = useState({
     general: {
-      hotelName: '',
-      description: '',
-      address: '',
-      phone: '',
-      email: '',
-      website: '',
-      taxId: '',
+      hotelName: 'Hotel Lima Plaza',
+      description: 'Hotel boutique en el corazón de Lima...',
+      address: 'Av. Javier Prado 1234, San Isidro, Lima',
+      phone: '+51 1 234-5678',
+      email: 'info@hotellima.com',
+      website: 'https://www.hotellima.com',
+      taxId: '20123456789',
       currency: 'PEN',
       timezone: 'America/Lima',
       language: 'es'
@@ -57,7 +60,7 @@ const AdminSettings = () => {
       paymentReminders: true,
       checkInReminders: true,
       maintenanceAlerts: true,
-      notificationEmail: ''
+      notificationEmail: 'admin@hotellima.com'
     },
     billing: {
       invoicePrefix: 'INV',
@@ -89,30 +92,60 @@ const AdminSettings = () => {
     setLoading(true);
     try {
       const primaryBranch = getPrimaryBranch();
+      console.log('🔄 Loading settings for branch:', primaryBranch?.id);
+      
       if (primaryBranch) {
-        const result = await adminService.getHotelSettings(primaryBranch.id);
-        if (result.data) {
+        // ✅ CORRECCIÓN: Usar getSystemSettings en lugar de getHotelSettings
+        const result = await adminService.getSystemSettings(primaryBranch.id);
+        
+        if (result.error) {
+          console.warn('⚠️ Error loading settings:', result.error);
+          toast.error('Error al cargar configuraciones, usando valores por defecto');
+          return;
+        }
+        
+        if (result.data && result.data.length > 0) {
+          console.log('✅ Settings loaded successfully:', result.data.length, 'settings');
+          
           // Mapear configuraciones de la base de datos al estado local
           const mappedSettings = { ...settings };
+          
           result.data.forEach(setting => {
             const keys = setting.setting_key.split('.');
             if (keys.length === 2 && mappedSettings[keys[0]]) {
-              mappedSettings[keys[0]][keys[1]] = setting.setting_value;
+              // Asegurar que el valor sea del tipo correcto
+              let value = setting.setting_value;
+              
+              // Convertir strings a tipos apropiados
+              if (typeof value === 'string') {
+                if (value === 'true') value = true;
+                else if (value === 'false') value = false;
+                else if (!isNaN(value) && value !== '') value = Number(value);
+              }
+              
+              mappedSettings[keys[0]][keys[1]] = value;
             }
           });
+          
           setSettings(mappedSettings);
+          console.log('📋 Settings mapped successfully');
+        } else {
+          console.log('ℹ️ No settings found, using defaults');
+          toast.success('Configuraciones inicializadas con valores por defecto');
         }
+      } else {
+        toast.error('No se pudo determinar la sucursal principal');
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
-      toast.error('Error al cargar configuraciones');
+      console.error('❌ Error loading settings:', error);
+      toast.error('Error al cargar configuraciones: ' + (error.message || 'Error desconocido'));
     } finally {
       setLoading(false);
     }
   };
 
   const handleSaveSettings = async () => {
-    setLoading(true);
+    setSaveLoading(true);
     try {
       const primaryBranch = getPrimaryBranch();
       if (!primaryBranch) {
@@ -120,34 +153,55 @@ const AdminSettings = () => {
         return;
       }
 
-      // Convertir settings a formato de base de datos
-      const settingsToSave = [];
+      console.log('💾 Saving settings for branch:', primaryBranch.id);
+
+      // ✅ CORRECCIÓN: Guardar configuraciones una por una usando updateSystemSetting
+      const savePromises = [];
+      
       Object.keys(settings).forEach(category => {
         Object.keys(settings[category]).forEach(key => {
-          settingsToSave.push({
-            branch_id: primaryBranch.id,
-            setting_key: `${category}.${key}`,
-            setting_value: settings[category][key]
-          });
+          const settingKey = `${category}.${key}`;
+          const settingValue = settings[category][key];
+          
+          console.log('📝 Saving setting:', settingKey, '=', settingValue);
+          
+          savePromises.push(
+            adminService.updateSystemSetting(
+              primaryBranch.id,
+              settingKey,
+              settingValue,
+              userInfo?.id
+            )
+          );
         });
       });
 
-      const result = await adminService.updateHotelSettings(settingsToSave);
-      if (result.error) {
-        toast.error('Error al guardar configuraciones');
-        return;
+      // Ejecutar todas las actualizaciones
+      const results = await Promise.allSettled(savePromises);
+      
+      // Verificar resultados
+      const errors = results.filter(result => result.status === 'rejected');
+      const successes = results.filter(result => result.status === 'fulfilled');
+      
+      if (errors.length > 0) {
+        console.error('❌ Some settings failed to save:', errors);
+        toast.error(`Error al guardar ${errors.length} configuraciones`);
+      } else {
+        console.log('✅ All settings saved successfully:', successes.length);
+        toast.success('Configuraciones guardadas exitosamente');
+        setLastSaved(new Date());
       }
 
-      toast.success('Configuraciones guardadas exitosamente');
     } catch (error) {
-      console.error('Error saving settings:', error);
-      toast.error('Error al guardar configuraciones');
+      console.error('❌ Error saving settings:', error);
+      toast.error('Error al guardar configuraciones: ' + (error.message || 'Error desconocido'));
     } finally {
-      setLoading(false);
+      setSaveLoading(false);
     }
   };
 
   const updateSetting = (category, key, value) => {
+    console.log('🔄 Updating setting:', category, key, '=', value);
     setSettings(prev => ({
       ...prev,
       [category]: {
@@ -191,11 +245,23 @@ const AdminSettings = () => {
         </div>
         <div className="flex space-x-3">
           <button
-            onClick={handleSaveSettings}
+            onClick={loadSettings}
             disabled={loading}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            className="flex items-center px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
             {loading ? (
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Recargar
+          </button>
+          <button
+            onClick={handleSaveSettings}
+            disabled={saveLoading}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            {saveLoading ? (
               <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Save className="h-4 w-4 mr-2" />
@@ -205,7 +271,7 @@ const AdminSettings = () => {
         </div>
       </div>
 
-      {/* Alertas */}
+      {/* Alerta de configuración global */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
         <div className="flex">
           <AlertCircle className="h-5 w-5 text-amber-400 mt-0.5" />
@@ -244,7 +310,7 @@ const AdminSettings = () => {
           </nav>
         </div>
 
-        {/* Contenido */}
+        {/* Contenido de las pestañas */}
         <div className="p-6">
           {/* General */}
           {activeTab === 'general' && (
@@ -252,388 +318,6 @@ const AdminSettings = () => {
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Información General</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Nombre del Hotel
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.general.hotelName}
-                      onChange={(e) => updateSetting('general', 'hotelName', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Hotel Lima Plaza"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      RUC / Identificación Fiscal
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.general.taxId}
-                      onChange={(e) => updateSetting('general', 'taxId', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="20123456789"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Descripción
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={settings.general.description}
-                      onChange={(e) => updateSetting('general', 'description', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Hotel boutique en el corazón de Lima..."
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Dirección
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.general.address}
-                      onChange={(e) => updateSetting('general', 'address', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Av. Javier Prado 1234, San Isidro, Lima"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Teléfono
-                    </label>
-                    <input
-                      type="tel"
-                      value={settings.general.phone}
-                      onChange={(e) => updateSetting('general', 'phone', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="+51 1 234-5678"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={settings.general.email}
-                      onChange={(e) => updateSetting('general', 'email', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="info@hotellima.com"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Sitio Web
-                    </label>
-                    <input
-                      type="url"
-                      value={settings.general.website}
-                      onChange={(e) => updateSetting('general', 'website', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="https://www.hotellima.com"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Moneda
-                    </label>
-                    <select
-                      value={settings.general.currency}
-                      onChange={(e) => updateSetting('general', 'currency', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="PEN">Soles Peruanos (PEN)</option>
-                      <option value="USD">Dólares (USD)</option>
-                      <option value="EUR">Euros (EUR)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Reservaciones */}
-          {activeTab === 'booking' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Configuración de Reservaciones</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Hora de Check-in
-                    </label>
-                    <input
-                      type="time"
-                      value={settings.booking.checkInTime}
-                      onChange={(e) => updateSetting('booking', 'checkInTime', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Hora de Check-out
-                    </label>
-                    <input
-                      type="time"
-                      value={settings.booking.checkOutTime}
-                      onChange={(e) => updateSetting('booking', 'checkOutTime', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Días máximos de anticipación
-                    </label>
-                    <input
-                      type="number"
-                      value={settings.booking.maxAdvanceBooking}
-                      onChange={(e) => updateSetting('booking', 'maxAdvanceBooking', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      min="1"
-                      max="365"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Porcentaje de depósito (%)
-                    </label>
-                    <input
-                      type="number"
-                      value={settings.booking.depositPercentage}
-                      onChange={(e) => updateSetting('booking', 'depositPercentage', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      min="0"
-                      max="100"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-4">
-                  <div className="flex items-center">
-                    <input
-                      id="allowSameDayBooking"
-                      type="checkbox"
-                      checked={settings.booking.allowSameDayBooking}
-                      onChange={(e) => updateSetting('booking', 'allowSameDayBooking', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="allowSameDayBooking" className="ml-2 block text-sm text-gray-900">
-                      Permitir reservaciones el mismo día
-                    </label>
-                  </div>
-
-                  <div className="flex items-center">
-                    <input
-                      id="requireDeposit"
-                      type="checkbox"
-                      checked={settings.booking.requireDeposit}
-                      onChange={(e) => updateSetting('booking', 'requireDeposit', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="requireDeposit" className="ml-2 block text-sm text-gray-900">
-                      Requerir depósito para confirmar reservaciones
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Notificaciones */}
-          {activeTab === 'notifications' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Configuración de Notificaciones</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email para notificaciones
-                    </label>
-                    <input
-                      type="email"
-                      value={settings.notifications.notificationEmail}
-                      onChange={(e) => updateSetting('notifications', 'notificationEmail', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="admin@hotellima.com"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center">
-                    <input
-                      id="emailNotifications"
-                      type="checkbox"
-                      checked={settings.notifications.emailNotifications}
-                      onChange={(e) => updateSetting('notifications', 'emailNotifications', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="emailNotifications" className="ml-2 block text-sm text-gray-900">
-                      Habilitar notificaciones por email
-                    </label>
-                  </div>
-
-                  <div className="flex items-center">
-                    <input
-                      id="smsNotifications"
-                      type="checkbox"
-                      checked={settings.notifications.smsNotifications}
-                      onChange={(e) => updateSetting('notifications', 'smsNotifications', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="smsNotifications" className="ml-2 block text-sm text-gray-900">
-                      Habilitar notificaciones por SMS
-                    </label>
-                  </div>
-
-                  <div className="flex items-center">
-                    <input
-                      id="lowStockAlerts"
-                      type="checkbox"
-                      checked={settings.notifications.lowStockAlerts}
-                      onChange={(e) => updateSetting('notifications', 'lowStockAlerts', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="lowStockAlerts" className="ml-2 block text-sm text-gray-900">
-                      Alertas de stock bajo
-                    </label>
-                  </div>
-
-                  <div className="flex items-center">
-                    <input
-                      id="paymentReminders"
-                      type="checkbox"
-                      checked={settings.notifications.paymentReminders}
-                      onChange={(e) => updateSetting('notifications', 'paymentReminders', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="paymentReminders" className="ml-2 block text-sm text-gray-900">
-                      Recordatorios de pago
-                    </label>
-                  </div>
-
-                  <div className="flex items-center">
-                    <input
-                      id="checkInReminders"
-                      type="checkbox"
-                      checked={settings.notifications.checkInReminders}
-                      onChange={(e) => updateSetting('notifications', 'checkInReminders', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="checkInReminders" className="ml-2 block text-sm text-gray-900">
-                      Recordatorios de check-in
-                    </label>
-                  </div>
-
-                  <div className="flex items-center">
-                    <input
-                      id="maintenanceAlerts"
-                      type="checkbox"
-                      checked={settings.notifications.maintenanceAlerts}
-                      onChange={(e) => updateSetting('notifications', 'maintenanceAlerts', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="maintenanceAlerts" className="ml-2 block text-sm text-gray-900">
-                      Alertas de mantenimiento
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Facturación */}
-          {activeTab === 'billing' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Configuración de Facturación</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Prefijo de facturas
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.billing.invoicePrefix}
-                      onChange={(e) => updateSetting('billing', 'invoicePrefix', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="INV"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Prefijo de recibos
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.billing.receiptPrefix}
-                      onChange={(e) => updateSetting('billing', 'receiptPrefix', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="REC"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tasa de impuesto (%)
-                    </label>
-                    <input
-                      type="number"
-                      value={settings.billing.taxRate}
-                      onChange={(e) => updateSetting('billing', 'taxRate', parseFloat(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Términos de pago
-                    </label>
-                    <select
-                      value={settings.billing.paymentTerms}
-                      onChange={(e) => updateSetting('billing', 'paymentTerms', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="immediate">Inmediato</option>
-                      <option value="net_15">Neto 15 días</option>
-                      <option value="net_30">Neto 30 días</option>
-                      <option value="net_60">Neto 60 días</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-4">
-                  <div className="flex items-center">
-                    <input
-                      id="includeIgv"
-                      type="checkbox"
-                      checked={settings.billing.includeIgv}
-                      onChange={(e) => updateSetting('billing', 'includeIgv', e.target.checked)}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="includeIgv" className="ml-2 block text-sm text-gray-900">
-                      Incluir IGV en facturas
-                    </label>
-                  </div>
-
                   <div className="flex items-center">
                     <input
                       id="autoInvoice"
@@ -665,7 +349,7 @@ const AdminSettings = () => {
                       type="number"
                       value={settings.security.passwordMinLength}
                       onChange={(e) => updateSetting('security', 'passwordMinLength', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       min="6"
                       max="32"
                     />
@@ -679,7 +363,7 @@ const AdminSettings = () => {
                       type="number"
                       value={settings.security.sessionTimeout}
                       onChange={(e) => updateSetting('security', 'sessionTimeout', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       min="30"
                       max="1440"
                     />
@@ -693,7 +377,7 @@ const AdminSettings = () => {
                       type="number"
                       value={settings.security.maxLoginAttempts}
                       onChange={(e) => updateSetting('security', 'maxLoginAttempts', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       min="3"
                       max="10"
                     />
@@ -765,14 +449,19 @@ const AdminSettings = () => {
           <div className="flex items-center">
             <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
             <span className="text-sm text-gray-700">
-              Configuraciones sincronizadas - Última actualización: {new Date().toLocaleString('es-PE')}
+              {lastSaved ? (
+                `Configuraciones guardadas - ${lastSaved.toLocaleString('es-PE')}`
+              ) : (
+                `Sistema inicializado - ${new Date().toLocaleString('es-PE')}`
+              )}
             </span>
           </div>
           <button
             onClick={loadSettings}
-            className="text-sm text-blue-600 hover:text-blue-700 flex items-center"
+            disabled={loading}
+            className="text-sm text-blue-600 hover:text-blue-700 flex items-center disabled:opacity-50"
           >
-            <RefreshCw className="h-4 w-4 mr-1" />
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
             Recargar
           </button>
         </div>
@@ -781,4 +470,4 @@ const AdminSettings = () => {
   );
 };
 
-export default AdminSettings;
+export default AdminSettings

@@ -622,7 +622,7 @@ export const adminService = {
   },
 
   // =====================================================
-  // 🔧 SERVICIOS DE CONFIGURACIÓN DEL SISTEMA
+  // 🔧 SERVICIOS DE CONFIGURACIÓN DEL SISTEMA - CORREGIDO
   // =====================================================
   
   async getSystemSettings(branchId = null) {
@@ -662,9 +662,23 @@ export const adminService = {
     }
   },
 
+  // ✅ FUNCIÓN AGREGADA: getHotelSettings (alias para getSystemSettings)
+  async getHotelSettings(branchId = null) {
+    try {
+      console.log('🏨 Fetching hotel settings...', branchId ? `for branch ${branchId}` : 'global')
+      
+      // Simplemente llamar a getSystemSettings ya que hacen lo mismo
+      return await this.getSystemSettings(branchId)
+      
+    } catch (error) {
+      console.error('❌ Error in getHotelSettings:', error)
+      return { data: [], error }
+    }
+  },
+
   async updateSystemSetting(branchId, settingKey, settingValue, userId) {
     try {
-      console.log('⚙️ Updating system setting:', settingKey)
+      console.log('⚙️ Updating system setting:', settingKey, '=', settingValue)
       
       const { data, error } = await supabase
         .from('hotel_settings')
@@ -690,6 +704,62 @@ export const adminService = {
       
     } catch (error) {
       console.error('❌ Error in updateSystemSetting:', error)
+      return { data: null, error }
+    }
+  },
+
+  // ✅ FUNCIÓN AGREGADA: updateHotelSettings (procesar múltiples configuraciones)
+  async updateHotelSettings(settingsArray) {
+    try {
+      console.log('🏨 Updating hotel settings in batch...', settingsArray?.length || 0, 'settings')
+      
+      if (!settingsArray || !Array.isArray(settingsArray)) {
+        throw new Error('Settings array is required')
+      }
+
+      const results = []
+      const errors = []
+
+      // Procesar configuraciones una por una
+      for (const setting of settingsArray) {
+        try {
+          const result = await this.updateSystemSetting(
+            setting.branch_id,
+            setting.setting_key,
+            setting.setting_value,
+            setting.updated_by || null
+          )
+          
+          if (result.error) {
+            errors.push({
+              setting: setting.setting_key,
+              error: result.error
+            })
+          } else {
+            results.push(result.data)
+          }
+        } catch (err) {
+          errors.push({
+            setting: setting.setting_key,
+            error: err
+          })
+        }
+      }
+
+      if (errors.length > 0) {
+        console.warn('⚠️ Some settings failed to save:', errors)
+        return { 
+          data: results, 
+          error: `${errors.length} configuraciones fallaron al guardarse`,
+          errors: errors
+        }
+      }
+
+      console.log('✅ All hotel settings updated successfully:', results.length)
+      return { data: results, error: null }
+      
+    } catch (error) {
+      console.error('❌ Error in updateHotelSettings:', error)
       return { data: null, error }
     }
   },
