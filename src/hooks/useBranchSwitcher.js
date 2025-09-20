@@ -1,7 +1,7 @@
-// src/hooks/useBranchSwitcher.js - HOOK PARA CAMBIO DE SUCURSAL
+// src/hooks/useBranchSwitcher.js - HOOK PARA CAMBIO DE SUCURSAL - CORREGIDO
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { branchService } from '../lib/supabase'
+import { branchService } from '../lib/branchService' // ✅ CORRECCIÓN: Importar desde branchService.js
 import { useErrorHandler } from './useErrorHandler'
 import toast from 'react-hot-toast'
 
@@ -11,7 +11,6 @@ export const useBranchSwitcher = () => {
   const [loading, setLoading] = useState(false)
   const [switching, setSwitching] = useState(false)
   const [branchStats, setBranchStats] = useState({})
-  const [availableBranches, setAvailableBranches] = useState([])
 
   // ✅ Obtener sucursales disponibles para el usuario
   const userBranches = useMemo(() => getUserBranches(), [userInfo])
@@ -30,10 +29,23 @@ export const useBranchSwitcher = () => {
         userBranches.map(async (branch) => {
           try {
             const { data, error } = await branchService.getBranchStats(branch.id)
-            if (!error) {
+            if (!error && data) {
               stats[branch.id] = {
                 ...data,
                 branchInfo: branch
+              }
+            } else {
+              // Datos por defecto si hay error
+              stats[branch.id] = {
+                totalRooms: 0,
+                occupiedRooms: 0,
+                availableRooms: 0,
+                todayRevenue: 0,
+                occupancyRate: 0,
+                todayCheckins: 0,
+                todayCheckouts: 0,
+                branchInfo: branch,
+                error: true
               }
             }
           } catch (error) {
@@ -45,6 +57,8 @@ export const useBranchSwitcher = () => {
               availableRooms: 0,
               todayRevenue: 0,
               occupancyRate: 0,
+              todayCheckins: 0,
+              todayCheckouts: 0,
               branchInfo: branch,
               error: true
             }
@@ -53,7 +67,9 @@ export const useBranchSwitcher = () => {
       )
 
       setBranchStats(stats)
+      console.log('✅ Branch stats loaded:', Object.keys(stats).length, 'branches')
     } catch (error) {
+      console.error('❌ Error loading branch stats:', error)
       handleError(error, 'branchStats', {
         context: 'Cargando estadísticas de sucursales',
         showToast: false
@@ -63,7 +79,7 @@ export const useBranchSwitcher = () => {
     }
   }, [userBranches, handleError])
 
-  // ✅ Cambiar sucursal primaria
+  // ✅ Cambiar sucursal primaria - FUNCIÓN CORREGIDA
   const switchToBranch = useCallback(async (branchId) => {
     if (!branchId || branchId === currentBranch?.id) {
       return { success: false, message: 'Ya estás en esa sucursal' }
@@ -80,10 +96,12 @@ export const useBranchSwitcher = () => {
       setSwitching(true)
       console.log('🔄 Cambiando a sucursal:', branchId)
 
-      // Actualizar la sucursal primaria en la base de datos
+      // ✅ CORRECCIÓN: Usar branchService.setPrimaryBranch correctamente
       const { data, error } = await branchService.setPrimaryBranch(userInfo.id, branchId)
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       // Refrescar información del usuario para obtener la nueva sucursal primaria
       await refreshUserInfo()
@@ -100,10 +118,16 @@ export const useBranchSwitcher = () => {
       return { success: true, data }
     } catch (error) {
       console.error('❌ Error cambiando sucursal:', error)
+      
+      // Mostrar error específico
+      const errorMessage = error?.message || 'Error desconocido al cambiar sucursal'
+      toast.error(`Error: ${errorMessage}`)
+      
       handleError(error, 'switchBranch', {
         context: 'Cambiando sucursal',
-        showToast: true
+        showToast: false // Ya mostramos el toast arriba
       })
+      
       return { success: false, error }
     } finally {
       setSwitching(false)
@@ -127,10 +151,10 @@ export const useBranchSwitcher = () => {
 
   // ✅ Efecto para cargar estadísticas cuando cambian las sucursales
   useEffect(() => {
-    if (userBranches.length > 0 && isAdmin()) {
+    if (userBranches.length > 0) {
       loadBranchStats()
     }
-  }, [userBranches, isAdmin, loadBranchStats])
+  }, [userBranches, loadBranchStats])
 
   // ✅ Datos procesados para la interfaz
   const processedBranches = useMemo(() => {
@@ -147,6 +171,8 @@ export const useBranchSwitcher = () => {
           availableRooms: 0,
           todayRevenue: 0,
           occupancyRate: 0,
+          todayCheckins: 0,
+          todayCheckouts: 0,
           loading: loading
         },
         occupancyPercentage: stats ? 

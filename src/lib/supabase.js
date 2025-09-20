@@ -11,6 +11,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+
 // =====================================================
 // 🔐 SERVICIOS DE AUTENTICACIÓN
 // =====================================================
@@ -4272,6 +4273,12 @@ export const db = {
 }
 
 // =====================================================
+// 🏢 IMPORTAR Y EXPORTAR BRANCH SERVICE
+// =====================================================
+import { branchService as externalBranchService } from './branchService'
+
+
+// =====================================================
 // 🔄 EXPORT PRINCIPAL ACTUALIZADO
 // =====================================================
 export default {
@@ -4290,5 +4297,7 @@ export default {
   utilityService,
   realtimeService,
   branchService,
+  branchService: externalBranchService, 
   db
 }
+
