@@ -30,7 +30,7 @@ const Layout = ({ children }) => {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
-  const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false)
+  //const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false)
   
   // ✅ Refs para manejar clicks fuera del dropdown
   const profileDropdownRef = useRef(null)
@@ -358,11 +358,6 @@ const Layout = ({ children }) => {
         </main>
       </div>
 
-      {/* ✅ Modal de cambio de sucursal */}
-      <BranchSwitcherModal 
-        isOpen={branchSwitcherOpen}
-        onClose={() => setBranchSwitcherOpen(false)}
-      />
     </div>
   )
 }
