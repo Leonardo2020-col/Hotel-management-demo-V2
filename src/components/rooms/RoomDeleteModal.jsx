@@ -1,4 +1,4 @@
-// components/rooms/RoomDeleteModal.jsx
+// components/rooms/RoomDeleteModal.jsx - ELIMINACIÓN PERMANENTE
 import React from 'react'
 import { AlertTriangle, X, Trash2 } from 'lucide-react'
 
@@ -25,7 +25,7 @@ const RoomDeleteModal = ({
               <AlertTriangle className="h-6 w-6 text-red-600" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900">
-              Eliminar Habitación
+              Eliminar Habitación Permanentemente
             </h3>
           </div>
           <button
@@ -40,7 +40,7 @@ const RoomDeleteModal = ({
         {/* Contenido */}
         <div className="mb-6">
           <p className="text-gray-600 mb-4">
-            ¿Estás seguro de que deseas eliminar la habitación{' '}
+            ¿Estás seguro de que deseas eliminar <strong>permanentemente</strong> la habitación{' '}
             <span className="font-semibold text-gray-900">
               {room.room_number}
             </span>
@@ -75,15 +75,30 @@ const RoomDeleteModal = ({
             )}
           </div>
 
-          {/* Advertencia */}
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          {/* Advertencia de eliminación permanente */}
+          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
             <div className="flex">
-              <AlertTriangle className="h-5 w-5 text-red-400 mr-2 flex-shrink-0 mt-0.5" />
+              <AlertTriangle className="h-5 w-5 text-red-400 mr-3 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-red-700">
-                <p className="font-medium mb-1">Esta acción no se puede deshacer</p>
-                <p>
-                  La habitación será marcada como inactiva y ya no aparecerá en las 
-                  listas principales, pero se mantendrán los registros históricos.
+                <p className="font-medium mb-2">⚠️ ELIMINACIÓN PERMANENTE</p>
+                <ul className="space-y-1 text-xs">
+                  <li>• La habitación será eliminada completamente de la base de datos</li>
+                  <li>• Esta acción NO se puede deshacer</li>
+                  <li>• Se perderán todos los datos asociados</li>
+                  <li>• Si tiene reservaciones o historial, la eliminación será bloqueada</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Consejos */}
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex">
+              <div className="text-sm text-blue-700">
+                <p className="font-medium mb-1">💡 Alternativa recomendada:</p>
+                <p className="text-xs">
+                  Si solo necesitas ocultar temporalmente la habitación, considera cambiar su estado 
+                  a "Fuera de servicio" en lugar de eliminarla.
                 </p>
               </div>
             </div>
@@ -114,7 +129,7 @@ const RoomDeleteModal = ({
             ) : (
               <>
                 <Trash2 className="h-4 w-4 mr-2" />
-                Eliminar Habitación
+                Eliminar Permanentemente
               </>
             )}
           </button>
