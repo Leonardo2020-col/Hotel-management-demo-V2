@@ -92,6 +92,12 @@ const BranchSwitcherModal = ({ isOpen, onClose }) => {
     }
   }
 
+  const formatAddress = (address) => {
+    if (!address) return 'Sin dirección'
+    const parts = address.split(',')
+    return parts[0]?.trim() || 'Sin dirección'
+  }
+
   const getOccupancyColor = (percentage) => {
     if (percentage >= 80) return 'bg-green-100 text-green-800'
     if (percentage >= 60) return 'bg-yellow-100 text-yellow-800'
