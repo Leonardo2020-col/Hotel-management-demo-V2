@@ -64,45 +64,58 @@ export const authService = {
   },
 
   async getUserInfo(authUserId) {
-    try {
-      console.log('📋 Obteniendo info del usuario desde DB:', authUserId)
-      
-      const { data, error } = await supabase
-        .from('users')
-        .select(`
-          *,
-          role:role_id(id, name, permissions),
-          user_branches!inner(
-            branch_id,
-            is_primary,
-            branch:branch_id(id, name, is_active)
+  try {
+    console.log('📋 Obteniendo info del usuario desde DB:', authUserId)
+    
+    const { data, error } = await supabase
+      .from('users')
+      .select(`
+        *,
+        role:role_id(id, name, permissions),
+        user_branches!inner(
+          branch_id,
+          is_primary,
+          branch:branch_id(
+            id, 
+            name, 
+            address, 
+            phone, 
+            email, 
+            manager_name,
+            is_active
           )
-        `)
-        .eq('auth_id', authUserId)
-        .eq('is_active', true)
-        .single()
+        )
+      `)
+      .eq('auth_id', authUserId)
+      .eq('is_active', true)
+      .single()
 
-      if (error) {
-        console.error('❌ Error obteniendo usuario de DB:', error)
-        throw error
-      }
-
-      if (!data) {
-        throw new Error('Usuario no encontrado en la base de datos')
-      }
-
-      console.log('✅ Info del usuario obtenida:', {
-        name: `${data.first_name} ${data.last_name}`,
-        role: data.role?.name,
-        branches: data.user_branches?.length
-      })
-
-      return data
-    } catch (error) {
-      console.error('❌ Error en getUserInfo:', error)
+    if (error) {
+      console.error('❌ Error obteniendo usuario de DB:', error)
       throw error
     }
-  },
+
+    if (!data) {
+      throw new Error('Usuario no encontrado en la base de datos')
+    }
+
+    console.log('✅ Info del usuario obtenida:', {
+      name: `${data.first_name} ${data.last_name}`,
+      role: data.role?.name,
+      branches: data.user_branches?.length,
+      // Debug: verificar que address llegue
+      branchesWithAddress: data.user_branches?.map(ub => ({
+        name: ub.branch?.name,
+        address: ub.branch?.address
+      }))
+    })
+
+    return data
+  } catch (error) {
+    console.error('❌ Error en getUserInfo:', error)
+    throw error
+  }
+},
 
   async getCurrentSession() {
     try {
