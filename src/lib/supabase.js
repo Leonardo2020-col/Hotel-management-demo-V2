@@ -3708,11 +3708,13 @@ export const suppliesService = {
           created_at,
           updated_at,
           branch_id,
-          supply_categories!inner(
+          category_id,
+          supplier_id,
+          supply_categories:category_id(
             id,
             name
           ),
-          suppliers(
+          suppliers:supplier_id(
             id,
             name,
             contact_person,
@@ -3722,7 +3724,7 @@ export const suppliesService = {
         .eq('branch_id', branchId)
         .eq('is_active', true)
 
-      // Aplicar filtros
+      // ✅ CORRECCIÓN: Usar category_id en lugar de supply_categories
       if (filters.category) {
         query = query.eq('category_id', filters.category)
       }
@@ -3744,7 +3746,7 @@ export const suppliesService = {
 
       console.log('✅ Supplies fetched for branch:', rawData?.length || 0)
 
-      // Aplicar filtro de stock bajo en JavaScript (más confiable)
+      // Aplicar filtro de stock bajo en JavaScript
       let filteredData = rawData || []
       
       if (filters.lowStock) {
@@ -3774,6 +3776,7 @@ export const suppliesService = {
     }
   },
 
+  // ✅ Obtener alertas por sucursal - CORREGIDO
   async getAlertsByBranch(branchId) {
     try {
       console.log('🚨 Fetching alerts for branch:', branchId)
@@ -3799,7 +3802,7 @@ export const suppliesService = {
             current_stock,
             minimum_stock,
             branch_id,
-            supply_categories(name)
+            supply_categories:category_id(name)
           )
         `)
         .eq('supplies.branch_id', branchId)
@@ -3973,33 +3976,45 @@ export const suppliesService = {
     }
   },
 
-  // ✅ Crear nuevo suministro
+  // ✅ Crear suministro - CORREGIDO
   async createSupply(supplyData) {
     try {
-      console.log('➕ Creating supply with branch:', supplyData)
+      console.log('➕ Creating supply with data:', supplyData)
       
       if (!supplyData.branchId) {
         throw new Error('Branch ID es requerido para crear suministro')
       }
 
+      const insertData = {
+        branch_id: supplyData.branchId,
+        name: supplyData.name,
+        unit_of_measure: supplyData.unitOfMeasure,
+        minimum_stock: supplyData.minimumStock || 0,
+        current_stock: supplyData.currentStock || 0,
+        unit_cost: supplyData.unitCost || 0,
+        sku: supplyData.sku || null,
+        is_active: true
+      }
+
+      // ✅ CORRECCIÓN: Solo agregar category_id si existe
+      if (supplyData.categoryId) {
+        insertData.category_id = supplyData.categoryId
+      }
+
+      // ✅ CORRECCIÓN: Solo agregar supplier_id si existe  
+      if (supplyData.supplierId) {
+        insertData.supplier_id = supplyData.supplierId
+      }
+
+      console.log('📤 Final insert data:', insertData)
+
       const { data, error } = await supabase
         .from('supplies')
-        .insert({
-          branch_id: supplyData.branchId,
-          name: supplyData.name,
-          category_id: supplyData.categoryId,
-          unit_of_measure: supplyData.unitOfMeasure,
-          minimum_stock: supplyData.minimumStock || 0,
-          current_stock: supplyData.currentStock || 0,
-          unit_cost: supplyData.unitCost || 0,
-          supplier_id: supplyData.supplierId || null,
-          sku: supplyData.sku || null,
-          is_active: true
-        })
+        .insert(insertData)
         .select(`
           *,
-          supply_categories!inner(name),
-          suppliers(name)
+          supply_categories:category_id(id, name),
+          suppliers:supplier_id(id, name)
         `)
         .single()
 
@@ -4008,7 +4023,7 @@ export const suppliesService = {
         throw error
       }
 
-      console.log('✅ Supply created with branch:', data.name)
+      console.log('✅ Supply created successfully:', data.name)
       return { data, error: null }
     } catch (error) {
       console.error('❌ Error in createSupply:', error)
@@ -4016,22 +4031,42 @@ export const suppliesService = {
     }
   },
 
-  // ✅ Actualizar suministro
+  // ✅ Actualizar suministro - CORREGIDO
   async updateSupply(supplyId, updateData) {
     try {
       console.log('🔄 Updating supply:', { supplyId, updateData })
       
+      const updateFields = {
+        updated_at: new Date().toISOString()
+      }
+
+      // ✅ CORRECCIÓN: Mapear campos correctamente
+      if (updateData.name) updateFields.name = updateData.name
+      if (updateData.unitOfMeasure) updateFields.unit_of_measure = updateData.unitOfMeasure
+      if (updateData.minimumStock !== undefined) updateFields.minimum_stock = updateData.minimumStock
+      if (updateData.currentStock !== undefined) updateFields.current_stock = updateData.currentStock
+      if (updateData.unitCost !== undefined) updateFields.unit_cost = updateData.unitCost
+      if (updateData.sku !== undefined) updateFields.sku = updateData.sku
+      
+      // ✅ CORRECCIÓN: Manejar categoryId y supplierId correctamente
+      if (updateData.categoryId !== undefined) {
+        updateFields.category_id = updateData.categoryId || null
+      }
+      
+      if (updateData.supplierId !== undefined) {
+        updateFields.supplier_id = updateData.supplierId || null
+      }
+
+      console.log('📤 Update fields:', updateFields)
+
       const { data, error } = await supabase
         .from('supplies')
-        .update({
-          ...updateData,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateFields)
         .eq('id', supplyId)
         .select(`
           *,
-          supply_categories!inner(name),
-          suppliers(name)
+          supply_categories:category_id(id, name),
+          suppliers:supplier_id(id, name)
         `)
         .single()
 
@@ -4047,6 +4082,7 @@ export const suppliesService = {
       return { data: null, error }
     }
   },
+
 
   // ✅ Eliminar suministro
   async deleteSupply(supplyId) {
