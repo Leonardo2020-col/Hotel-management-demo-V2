@@ -203,24 +203,64 @@ const Rooms = () => {
     try {
       setIsSubmitting(true)
       
+      // Verificar si la habitación tiene reservaciones activas o historial
+      const { data: reservations, error: checkError } = await supabase
+        .from('reservations')
+        .select('id, reservation_code, check_in_date')
+        .eq('room_id', roomId)
+        .limit(5)
+
+      if (checkError) {
+        console.warn('Warning checking reservations:', checkError)
+      }
+
+      // Si tiene reservaciones, mostrar advertencia
+      if (reservations && reservations.length > 0) {
+        const reservationCodes = reservations.map(r => r.reservation_code).join(', ')
+        toast.error(`No se puede eliminar: la habitación tiene ${reservations.length} reservación(es) asociada(s): ${reservationCodes}`)
+        setIsSubmitting(false)
+        return
+      }
+
+      // Verificar si tiene quick checkins
+      const { data: quickCheckins, error: quickCheckError } = await supabase
+        .from('quick_checkins')
+        .select('id, guest_name')
+        .eq('room_id', roomId)
+        .limit(3)
+
+      if (quickCheckError) {
+        console.warn('Warning checking quick checkins:', quickCheckError)
+      }
+
+      if (quickCheckins && quickCheckins.length > 0) {
+        toast.error(`No se puede eliminar: la habitación tiene ${quickCheckins.length} check-in(s) rápido(s) asociado(s)`)
+        setIsSubmitting(false)
+        return
+      }
+
+      // Proceder con la eliminación completa
       const { error } = await supabase
         .from('rooms')
-        .update({ 
-          is_active: false,
-          updated_at: new Date().toISOString()
-        })
+        .delete()
         .eq('id', roomId)
 
       if (error) throw error
 
-      toast.success('Habitación eliminada exitosamente')
+      toast.success('Habitación eliminada completamente de la base de datos')
       setIsDeleteModalOpen(false)
       setSelectedRoom(null)
       await fetchRooms()
       
     } catch (error) {
       console.error('Error deleting room:', error)
-      toast.error('Error al eliminar habitación')
+      
+      // Manejar errores específicos
+      if (error.code === '23503') {
+        toast.error('No se puede eliminar: la habitación tiene registros relacionados')
+      } else {
+        toast.error('Error al eliminar habitación: ' + error.message)
+      } 
     } finally {
       setIsSubmitting(false)
     }
