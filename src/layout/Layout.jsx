@@ -124,13 +124,6 @@ const Layout = ({ children }) => {
       icon: Settings,
       current: isCurrentPath('/admin'),
       description: 'Configuración del sistema'
-    },
-    {
-      name: 'Cambiar Sucursal',
-      href: '/admin/branch-switcher',
-      icon: Building,
-      current: isCurrentPath('/admin/branch-switcher'),
-      description: 'Gestión de sucursales'
     }
   ]
 
