@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import { branchService } from '../lib/branchService'
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
@@ -3482,6 +3481,53 @@ export const branchService = {
       console.error(`Error fetching stats for branch ${branchId}:`, error)
       return { data: null, error }
     }
+  },
+
+  // ✅ FUNCIÓN FALTANTE setPrimaryBranch
+  async setPrimaryBranch(userId, newBranchId) {
+    try {
+      console.log('🔄 Cambiando sucursal primaria:', { userId, newBranchId })
+
+      // Primero verificar que el usuario tenga acceso a esa sucursal
+      const { data: userBranch, error: checkError } = await supabase
+        .from('user_branches')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('branch_id', newBranchId)
+        .single()
+
+      if (checkError || !userBranch) {
+        throw new Error('Usuario no tiene acceso a esa sucursal')
+      }
+
+      // Remover flag primary de todas las sucursales del usuario
+      const { error: resetError } = await supabase
+        .from('user_branches')
+        .update({ is_primary: false })
+        .eq('user_id', userId)
+
+      if (resetError) throw resetError
+
+      // Establecer la nueva sucursal como primaria
+      const { data, error: setPrimaryError } = await supabase
+        .from('user_branches')
+        .update({ is_primary: true })
+        .eq('user_id', userId)
+        .eq('branch_id', newBranchId)
+        .select(`
+          *,
+          branch:branch_id(id, name, address, is_active)
+        `)
+        .single()
+
+      if (setPrimaryError) throw setPrimaryError
+
+      console.log('✅ Sucursal primaria actualizada:', data)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error setting primary branch:', error)
+      return { data: null, error }
+    }
   }
 }
 
@@ -4293,12 +4339,11 @@ export default {
   statsService,
   reportService,
   quickCheckinService,
-  snackService, 
-  suppliesService, 
+  snackService,
+  suppliesService,
   utilityService,
   realtimeService,
   branchService,
-  branchService: externalBranchService, 
   db
 }
 
