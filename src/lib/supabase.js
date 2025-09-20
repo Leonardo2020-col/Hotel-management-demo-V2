@@ -1722,14 +1722,78 @@ export const paymentService = {
 // 🍿 SERVICIOS DE SNACKS (CORREGIDO)
 // =====================================================
 export const snackService = {
+
+  // ✅ Obtener snacks por sucursal
+  async getSnackItemsByBranch(branchId) {
+    try {
+      console.log('🍿 Loading snack items for branch:', branchId)
+      
+      if (!branchId) {
+        throw new Error('Branch ID es requerido')
+      }
+      
+      const { data, error } = await supabase
+        .from('snack_items')
+        .select(`
+          id,
+          name,
+          price,
+          cost,
+          stock,
+          minimum_stock,
+          is_active,
+          category_id,
+          branch_id,
+          created_at,
+          updated_at,
+          snack_category:category_id(
+            id,
+            name
+          )
+        `)
+        .eq('branch_id', branchId)
+        .eq('is_active', true)
+        .order('name')
+
+      if (error) {
+        console.error('❌ Error loading snack items by branch:', error)
+        throw error
+      }
+
+      console.log('✅ Snack items loaded for branch:', data?.length || 0)
+
+      // Enriquecer datos
+      const enrichedData = (data || []).map(item => ({
+        ...item,
+        category_name: item.snack_category?.name || 'Sin categoría',
+        category_slug: this.generateCategorySlug(item.snack_category?.name),
+        in_stock: item.stock > 0,
+        low_stock: item.stock <= item.minimum_stock,
+        stock_percentage: item.minimum_stock > 0 
+          ? Math.round((item.stock / item.minimum_stock) * 100) 
+          : 100,
+        formatted_price: new Intl.NumberFormat('es-PE', {
+          style: 'currency',
+          currency: 'PEN'
+        }).format(item.price),
+        stock_status: this.getStockStatus(item.stock, item.minimum_stock)
+      }))
+      
+      return { data: enrichedData, error: null }
+    } catch (error) {
+      console.error('❌ Error fetching snack items by branch:', error)
+      return { data: [], error }
+    }
+  },
+
   // Obtener categorías de snacks
   async getSnackCategories() {
     try {
-      console.log('🏷️ Loading snack categories from database...')
+      console.log('🏷️ Loading snack categories...')
       
       const { data, error } = await supabase
         .from('snack_categories')
-        .select('id, name, is_active, created_at') // ✅ Solo campos que existen
+        .select('id, name, is_active, created_at')
         .eq('is_active', true)
         .order('name')
 
@@ -1746,7 +1810,6 @@ export const snackService = {
     }
   },
 
-  
   async getSnackItems() {
   try {
     console.log('🍿 Loading snack items from database...')
@@ -1844,19 +1907,25 @@ export const snackService = {
     }
   },
 
-  // Crear nuevo item de snack
+  // ✅ Crear snack con branch_id
   async createSnackItem(itemData) {
     try {
+      console.log('🍿 Creating snack item with branch:', itemData)
+      
+      if (!itemData.branchId) {
+        throw new Error('Branch ID es requerido para crear snack')
+      }
+
       const { data, error } = await supabase
         .from('snack_items')
         .insert({
+          branch_id: itemData.branchId,
           name: itemData.name,
           category_id: itemData.categoryId,
           price: itemData.price,
           cost: itemData.cost || 0,
           stock: itemData.stock || 0,
           minimum_stock: itemData.minimumStock || 0,
-          description: itemData.description || null,
           is_active: true
         })
         .select(`
@@ -1865,10 +1934,15 @@ export const snackService = {
         `)
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error creating snack item:', error)
+        throw error
+      }
+
+      console.log('✅ Snack item created with branch:', data.name)
       return { data, error: null }
     } catch (error) {
-      console.error('❌ Error creating snack item:', error)
+      console.error('❌ Error in createSnackItem:', error)
       return { data: null, error }
     }
   },
@@ -1902,7 +1976,6 @@ export const snackService = {
       const updates = []
       
       for (const snack of snacksConsumed) {
-        // Obtener stock actual
         const { data: currentItem, error: fetchError } = await supabase
           .from('snack_items')
           .select('stock')
@@ -1914,10 +1987,8 @@ export const snackService = {
           continue
         }
 
-        // Calcular nuevo stock
         const newStock = Math.max(0, (currentItem.stock || 0) - snack.quantity)
         
-        // Actualizar stock
         const { data, error } = await supabase
           .from('snack_items')
           .update({ 
@@ -2042,66 +2113,66 @@ export const snackService = {
   },
 
   async updateSnackItem(snackId, updateData) {
-  try {
-    console.log('🔄 Updating snack item:', { snackId, updateData })
-    
-    const { data, error } = await supabase
-      .from('snack_items')
-      .update({
-        name: updateData.name,
-        category_id: updateData.categoryId,
-        price: updateData.price,
-        cost: updateData.cost || 0,
-        stock: updateData.stock,
-        minimum_stock: updateData.minimumStock || 0,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', snackId)
-      .select(`
-        *,
-        snack_category:category_id(name)
-      `)
-      .single()
+    try {
+      console.log('🔄 Updating snack item:', { snackId, updateData })
+      
+      const { data, error } = await supabase
+        .from('snack_items')
+        .update({
+          name: updateData.name,
+          category_id: updateData.categoryId,
+          price: updateData.price,
+          cost: updateData.cost || 0,
+          stock: updateData.stock,
+          minimum_stock: updateData.minimumStock || 0,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', snackId)
+        .select(`
+          *,
+          snack_category:category_id(name)
+        `)
+        .single()
 
-    if (error) {
-      console.error('❌ Error updating snack item:', error)
-      throw error
+      if (error) {
+        console.error('❌ Error updating snack item:', error)
+        throw error
+      }
+
+      console.log('✅ Snack item updated successfully:', data.name)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in updateSnackItem:', error)
+      return { data: null, error }
     }
-
-    console.log('✅ Snack item updated successfully:', data.name)
-    return { data, error: null }
-  } catch (error) {
-    console.error('❌ Error in updateSnackItem:', error)
-    return { data: null, error }
-  }
-},
+  },
 
 // Crear categoría de snack
 async createSnackCategory(categoryData) {
-  try {
-    console.log('🏷️ Creating snack category:', categoryData)
-    
-    const { data, error } = await supabase
-      .from('snack_categories')
-      .insert({
-        name: categoryData.name,
-        is_active: true
-      })
-      .select()
-      .single()
+    try {
+      console.log('🏷️ Creating snack category:', categoryData)
+      
+      const { data, error } = await supabase
+        .from('snack_categories')
+        .insert({
+          name: categoryData.name,
+          is_active: true
+        })
+        .select()
+        .single()
 
-    if (error) {
-      console.error('❌ Error creating snack category:', error)
-      throw error
+      if (error) {
+        console.error('❌ Error creating snack category:', error)
+        throw error
+      }
+
+      console.log('✅ Snack category created successfully:', data.name)
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in createSnackCategory:', error)
+      return { data: null, error }
     }
-
-    console.log('✅ Snack category created successfully:', data.name)
-    return { data, error: null }
-  } catch (error) {
-    console.error('❌ Error in createSnackCategory:', error)
-    return { data: null, error }
   }
-}
 }
 
 // =====================================================
@@ -2109,9 +2180,9 @@ async createSnackCategory(categoryData) {
 // =====================================================
 export const quickCheckinService = {
   // Obtener todos los datos necesarios para el dashboard de check-in
-  async getQuickCheckinDashboardData() {
+  async getQuickCheckinDashboardData(branchId = null) {
     try {
-      console.log('🔄 Loading quick checkin dashboard data...')
+      console.log('🔄 Loading quick checkin dashboard data for branch:', branchId)
       
       const [
         roomsResult,
@@ -2120,16 +2191,17 @@ export const quickCheckinService = {
         snackItemsResult,
         paymentMethodsResult
       ] = await Promise.all([
-        this.getRoomsWithStatus(),
-        this.getActiveQuickCheckins(),
+        branchId ? this.getRoomsByBranch(branchId) : this.getRoomsWithStatus(),
+        this.getActiveQuickCheckins(branchId),
         snackService.getSnackCategories(),
-        snackService.getSnackItems(),
+        branchId ? snackService.getSnackItemsByBranch(branchId) : snackService.getSnackItems(),
         paymentService.getPaymentMethods()
       ])
 
-      console.log('📊 Dashboard data loaded:', {
+      console.log('📊 Dashboard data loaded for branch:', {
+        branchId,
         rooms: roomsResult.data?.length || 0,
-        quickCheckins: quickCheckinsResult.data?.length || 0,
+        quickCheckins: Object.keys(quickCheckinsResult.data || {}).length,
         snackCategories: snackCategoriesResult.data?.length || 0,
         snackItems: snackItemsResult.data?.length || 0,
         paymentMethods: paymentMethodsResult.data?.length || 0
@@ -2137,7 +2209,7 @@ export const quickCheckinService = {
 
       return {
         rooms: roomsResult.data || [],
-        quickCheckins: quickCheckinsResult.data || [],
+        quickCheckins: quickCheckinsResult.data || {},
         snackCategories: snackCategoriesResult.data || [],
         snackItems: snackItemsResult.data || [],
         paymentMethods: paymentMethodsResult.data || [],
@@ -2147,12 +2219,50 @@ export const quickCheckinService = {
       console.error('❌ Error loading quick checkin dashboard data:', error)
       return {
         rooms: [],
-        quickCheckins: [],
+        quickCheckins: {},
         snackCategories: [],
         snackItems: [],
         paymentMethods: [],
         error
       }
+    }
+  },
+
+  // ✅ NUEVA: Obtener habitaciones por sucursal
+  async getRoomsByBranch(branchId) {
+    try {
+      console.log('🏨 Fetching rooms for branch:', branchId)
+      
+      const { data, error } = await supabase
+        .from('rooms')
+        .select(`
+          id,
+          room_number,
+          floor,
+          base_price,
+          description,
+          is_active,
+          room_status:status_id(
+            id,
+            status,
+            color,
+            is_available
+          )
+        `)
+        .eq('branch_id', branchId)
+        .eq('is_active', true)
+        .order('room_number')
+
+      if (error) {
+        console.error('❌ Error fetching rooms by branch:', error)
+        throw error
+      }
+      
+      console.log('✅ Rooms fetched for branch:', data?.length || 0)
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error in getRoomsByBranch:', error)
+      return { data: [], error }
     }
   },
 
@@ -2188,333 +2298,294 @@ export const quickCheckinService = {
 
   // Obtener quick checkins activos
   async getActiveQuickCheckins(branchId = null) {
-  try {
-    console.log('📋 Loading active quick checkins...', { branchId })
-    
-    let query = supabase
-      .from('quick_checkins')
-      .select(`
-        id,
-        branch_id,
-        room_id,
-        guest_name,
-        guest_document,
-        guest_phone,
-        check_in_date,
-        check_out_date,
-        amount,
-        snacks_consumed,
-        created_at,
-        created_by,
-        room:room_id(
+    try {
+      console.log('📋 Loading active quick checkins...', { branchId })
+      
+      let query = supabase
+        .from('quick_checkins')
+        .select(`
           id,
-          room_number,
-          floor,
-          base_price
-        ),
-        payment_method:payment_method_id(
-          id,
-          name
-        ),
-        branch:branch_id(
-          id,
-          name
-        )
-      `)
-      // ✅ CAMBIO CLAVE: Solo traer los que tienen check_out_date >= hoy
-      .gte('check_out_date', new Date().toISOString().split('T')[0])
-      .order('created_at', { ascending: false })
+          branch_id,
+          room_id,
+          guest_name,
+          guest_document,
+          guest_phone,
+          check_in_date,
+          check_out_date,
+          amount,
+          snacks_consumed,
+          created_at,
+          created_by,
+          room:room_id(
+            id,
+            room_number,
+            floor,
+            base_price
+          ),
+          payment_method:payment_method_id(
+            id,
+            name
+          ),
+          branch:branch_id(
+            id,
+            name
+          )
+        `)
+        .gte('check_out_date', new Date().toISOString().split('T')[0])
+        .order('created_at', { ascending: false })
 
-    // Filtrar por sucursal si se especifica
-    if (branchId) {
-      query = query.eq('branch_id', branchId)
-    }
+      // ✅ FILTRAR POR SUCURSAL SI SE ESPECIFICA
+      if (branchId) {
+        query = query.eq('branch_id', branchId)
+      }
 
-    const { data, error } = await query
+      const { data, error } = await query
 
-    if (error) {
-      console.error('❌ Error loading quick checkins:', error)
-      throw error
-    }
+      if (error) {
+        console.error('❌ Error loading quick checkins:', error)
+        throw error
+      }
 
-    console.log('✅ Quick checkins loaded:', data?.length || 0)
+      console.log('✅ Quick checkins loaded:', data?.length || 0)
 
-    const structuredData = {}
-    
-    if (data && Array.isArray(data)) {
-      data.forEach(checkin => {
-        const roomNumber = checkin.room?.room_number
-        if (roomNumber) {
-          const docParts = checkin.guest_document?.split(':') || ['DNI', '']
-          
-          structuredData[roomNumber] = {
-            id: checkin.id,
-            room: {
-              id: checkin.room.id,
-              number: roomNumber,
-              floor: checkin.room.floor,
-              base_price: checkin.room.base_price
-            },
-            guest_name: checkin.guest_name,
-            guest_document: checkin.guest_document,
-            guest_phone: checkin.guest_phone,
-            documentType: docParts[0],
-            documentNumber: docParts[1],
-            check_in_date: checkin.check_in_date,
-            check_out_date: checkin.check_out_date,
-            total_amount: checkin.amount,
-            room_rate: checkin.room?.base_price || 0,
-            confirmation_code: `QC-${checkin.id}-${checkin.created_at.slice(-4)}`,
-            payment_method: checkin.payment_method?.name,
-            branch_name: checkin.branch?.name,
-            created_at: checkin.created_at,
-            snacks_consumed: checkin.snacks_consumed || [],
-            isQuickCheckin: true
+      const structuredData = {}
+      
+      if (data && Array.isArray(data)) {
+        data.forEach(checkin => {
+          const roomNumber = checkin.room?.room_number
+          if (roomNumber) {
+            const docParts = checkin.guest_document?.split(':') || ['DNI', '']
+            
+            structuredData[roomNumber] = {
+              id: checkin.id,
+              room: {
+                id: checkin.room.id,
+                number: roomNumber,
+                floor: checkin.room.floor,
+                base_price: checkin.room.base_price
+              },
+              guest_name: checkin.guest_name,
+              guest_document: checkin.guest_document,
+              guest_phone: checkin.guest_phone,
+              documentType: docParts[0],
+              documentNumber: docParts[1],
+              check_in_date: checkin.check_in_date,
+              check_out_date: checkin.check_out_date,
+              total_amount: checkin.amount,
+              room_rate: checkin.room?.base_price || 0,
+              confirmation_code: `QC-${checkin.id}-${checkin.created_at.slice(-4)}`,
+              payment_method: checkin.payment_method?.name,
+              branch_name: checkin.branch?.name,
+              branch_id: checkin.branch_id, // ✅ INCLUIR BRANCH_ID
+              created_at: checkin.created_at,
+              snacks_consumed: checkin.snacks_consumed || [],
+              isQuickCheckin: true
+            }
           }
-        }
-      })
+        })
+      }
+
+      return { data: structuredData, error: null }
+
+    } catch (error) {
+      console.error('❌ Error in getActiveQuickCheckins:', error)
+      return { data: {}, error }
     }
-
-    return { data: structuredData, error: null }
-
-  } catch (error) {
-    console.error('❌ Error in getActiveQuickCheckins:', error)
-    return { data: {}, error }
-  }
-},
+  },
 
 
   // ✅ CREAR QUICK CHECKIN - VERSIÓN CORREGIDA CON SNACKS_CONSUMED
-async createQuickCheckin(roomData, guestData, snacksData = []) {
-  try {
-    console.log('🎯 Creating quick checkin...', {
-      room: roomData.room?.number || roomData.roomId,
-      guest: guestData.fullName,
-      snacks: snacksData.length,
-      snacksDetails: snacksData
-    })
+   async createQuickCheckin(roomData, guestData, snacksData = []) {
+    try {
+      console.log('🎯 Creating quick checkin...', {
+        room: roomData.room?.number || roomData.roomId,
+        guest: guestData.fullName,
+        snacks: snacksData.length
+      })
 
-    // ✅ VALIDACIONES
-    if (!guestData.fullName?.trim()) {
-      throw new Error('El nombre del huésped es obligatorio')
-    }
-
-    if (!roomData.roomId && !roomData.room?.id) {
-      throw new Error('ID de habitación es requerido')
-    }
-
-    const roomId = roomData.roomId || roomData.room?.id
-    const roomNumber = roomData.room?.number || roomData.room?.room_number || 'N/A'
-
-    // ✅ OBTENER USUARIO ACTUAL Y BRANCH_ID
-    const { data: { user } } = await supabase.auth.getUser()
-    let createdByUserId = null
-    let branchId = roomData.branchId
-
-    if (user) {
-      console.log('🔍 Auth user found:', user.id, user.email)
-      
-      const { data: internalUser, error: userError } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name, auth_id, user_branches!inner(branch_id, is_primary)')
-        .eq('auth_id', user.id)
-        .single()
-      
-      if (!userError && internalUser) {
-        createdByUserId = internalUser.id
-        
-        if (!branchId && internalUser.user_branches?.length > 0) {
-          const primaryBranch = internalUser.user_branches.find(ub => ub.is_primary)
-          branchId = primaryBranch?.branch_id || internalUser.user_branches[0]?.branch_id
-        }
-        
-        console.log('✅ Internal user found:', internalUser.email, 'ID:', createdByUserId, 'Branch:', branchId)
-      } else {
-        console.warn('⚠️ No internal user found for auth user:', user.email)
+      // Validaciones
+      if (!guestData.fullName?.trim()) {
+        throw new Error('El nombre del huésped es obligatorio')
       }
-    }
-    
-    // Si no se encuentra branch, usar el primero disponible
-    if (!branchId) {
-      const { data: firstBranch } = await supabase
-        .from('branches')
-        .select('id')
-        .eq('is_active', true)
-        .limit(1)
-        .single()
-      
-      branchId = firstBranch?.id
-    }
 
-    if (!branchId) {
-      throw new Error('No se pudo determinar la sucursal')
-    }
-
-    // ✅ PREPARAR SNACKS PARA LA BASE DE DATOS
-    console.log('🍿 Preparing snacks for database...', snacksData)
-    const snacksForDB = snacksData.map(snack => {
-      const snackData = {
-        id: snack.id,
-        name: snack.name,
-        quantity: snack.quantity || 1,
-        price: snack.price || 0,
-        total: (snack.price || 0) * (snack.quantity || 1)
+      if (!roomData.roomId && !roomData.room?.id) {
+        throw new Error('ID de habitación es requerido')
       }
-      console.log('📦 Snack prepared:', snackData)
-      return snackData
-    })
 
-    console.log('✅ All snacks prepared for DB:', snacksForDB)
+      const roomId = roomData.roomId || roomData.room?.id
 
-    // ✅ Obtener método de pago
-    let paymentMethodId = null
-    if (roomData.paymentMethod) {
-      const { data: paymentMethod } = await supabase
-        .from('payment_methods')
-        .select('id')
-        .eq('name', roomData.paymentMethod === 'cash' ? 'efectivo' : roomData.paymentMethod)
-        .single()
-      
-      paymentMethodId = paymentMethod?.id
-    }
-
-    // ✅ Calcular totales
-    const roomPrice = roomData.roomPrice || roomData.room?.base_price || 100
-    const snacksTotal = snacksForDB.reduce((total, snack) => total + (snack.total || 0), 0)
-    const totalAmount = roomPrice + snacksTotal
-
-    console.log('💰 Pricing breakdown:', {
-      roomPrice,
-      snacksTotal,
-      totalAmount,
-      snacksCount: snacksForDB.length
-    })
-
-    // ✅ Preparar datos del documento
-    const documentInfo = guestData.documentNumber 
-      ? `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`
-      : null
-    
-    // ✅ CORRECTO: Validar branchId obligatorio
-if (!branchId) {
-  throw new Error('Branch ID es requerido para crear quick checkin')
-}
-
-    // ✅ PREPARAR DATOS PARA INSERCIÓN
-    const insertData = {
-  branch_id: branchId,
-  room_id: roomId,
-  guest_name: guestData.fullName.trim(),
-      guest_document: documentInfo,
-      guest_phone: guestData.phone?.trim() || '',
-      check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
-      check_out_date: roomData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      amount: totalAmount,
-      payment_method_id: paymentMethodId,
-      snacks_consumed: snacksForDB // 🔥 CLAVE: INCLUIR SNACKS AQUÍ
-    }
-
-    if (createdByUserId) {
-      insertData.created_by = createdByUserId
-    }
-
-    console.log('📤 Final insert data with snacks:', {
-      ...insertData,
-      snacks_consumed_count: insertData.snacks_consumed?.length || 0
-    })
-
-    // ✅ INSERTAR EN QUICK_CHECKINS
-    const { data: quickCheckin, error: quickCheckinError } = await supabase
-      .from('quick_checkins')
-      .insert(insertData)
-      .select(`
-        id,
-        guest_name,
-        guest_document,
-        guest_phone,
-        check_in_date,
-        check_out_date,
-        amount,
-        snacks_consumed,
-        created_at,
-        room:room_id(id, room_number, floor),
-        payment_method:payment_method_id(name)
-      `)
-      .single()
-
-    if (quickCheckinError) {
-      console.error('❌ Error inserting quick checkin:', quickCheckinError)
-      throw new Error(`Error creando quick checkin: ${quickCheckinError.message}`)
-    }
-
-    console.log('✅ Quick checkin created in database with snacks:', {
-      id: quickCheckin.id,
-      snacks_count: quickCheckin.snacks_consumed?.length || 0,
-      snacks_data: quickCheckin.snacks_consumed
-    })
-
-    // ✅ ACTUALIZAR ESTADO DE LA HABITACIÓN
-    const { data: occupiedStatus } = await supabase
-      .from('room_status')
-      .select('id')
-      .eq('status', 'ocupada')
-      .single()
-
-    if (occupiedStatus) {
-      const { error: roomUpdateError } = await supabase
+      // ✅ OBTENER BRANCH_ID DESDE LA HABITACIÓN
+      const { data: roomInfo, error: roomError } = await supabase
         .from('rooms')
-        .update({ status_id: occupiedStatus.id })
+        .select('branch_id, room_number, base_price')
         .eq('id', roomId)
+        .single()
 
-      if (roomUpdateError) {
-        console.warn('⚠️ Warning updating room status:', roomUpdateError)
-      } else {
-        console.log('✅ Room status updated to occupied')
+      if (roomError || !roomInfo) {
+        throw new Error('Habitación no encontrada')
       }
+
+      const branchId = roomInfo.branch_id
+      console.log('✅ Branch ID obtenido desde habitación:', branchId)
+
+      // Obtener usuario actual
+      const { data: { user } } = await supabase.auth.getUser()
+      let createdByUserId = null
+
+      if (user) {
+        const { data: internalUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('auth_id', user.id)
+          .single()
+        
+        createdByUserId = internalUser?.id
+      }
+
+      // ✅ Obtener método de pago
+      let paymentMethodId = null
+      if (roomData.paymentMethod) {
+        const { data: paymentMethod } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .eq('name', roomData.paymentMethod === 'cash' ? 'efectivo' : roomData.paymentMethod)
+          .single()
+        
+        paymentMethodId = paymentMethod?.id
+      }
+
+      // ✅ Preparar snacks para la BD - SOLO SI HAY SNACKS
+      let snacksForDB = []
+      if (snacksData && snacksData.length > 0) {
+        // Verificar que los snacks pertenezcan a la misma sucursal
+        const snackIds = snacksData.map(s => s.id)
+        const { data: snackCheck } = await supabase
+          .from('snack_items')
+          .select('id, name, branch_id')
+          .in('id', snackIds)
+
+        const invalidSnacks = snackCheck?.filter(s => s.branch_id !== branchId)
+        if (invalidSnacks?.length > 0) {
+          console.warn('⚠️ Snacks de diferente sucursal detectados:', invalidSnacks)
+        }
+
+        snacksForDB = snacksData.map(snack => ({
+          id: snack.id,
+          name: snack.name,
+          quantity: snack.quantity || 1,
+          price: snack.price || 0,
+          total: (snack.price || 0) * (snack.quantity || 1)
+        }))
+      }
+
+      // Calcular totales
+      const roomPrice = roomData.roomPrice || roomInfo.base_price || 100
+      const snacksTotal = snacksForDB.reduce((total, snack) => total + (snack.total || 0), 0)
+      const totalAmount = roomPrice + snacksTotal
+
+      // Preparar documento
+      const documentInfo = guestData.documentNumber 
+        ? `${guestData.documentType || 'DNI'}:${guestData.documentNumber}`
+        : null
+
+      // ✅ INSERTAR EN QUICK_CHECKINS
+      const insertData = {
+        branch_id: branchId, // ✅ BRANCH_ID AUTOMÁTICO
+        room_id: roomId,
+        guest_name: guestData.fullName.trim(),
+        guest_document: documentInfo,
+        guest_phone: guestData.phone?.trim() || '',
+        check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
+        check_out_date: roomData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        amount: totalAmount,
+        payment_method_id: paymentMethodId,
+        snacks_consumed: snacksForDB
+      }
+
+      if (createdByUserId) {
+        insertData.created_by = createdByUserId
+      }
+
+      const { data: quickCheckin, error: quickCheckinError } = await supabase
+        .from('quick_checkins')
+        .insert(insertData)
+        .select(`
+          id,
+          guest_name,
+          guest_document,
+          guest_phone,
+          check_in_date,
+          check_out_date,
+          amount,
+          snacks_consumed,
+          created_at,
+          room:room_id(id, room_number, floor),
+          payment_method:payment_method_id(name)
+        `)
+        .single()
+
+      if (quickCheckinError) {
+        console.error('❌ Error inserting quick checkin:', quickCheckinError)
+        throw new Error(`Error creando quick checkin: ${quickCheckinError.message}`)
+      }
+
+      // ✅ ACTUALIZAR ESTADO DE LA HABITACIÓN
+      const { data: occupiedStatus } = await supabase
+        .from('room_status')
+        .select('id')
+        .eq('status', 'ocupada')
+        .single()
+
+      if (occupiedStatus) {
+        await supabase
+          .from('rooms')
+          .update({ status_id: occupiedStatus.id })
+          .eq('id', roomId)
+      }
+
+      // ✅ PROCESAR CONSUMO DE SNACKS EN INVENTARIO
+      if (snacksForDB.length > 0) {
+        console.log('🍿 Processing snack consumption...')
+        await snackService.processSnackConsumption(snacksData)
+      }
+
+      // RETORNAR DATOS ESTRUCTURADOS
+      const result = {
+        id: quickCheckin.id,
+        room: {
+          id: roomId,
+          number: quickCheckin.room?.room_number || roomInfo.room_number,
+          floor: quickCheckin.room?.floor || Math.floor(parseInt(roomInfo.room_number) / 100)
+        },
+        roomPrice: roomPrice,
+        snacks: quickCheckin.snacks_consumed || [],
+        total: totalAmount,
+        checkInDate: quickCheckin.check_in_date,
+        checkOutDate: quickCheckin.check_out_date,
+        guestName: quickCheckin.guest_name,
+        guestDocument: quickCheckin.guest_document,
+        guestPhone: quickCheckin.guest_phone,
+        confirmationCode: `QC-${quickCheckin.id}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
+        paymentMethod: quickCheckin.payment_method?.name,
+        createdAt: quickCheckin.created_at,
+        isQuickCheckin: true,
+        branchId: branchId // ✅ INCLUIR BRANCH_ID EN RESPUESTA
+      }
+
+      console.log('🎉 Quick checkin created successfully!', {
+        id: result.id,
+        branchId: branchId,
+        snacks_saved: result.snacks.length,
+        total_amount: result.total
+      })
+      
+      return { data: result, error: null }
+
+    } catch (error) {
+      console.error('❌ Error in createQuickCheckin:', error)
+      return { data: null, error: error }
     }
-
-    // ✅ PROCESAR CONSUMO DE SNACKS EN INVENTARIO
-    if (snacksForDB.length > 0) {
-      console.log('🍿 Processing snack consumption in inventory...', snacksForDB.length, 'items')
-      const inventoryResult = await snackService.processSnackConsumption(snacksData)
-      console.log('📊 Inventory update result:', inventoryResult.error ? 'Failed' : 'Success')
-    }
-
-    // ✅ RETORNAR DATOS ESTRUCTURADOS
-    const result = {
-      id: quickCheckin.id,
-      room: {
-        id: roomId,
-        number: quickCheckin.room?.room_number || roomNumber,
-        floor: quickCheckin.room?.floor || Math.floor(parseInt(roomNumber) / 100)
-      },
-      roomPrice: roomPrice,
-      snacks: quickCheckin.snacks_consumed || [], // 🔥 DESDE LA BD
-      total: totalAmount,
-      checkInDate: quickCheckin.check_in_date,
-      checkOutDate: quickCheckin.check_out_date,
-      guestName: quickCheckin.guest_name,
-      guestDocument: quickCheckin.guest_document,
-      guestPhone: quickCheckin.guest_phone,
-      confirmationCode: `QC-${quickCheckin.id}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
-      paymentMethod: quickCheckin.payment_method?.name,
-      createdAt: quickCheckin.created_at,
-      isQuickCheckin: true
-    }
-
-    console.log('🎉 Quick checkin created successfully with snacks!', {
-      id: result.id,
-      snacks_saved: result.snacks.length,
-      total_amount: result.total
-    })
-    
-    return { data: result, error: null }
-
-  } catch (error) {
-    console.error('❌ Error in createQuickCheckin:', error)
-    return { data: null, error: error }
-  }
-},
+  },
 
   // ✅ FUNCIÓN PARA PROCESAR CHECK-OUT
   async processQuickCheckOut(quickCheckinId, paymentMethod = 'efectivo') {
@@ -2605,7 +2676,6 @@ if (!branchId) {
         .single()
 
       if (error) throw error
-
       return { data: data.snacks_consumed || [], error: null }
     } catch (error) {
       console.error('❌ Error fetching quick checkin snacks:', error)
@@ -2615,98 +2685,78 @@ if (!branchId) {
 
   // ✅ NUEVA FUNCIÓN: Actualizar snacks consumidos
   async updateQuickCheckinSnacks(quickCheckinId, newSnacks) {
-  try {
-    console.log('🔄 Updating quick checkin snacks in database:', {
-      quickCheckinId,
-      newSnacksCount: newSnacks.length,
-      newSnacks
-    })
-
-    // Preparar snacks para la base de datos
-    const snacksForDB = newSnacks.map(snack => ({
-      id: snack.id,
-      name: snack.name,
-      quantity: snack.quantity,
-      price: snack.price,
-      total: snack.price * snack.quantity
-    }))
-
-    // Calcular nuevo monto total
-    const newAmount = await this.calculateUpdatedAmount(quickCheckinId, snacksForDB)
-
-    const { data, error } = await supabase
-      .from('quick_checkins')
-      .update({ 
-        snacks_consumed: snacksForDB,
-        amount: newAmount, // Actualizar el monto total
-        updated_at: new Date().toISOString()
+    try {
+      console.log('🔄 Updating quick checkin snacks:', {
+        quickCheckinId,
+        newSnacksCount: newSnacks.length
       })
-      .eq('id', quickCheckinId)
-      .select(`
-        id,
-        snacks_consumed,
-        amount,
-        room:room_id(room_number),
-        guest_name
-      `)
-      .single()
 
-    if (error) {
-      console.error('❌ Error updating quick checkin snacks:', error)
-      throw error
+      const snacksForDB = newSnacks.map(snack => ({
+        id: snack.id,
+        name: snack.name,
+        quantity: snack.quantity,
+        price: snack.price,
+        total: snack.price * snack.quantity
+      }))
+
+      const newAmount = await this.calculateUpdatedAmount(quickCheckinId, snacksForDB)
+
+      const { data, error } = await supabase
+        .from('quick_checkins')
+        .update({ 
+          snacks_consumed: snacksForDB,
+          amount: newAmount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', quickCheckinId)
+        .select(`
+          id,
+          snacks_consumed,
+          amount,
+          room:room_id(room_number),
+          guest_name
+        `)
+        .single()
+
+      if (error) {
+        console.error('❌ Error updating quick checkin snacks:', error)
+        throw error
+      }
+
+      console.log('✅ Quick checkin snacks updated successfully')
+      return { data, error: null }
+    } catch (error) {
+      console.error('❌ Error in updateQuickCheckinSnacks:', error)
+      return { data: null, error }
     }
+  },
 
-    console.log('✅ Quick checkin snacks updated successfully:', {
-      id: data.id,
-      roomNumber: data.room?.room_number,
-      snacksCount: data.snacks_consumed?.length || 0,
-      newAmount: data.amount
-    })
+// ✅ Función auxiliar: calcular monto total actualizado
+  async calculateUpdatedAmount(quickCheckinId, snacks) {
+    try {
+      const { data: checkin, error } = await supabase
+        .from('quick_checkins')
+        .select(`
+          room:room_id(base_price)
+        `)
+        .eq('id', quickCheckinId)
+        .single()
 
-    return { data, error: null }
-  } catch (error) {
-    console.error('❌ Error in updateQuickCheckinSnacks:', error)
-    return { data: null, error }
-  }
-},
+      if (error) {
+        console.warn('⚠️ Error getting room price:', error)
+        return snacks.reduce((total, snack) => total + (snack.total || 0), 0)
+      }
 
-// ✅ FUNCIÓN AUXILIAR: Calcular monto total actualizado
-async calculateUpdatedAmount(quickCheckinId, snacks) {
-  try {
-    console.log('💰 Calculating updated amount for quick checkin:', quickCheckinId)
-    
-    // Obtener precio base de la habitación
-    const { data: checkin, error } = await supabase
-      .from('quick_checkins')
-      .select(`
-        room:room_id(base_price)
-      `)
-      .eq('id', quickCheckinId)
-      .single()
-
-    if (error) {
-      console.warn('⚠️ Error getting room price, using snacks total only:', error)
+      const roomPrice = checkin?.room?.base_price || 100
+      const snacksTotal = snacks.reduce((total, snack) => total + (snack.total || 0), 0)
+      
+      return roomPrice + snacksTotal
+    } catch (error) {
+      console.warn('⚠️ Error calculating updated amount:', error)
       return snacks.reduce((total, snack) => total + (snack.total || 0), 0)
     }
-
-    const roomPrice = checkin?.room?.base_price || 100
-    const snacksTotal = snacks.reduce((total, snack) => total + (snack.total || 0), 0)
-    const totalAmount = roomPrice + snacksTotal
-    
-    console.log('💰 Amount calculation:', {
-      roomPrice,
-      snacksTotal,
-      totalAmount,
-      snacksCount: snacks.length
-    })
-    
-    return totalAmount
-  } catch (error) {
-    console.warn('⚠️ Error calculating updated amount:', error)
-    // Fallback: solo el total de snacks
-    return snacks.reduce((total, snack) => total + (snack.total || 0), 0)
   }
-}
+
 }
 
 // =====================================================
@@ -3636,6 +3686,140 @@ export const suppliesService = {
     }
   },
 
+  async getSuppliesByBranch(branchId, filters = {}) {
+    try {
+      console.log('📦 Fetching supplies for branch:', branchId, 'with filters:', filters)
+      
+      if (!branchId) {
+        throw new Error('Branch ID es requerido')
+      }
+
+      let query = supabase
+        .from('supplies')
+        .select(`
+          id,
+          name,
+          unit_of_measure,
+          minimum_stock,
+          current_stock,
+          unit_cost,
+          sku,
+          is_active,
+          created_at,
+          updated_at,
+          branch_id,
+          supply_categories!inner(
+            id,
+            name
+          ),
+          suppliers(
+            id,
+            name,
+            contact_person,
+            phone
+          )
+        `)
+        .eq('branch_id', branchId)
+        .eq('is_active', true)
+
+      // Aplicar filtros
+      if (filters.category) {
+        query = query.eq('category_id', filters.category)
+      }
+
+      if (filters.supplier) {
+        query = query.eq('supplier_id', filters.supplier)
+      }
+
+      if (filters.search) {
+        query = query.or(`name.ilike.%${filters.search}%,sku.ilike.%${filters.search}%`)
+      }
+
+      const { data: rawData, error } = await query.order('name')
+
+      if (error) {
+        console.error('❌ Error fetching supplies by branch:', error)
+        throw error
+      }
+
+      console.log('✅ Supplies fetched for branch:', rawData?.length || 0)
+
+      // Aplicar filtro de stock bajo en JavaScript (más confiable)
+      let filteredData = rawData || []
+      
+      if (filters.lowStock) {
+        filteredData = filteredData.filter(supply => 
+          supply.current_stock <= supply.minimum_stock
+        )
+      }
+
+      // Enriquecer datos con campos calculados
+      const enrichedData = filteredData.map(supply => ({
+        ...supply,
+        category: supply.supply_categories,
+        supplier: supply.suppliers,
+        stockStatus: this.getStockStatus(supply.current_stock, supply.minimum_stock),
+        totalValue: supply.current_stock * supply.unit_cost,
+        needsRestock: supply.current_stock <= supply.minimum_stock,
+        isOutOfStock: supply.current_stock === 0,
+        stockPercentage: supply.minimum_stock > 0 
+          ? Math.round((supply.current_stock / supply.minimum_stock) * 100)
+          : 100
+      }))
+
+      return { data: enrichedData, error: null }
+    } catch (error) {
+      console.error('❌ Error in getSuppliesByBranch:', error)
+      return { data: [], error }
+    }
+  },
+
+  async getAlertsByBranch(branchId) {
+    try {
+      console.log('🚨 Fetching alerts for branch:', branchId)
+      
+      if (!branchId) {
+        throw new Error('Branch ID es requerido')
+      }
+
+      const { data, error } = await supabase
+        .from('inventory_alerts')
+        .select(`
+          id,
+          alert_type,
+          message,
+          is_resolved,
+          resolved_by,
+          resolved_at,
+          created_at,
+          supply_id,
+          supplies!inner(
+            id,
+            name,
+            current_stock,
+            minimum_stock,
+            branch_id,
+            supply_categories(name)
+          )
+        `)
+        .eq('supplies.branch_id', branchId)
+        .eq('is_resolved', false)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) {
+        console.error('❌ Error fetching alerts by branch:', error)
+        throw error
+      }
+
+      console.log('✅ Alerts fetched for branch:', data?.length || 0)
+      return { data: data || [], error: null }
+    } catch (error) {
+      console.error('❌ Error in getAlertsByBranch:', error)
+      return { data: [], error }
+    }
+  },
+
   // ✅ Obtener categorías de suministros
   async getCategories() {
     try {
@@ -3792,11 +3976,16 @@ export const suppliesService = {
   // ✅ Crear nuevo suministro
   async createSupply(supplyData) {
     try {
-      console.log('➕ Creating new supply:', supplyData)
+      console.log('➕ Creating supply with branch:', supplyData)
       
+      if (!supplyData.branchId) {
+        throw new Error('Branch ID es requerido para crear suministro')
+      }
+
       const { data, error } = await supabase
         .from('supplies')
         .insert({
+          branch_id: supplyData.branchId,
           name: supplyData.name,
           category_id: supplyData.categoryId,
           unit_of_measure: supplyData.unitOfMeasure,
@@ -3819,7 +4008,7 @@ export const suppliesService = {
         throw error
       }
 
-      console.log('✅ Supply created successfully:', data.name)
+      console.log('✅ Supply created with branch:', data.name)
       return { data, error: null }
     } catch (error) {
       console.error('❌ Error in createSupply:', error)
@@ -3892,7 +4081,7 @@ export const suppliesService = {
         .insert({
           supply_id: movementData.supplyId,
           branch_id: movementData.branchId,
-          movement_type: movementData.movementType, // 'in', 'out', 'adjustment'
+          movement_type: movementData.movementType,
           quantity: movementData.quantity,
           unit_cost: movementData.unitCost || 0,
           total_cost: movementData.totalCost || (movementData.quantity * (movementData.unitCost || 0)),

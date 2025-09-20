@@ -1,4 +1,4 @@
-// src/hooks/useSupplies.js - VERSIÓN CON SOPORTE PARA SNACKS
+// src/hooks/useSupplies.js - VERSIÓN ACTUALIZADA CON BRANCH_ID
 import { useState, useEffect, useCallback } from 'react'
 import { suppliesService, snackService } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -14,7 +14,7 @@ export const useSupplies = () => {
   const [movements, setMovements] = useState([])
   const [alerts, setAlerts] = useState([])
   
-  // ✅ NUEVOS: Estados para snacks
+  // Estados para snacks
   const [snacks, setSnacks] = useState([])
   const [snackCategories, setSnackCategories] = useState([])
   
@@ -37,7 +37,7 @@ export const useSupplies = () => {
   const [selectedSupply, setSelectedSupply] = useState(null)
 
   // =====================================================
-  // 📊 FUNCIONES DE CARGA DE DATOS - MEJORADAS CON SNACKS
+  // FUNCIONES DE CARGA DE DATOS
   // =====================================================
 
   const loadAllData = useCallback(async () => {
@@ -45,9 +45,15 @@ export const useSupplies = () => {
       setLoading(true)
       setError(null)
 
-      console.log('🔄 Cargando datos completos de suministros y snacks para:', primaryBranch?.name)
+      if (!primaryBranch?.id) {
+        console.warn('No primary branch found, skipping data load')
+        setLoading(false)
+        return
+      }
 
-      // ✅ Cargar todos los datos en paralelo incluyendo snacks
+      console.log('Cargando datos de suministros para sucursal:', primaryBranch.name)
+
+      // Cargar todos los datos en paralelo
       const [
         suppliesResult,
         categoriesResult,
@@ -56,69 +62,60 @@ export const useSupplies = () => {
         snackItemsResult,
         snackCategoriesResult
       ] = await Promise.allSettled([
-        suppliesService.getSupplies(filters),
+        suppliesService.getSuppliesByBranch(primaryBranch.id, filters),
         suppliesService.getCategories(),
         suppliesService.getSuppliers(),
-        suppliesService.getAlerts(),
-        snackService.getSnackItems(), // ✅ NUEVO
-        snackService.getSnackCategories() // ✅ NUEVO
+        suppliesService.getAlertsByBranch(primaryBranch.id),
+        snackService.getSnackItemsByBranch(primaryBranch.id),
+        snackService.getSnackCategories()
       ])
 
-      // ✅ Procesar resultados con manejo de errores mejorado
+      // Procesar resultados
       if (suppliesResult.status === 'fulfilled' && !suppliesResult.value.error) {
         setSupplies(suppliesResult.value.data || [])
-        console.log('✅ Supplies loaded:', suppliesResult.value.data?.length || 0)
+        console.log('Suministros cargados:', suppliesResult.value.data?.length || 0)
       } else {
-        console.warn('⚠️ Error loading supplies:', suppliesResult.reason || suppliesResult.value?.error)
+        console.warn('Error cargando suministros:', suppliesResult.reason || suppliesResult.value?.error)
         setSupplies([])
       }
 
       if (categoriesResult.status === 'fulfilled' && !categoriesResult.value.error) {
         setCategories(categoriesResult.value.data || [])
-        console.log('✅ Categories loaded:', categoriesResult.value.data?.length || 0)
       } else {
-        console.warn('⚠️ Error loading categories:', categoriesResult.reason || categoriesResult.value?.error)
         setCategories([])
       }
 
       if (suppliersResult.status === 'fulfilled' && !suppliersResult.value.error) {
         setSuppliers(suppliersResult.value.data || [])
-        console.log('✅ Suppliers loaded:', suppliersResult.value.data?.length || 0)
       } else {
-        console.warn('⚠️ Error loading suppliers:', suppliersResult.reason || suppliersResult.value?.error)
         setSuppliers([])
       }
 
       if (alertsResult.status === 'fulfilled' && !alertsResult.value.error) {
         setAlerts(alertsResult.value.data || [])
-        console.log('✅ Alerts loaded:', alertsResult.value.data?.length || 0)
       } else {
-        console.warn('⚠️ Error loading alerts:', alertsResult.reason || alertsResult.value?.error)
         setAlerts([])
       }
 
-      // ✅ NUEVO: Procesar snacks
       if (snackItemsResult.status === 'fulfilled' && !snackItemsResult.value.error) {
         setSnacks(snackItemsResult.value.data || [])
-        console.log('✅ Snacks loaded:', snackItemsResult.value.data?.length || 0)
+        console.log('Snacks cargados:', snackItemsResult.value.data?.length || 0)
       } else {
-        console.warn('⚠️ Error loading snacks:', snackItemsResult.reason || snackItemsResult.value?.error)
+        console.warn('Error cargando snacks:', snackItemsResult.reason || snackItemsResult.value?.error)
         setSnacks([])
       }
 
       if (snackCategoriesResult.status === 'fulfilled' && !snackCategoriesResult.value.error) {
         setSnackCategories(snackCategoriesResult.value.data || [])
-        console.log('✅ Snack categories loaded:', snackCategoriesResult.value.data?.length || 0)
       } else {
-        console.warn('⚠️ Error loading snack categories:', snackCategoriesResult.reason || snackCategoriesResult.value?.error)
         setSnackCategories([])
       }
 
-      console.log('✅ Datos completos de suministros y snacks cargados exitosamente')
+      console.log('Datos cargados exitosamente para:', primaryBranch.name)
 
     } catch (err) {
-      console.error('❌ Error crítico cargando datos:', err)
-      setError(err.message || 'Error al cargar suministros y snacks')
+      console.error('Error crítico cargando datos:', err)
+      setError(err.message || 'Error al cargar datos de inventario')
       toast.error('Error al cargar datos de inventario')
     } finally {
       setLoading(false)
@@ -145,33 +142,38 @@ export const useSupplies = () => {
 
   const loadSupplies = async () => {
     try {
-      console.log('🔄 Recargando suministros con filtros:', filters)
-      const { data, error } = await suppliesService.getSupplies(filters)
+      if (!primaryBranch?.id) return
+      
+      console.log('Recargando suministros con filtros:', filters)
+      const { data, error } = await suppliesService.getSuppliesByBranch(primaryBranch.id, filters)
+      
       if (error) {
-        console.warn('⚠️ Error cargando suministros:', error)
+        console.warn('Error cargando suministros:', error)
         toast.error('Error al cargar suministros')
         return
       }
       setSupplies(data || [])
     } catch (err) {
-      console.error('❌ Error en loadSupplies:', err)
+      console.error('Error en loadSupplies:', err)
       toast.error('Error al cargar suministros')
     }
   }
 
-  // ✅ NUEVA: Función para recargar solo snacks
   const loadSnacks = async () => {
     try {
-      console.log('🔄 Recargando snacks...')
-      const { data, error } = await snackService.getSnackItems()
+      if (!primaryBranch?.id) return
+      
+      console.log('Recargando snacks...')
+      const { data, error } = await snackService.getSnackItemsByBranch(primaryBranch.id)
+      
       if (error) {
-        console.warn('⚠️ Error cargando snacks:', error)
+        console.warn('Error cargando snacks:', error)
         toast.error('Error al cargar snacks')
         return
       }
       setSnacks(data || [])
     } catch (err) {
-      console.error('❌ Error en loadSnacks:', err)
+      console.error('Error en loadSnacks:', err)
       toast.error('Error al cargar snacks')
     }
   }
@@ -180,35 +182,36 @@ export const useSupplies = () => {
     try {
       const { data, error } = await suppliesService.getMovements(supplyId, limit)
       if (error) {
-        console.warn('⚠️ Error cargando movimientos:', error)
+        console.warn('Error cargando movimientos:', error)
         toast.error('Error al cargar movimientos')
         return []
       }
       setMovements(data || [])
       return data || []
     } catch (err) {
-      console.error('❌ Error en loadMovements:', err)
+      console.error('Error en loadMovements:', err)
       toast.error('Error al cargar movimientos')
       return []
     }
   }
 
   // =====================================================
-  // 📦 FUNCIONES DE GESTIÓN DE SUMINISTROS
+  // FUNCIONES DE GESTIÓN DE SUMINISTROS
   // =====================================================
 
   const createSupply = async (supplyData) => {
-    if (!userInfo?.id) {
-      toast.error('Error de autenticación')
-      return { success: false, error: 'No autenticado' }
+    if (!userInfo?.id || !primaryBranch?.id) {
+      toast.error('Error de autenticación o sucursal')
+      return { success: false, error: 'No autenticado o sin sucursal' }
     }
 
     try {
       setCreating(true)
-      console.log('📦 Creando nuevo suministro:', supplyData)
+      console.log('Creando nuevo suministro:', supplyData)
 
       const { data, error } = await suppliesService.createSupply({
         ...supplyData,
+        branchId: primaryBranch.id,
         createdBy: userInfo.id
       })
 
@@ -222,7 +225,7 @@ export const useSupplies = () => {
       return { success: true, data }
 
     } catch (err) {
-      console.error('❌ Error creando suministro:', err)
+      console.error('Error creando suministro:', err)
       const errorMessage = err.message || 'Error al crear el suministro'
       toast.error(errorMessage)
       return { success: false, error: errorMessage }
@@ -239,7 +242,7 @@ export const useSupplies = () => {
 
     try {
       setUpdating(true)
-      console.log('🔄 Actualizando suministro:', { supplyId, updateData })
+      console.log('Actualizando suministro:', { supplyId, updateData })
 
       const { data, error } = await suppliesService.updateSupply(supplyId, updateData)
       if (error) {
@@ -255,7 +258,7 @@ export const useSupplies = () => {
       return { success: true, data }
 
     } catch (err) {
-      console.error('❌ Error actualizando suministro:', err)
+      console.error('Error actualizando suministro:', err)
       const errorMessage = err.message || 'Error al actualizar el suministro'
       toast.error(errorMessage)
       return { success: false, error: errorMessage }
@@ -289,7 +292,7 @@ export const useSupplies = () => {
       return { success: true }
 
     } catch (err) {
-      console.error('❌ Error eliminando suministro:', err)
+      console.error('Error eliminando suministro:', err)
       const errorMessage = err.message || 'Error al eliminar el suministro'
       toast.error(errorMessage)
       return { success: false, error: errorMessage }
@@ -297,12 +300,68 @@ export const useSupplies = () => {
   }
 
   // =====================================================
-  // 🍿 FUNCIONES NUEVAS PARA GESTIÓN DE SNACKS
+  // FUNCIONES PARA GESTIÓN DE SNACKS
   // =====================================================
+
+  const createSnack = async (snackData) => {
+    if (!userInfo?.id || !primaryBranch?.id) {
+      toast.error('Error de autenticación o sucursal')
+      return { success: false, error: 'No autenticado o sin sucursal' }
+    }
+
+    try {
+      console.log('Creando nuevo snack:', snackData)
+
+      const { data, error } = await snackService.createSnackItem({
+        ...snackData,
+        branchId: primaryBranch.id
+      })
+
+      if (error) {
+        throw error
+      }
+
+      await loadSnacks()
+      toast.success(`Snack "${data.name}" creado exitosamente`)
+      
+      return { success: true, data }
+
+    } catch (err) {
+      console.error('Error creando snack:', err)
+      const errorMessage = err.message || 'Error al crear el snack'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  }
+
+  const updateSnack = async (snackId, updateData) => {
+    try {
+      console.log('Actualizando snack:', { snackId, updateData })
+
+      const { data, error } = await snackService.updateSnackItem(snackId, updateData)
+      if (error) {
+        throw error
+      }
+
+      // Actualizar en el estado local
+      setSnacks(prev => prev.map(snack => 
+        snack.id === snackId ? { ...snack, ...data } : snack
+      ))
+
+      toast.success('Snack actualizado exitosamente')
+      return { success: true, data }
+
+    } catch (err) {
+      console.error('Error actualizando snack:', err)
+      const errorMessage = err.message || 'Error al actualizar el snack'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  }
 
   const updateSnackStock = async (snackId, newStock, reason = 'Ajuste manual') => {
     try {
-      console.log('🔄 Actualizando stock de snack:', { snackId, newStock, reason })
+      console.log('Actualizando stock de snack:', { snackId, newStock, reason })
 
       const { data, error } = await snackService.updateSnackStock(snackId, newStock)
       if (error) {
@@ -318,7 +377,7 @@ export const useSupplies = () => {
       return { success: true, data }
 
     } catch (err) {
-      console.error('❌ Error actualizando stock de snack:', err)
+      console.error('Error actualizando stock de snack:', err)
       const errorMessage = err.message || 'Error al actualizar stock del snack'
       toast.error(errorMessage)
       return { success: false, error: errorMessage }
@@ -327,7 +386,7 @@ export const useSupplies = () => {
 
   const processSnackConsumption = async (snacksConsumed) => {
     try {
-      console.log('🍿 Procesando consumo de snacks:', snacksConsumed.length, 'items')
+      console.log('Procesando consumo de snacks:', snacksConsumed.length, 'items')
 
       const result = await snackService.processSnackConsumption(snacksConsumed)
       if (result.error) {
@@ -337,18 +396,18 @@ export const useSupplies = () => {
       // Recargar snacks para reflejar el nuevo stock
       await loadSnacks()
 
-      console.log('✅ Consumo de snacks procesado exitosamente')
+      console.log('Consumo de snacks procesado exitosamente')
       return { success: true, data: result.data }
 
     } catch (err) {
-      console.error('❌ Error procesando consumo de snacks:', err)
+      console.error('Error procesando consumo de snacks:', err)
       const errorMessage = err.message || 'Error al procesar consumo de snacks'
       return { success: false, error: errorMessage }
     }
   }
 
   // =====================================================
-  // 📈 FUNCIONES DE MOVIMIENTOS DE STOCK
+  // FUNCIONES DE MOVIMIENTOS DE STOCK
   // =====================================================
 
   const addMovement = async (movementData) => {
@@ -358,7 +417,7 @@ export const useSupplies = () => {
     }
 
     try {
-      console.log('📈 Agregando movimiento de stock:', movementData)
+      console.log('Agregando movimiento de stock:', movementData)
 
       const { data, error } = await suppliesService.addMovement({
         ...movementData,
@@ -375,12 +434,12 @@ export const useSupplies = () => {
       
       // Recargar alertas por si cambió el estado de stock
       try {
-        const alertsResult = await suppliesService.getAlerts()
+        const alertsResult = await suppliesService.getAlertsByBranch(primaryBranch.id)
         if (!alertsResult.error) {
           setAlerts(alertsResult.data || [])
         }
       } catch (alertError) {
-        console.warn('⚠️ Error recargando alertas:', alertError)
+        console.warn('Warning recargando alertas:', alertError)
       }
 
       const movementTypes = {
@@ -394,7 +453,7 @@ export const useSupplies = () => {
       return { success: true, data }
 
     } catch (err) {
-      console.error('❌ Error agregando movimiento:', err)
+      console.error('Error agregando movimiento:', err)
       const errorMessage = err.message || 'Error al registrar el movimiento'
       toast.error(errorMessage)
       return { success: false, error: errorMessage }
@@ -411,7 +470,7 @@ export const useSupplies = () => {
   }
 
   // =====================================================
-  // 🚨 FUNCIONES DE ALERTAS
+  // FUNCIONES DE ALERTAS
   // =====================================================
 
   const resolveAlert = async (alertId) => {
@@ -437,7 +496,7 @@ export const useSupplies = () => {
       return { success: true }
 
     } catch (err) {
-      console.error('❌ Error resolviendo alerta:', err)
+      console.error('Error resolviendo alerta:', err)
       const errorMessage = err.message || 'Error al resolver la alerta'
       toast.error(errorMessage)
       return { success: false, error: errorMessage }
@@ -449,7 +508,7 @@ export const useSupplies = () => {
   }
 
   // =====================================================
-  // 📋 FUNCIONES DE CATEGORÍAS Y PROVEEDORES
+  // FUNCIONES DE CATEGORÍAS Y PROVEEDORES
   // =====================================================
 
   const createCategory = async (categoryData) => {
@@ -465,8 +524,28 @@ export const useSupplies = () => {
       return { success: true, data }
 
     } catch (err) {
-      console.error('❌ Error creando categoría:', err)
+      console.error('Error creando categoría:', err)
       const errorMessage = err.message || 'Error al crear la categoría'
+      toast.error(errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  }
+
+  const createSnackCategory = async (categoryData) => {
+    try {
+      const { data, error } = await snackService.createSnackCategory(categoryData)
+      if (error) {
+        throw error
+      }
+
+      setSnackCategories(prev => [...prev, data])
+      toast.success(`Categoría de snack "${data.name}" creada exitosamente`)
+      
+      return { success: true, data }
+
+    } catch (err) {
+      console.error('Error creando categoría de snack:', err)
+      const errorMessage = err.message || 'Error al crear la categoría de snack'
       toast.error(errorMessage)
       return { success: false, error: errorMessage }
     }
@@ -485,7 +564,7 @@ export const useSupplies = () => {
       return { success: true, data }
 
     } catch (err) {
-      console.error('❌ Error creando proveedor:', err)
+      console.error('Error creando proveedor:', err)
       const errorMessage = err.message || 'Error al crear el proveedor'
       toast.error(errorMessage)
       return { success: false, error: errorMessage }
@@ -493,7 +572,7 @@ export const useSupplies = () => {
   }
 
   // =====================================================
-  // 🔍 FUNCIONES DE FILTROS Y BÚSQUEDA
+  // FUNCIONES DE FILTROS Y BÚSQUEDA
   // =====================================================
 
   const updateFilters = (newFilters) => {
@@ -517,12 +596,11 @@ export const useSupplies = () => {
       }
       return data || []
     } catch (err) {
-      console.error('❌ Error buscando suministros:', err)
+      console.error('Error buscando suministros:', err)
       return []
     }
   }
 
-  // ✅ NUEVA: Búsqueda de snacks
   const searchSnacks = async (searchTerm) => {
     try {
       const { data, error } = await snackService.searchSnacks(searchTerm)
@@ -531,13 +609,13 @@ export const useSupplies = () => {
       }
       return data || []
     } catch (err) {
-      console.error('❌ Error buscando snacks:', err)
+      console.error('Error buscando snacks:', err)
       return []
     }
   }
 
   // =====================================================
-  // 📊 FUNCIONES DE ESTADÍSTICAS MEJORADAS
+  // FUNCIONES DE ESTADÍSTICAS
   // =====================================================
 
   const getSuppliesStats = () => {
@@ -552,7 +630,7 @@ export const useSupplies = () => {
       alertsCount: alerts.filter(a => !a.is_resolved).length
     }
 
-    // ✅ NUEVAS: Estadísticas de snacks
+    // Estadísticas de snacks
     const snacksStats = {
       total: snacks.length,
       lowStock: snacks.filter(s => s.stock <= s.minimum_stock).length,
@@ -582,7 +660,6 @@ export const useSupplies = () => {
     return supplies.filter(supply => supply.current_stock === 0)
   }
 
-  // ✅ NUEVAS: Funciones equivalentes para snacks
   const getLowStockSnacks = () => {
     return snacks.filter(snack => snack.stock <= snack.minimum_stock)
   }
@@ -591,7 +668,6 @@ export const useSupplies = () => {
     return snacks.filter(snack => snack.stock === 0)
   }
 
-  // ✅ NUEVA: Función para obtener alertas combinadas
   const getCombinedAlerts = () => {
     const suppliesAlerts = alerts
     
@@ -619,7 +695,7 @@ export const useSupplies = () => {
   }
 
   // =====================================================
-  // 🔄 FUNCIONES DE REFRESCADO MEJORADAS
+  // FUNCIONES DE REFRESCADO
   // =====================================================
 
   const refreshData = async () => {
@@ -636,7 +712,7 @@ export const useSupplies = () => {
   }
 
   // =====================================================
-  // 📱 FUNCIONES DE MODALES
+  // FUNCIONES DE MODALES
   // =====================================================
 
   const openCreateModal = () => {
@@ -661,7 +737,7 @@ export const useSupplies = () => {
   }
 
   // =====================================================
-  // 🎯 RETORNO DEL HOOK AMPLIADO
+  // RETORNO DEL HOOK
   // =====================================================
 
   return {
@@ -676,7 +752,7 @@ export const useSupplies = () => {
     creating,
     updating,
 
-    // ✅ NUEVOS: Estados de snacks
+    // Estados de snacks
     snacks,
     snackCategories,
 
@@ -688,19 +764,21 @@ export const useSupplies = () => {
     showMovementModal,
     selectedSupply,
 
-    // Funciones principales
+    // Funciones principales de suministros
     createSupply,
     updateSupply,
     deleteSupply,
+    
+    // Funciones de snacks
+    createSnack,
+    updateSnack,
+    updateSnackStock,
+    processSnackConsumption,
     
     // Funciones de movimientos
     addMovement,
     adjustStock,
     loadMovements,
-
-    // ✅ NUEVAS: Funciones de snacks
-    updateSnackStock,
-    processSnackConsumption,
 
     // Funciones de alertas
     resolveAlert,
@@ -708,26 +786,27 @@ export const useSupplies = () => {
 
     // Funciones de categorías y proveedores
     createCategory,
+    createSnackCategory,
     createSupplier,
 
     // Funciones de filtros
     updateFilters,
     clearFilters,
     searchSupplies,
-    searchSnacks, // ✅ NUEVA
+    searchSnacks,
 
-    // Funciones de estadísticas mejoradas
+    // Funciones de estadísticas
     getSuppliesStats,
     getLowStockSupplies,
     getOutOfStockSupplies,
-    getLowStockSnacks, // ✅ NUEVA
-    getOutOfStockSnacks, // ✅ NUEVA
-    getCombinedAlerts, // ✅ NUEVA
+    getLowStockSnacks,
+    getOutOfStockSnacks,
+    getCombinedAlerts,
 
     // Funciones de refrescado
     refreshData,
     refreshSupplies,
-    refreshSnacks, // ✅ NUEVA
+    refreshSnacks,
 
     // Funciones de modales
     openCreateModal,

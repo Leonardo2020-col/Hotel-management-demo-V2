@@ -1,29 +1,38 @@
-// src/pages/Supplies.jsx - VERSIÓN CON SNACKS INTEGRADOS - FIXED
+// src/pages/Supplies.jsx - VERSIÓN FINAL CON BRANCH SUPPORT
 import React, { useState, useEffect } from 'react'
 import { RefreshCw, Plus, AlertTriangle, Eye, EyeOff, Coffee } from 'lucide-react'
 import { useSupplies } from '../hooks/useSupplies'
-import { snackService } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 import Button from '../components/common/Button'
 
-// Importar componentes de suministros
+// Importar componentes
 import StatsCards from '../components/supplies/StatsCards'
 import SuppliesFilters from '../components/supplies/SuppliesFilters'
 import SuppliesTable from '../components/supplies/SuppliesTable'
 import SupplyFormModal from '../components/supplies/SupplyFormModal'
 import MovementModal from '../components/supplies/MovementModal'
 import AlertsPanel from '../components/supplies/AlertsPanel'
-import SnackFormModal from '../components/supplies/SnackFormModal' // ✅ NUEVO
+import SnackFormModal from '../components/supplies/SnackFormModal'
 
 import toast from 'react-hot-toast'
 
 const Supplies = () => {
+  const { primaryBranch } = useAuth()
+  
   const {
+    // Estados principales
     supplies,
     categories,
     suppliers,
     alerts,
     loading,
     error,
+    
+    // Estados de snacks
+    snacks,
+    snackCategories,
+    
+    // Funciones de gestión
     getSuppliesStats,
     getLowStockSupplies,
     getOutOfStockSupplies,
@@ -31,14 +40,28 @@ const Supplies = () => {
     updateFilters,
     clearFilters,
     filters,
+    
+    // Funciones de suministros
     createSupply,
     updateSupply,
     deleteSupply,
     addMovement,
+    
+    // Funciones de snacks
+    createSnack,
+    updateSnack,
+    updateSnackStock,
+    
+    // Funciones de alertas
     resolveAlert,
     dismissAlert,
+    
+    // Funciones de categorías
     createCategory,
+    createSnackCategory,
     createSupplier,
+    
+    // Funciones de modales
     openCreateModal,
     openEditModal,
     openMovementModal,
@@ -48,86 +71,27 @@ const Supplies = () => {
     selectedSupply
   } = useSupplies()
 
-  // ✅ NUEVO: Estados para snacks
-  const [snacks, setSnacks] = useState([])
-  const [snackCategories, setSnackCategories] = useState([])
-  const [snacksLoading, setSnacksLoading] = useState(false)
-
   // Estados locales para la página
   const [currentView, setCurrentView] = useState('inventory') // 'inventory', 'alerts', 'snacks'
   const [showResolvedAlerts, setShowResolvedAlerts] = useState(false)
   
-  // ✅ NUEVOS: Estados para el modal de snacks
+  // Estados para el modal de snacks
   const [showSnackModal, setShowSnackModal] = useState(false)
   const [selectedSnack, setSelectedSnack] = useState(null)
 
-  // ✅ NUEVO: Cargar snacks al montar el componente
+  // Mostrar información de la sucursal actual si no hay sucursal primaria
   useEffect(() => {
-    loadSnacksData()
-  }, [])
-
-  const loadSnacksData = async () => {
-    try {
-      setSnacksLoading(true)
-      console.log('🍿 Loading snacks data for supplies page...')
-
-      const [snackItemsResult, snackCategoriesResult] = await Promise.all([
-        snackService.getSnackItems(),
-        snackService.getSnackCategories()
-      ])
-
-      if (!snackItemsResult.error) {
-        setSnacks(snackItemsResult.data || [])
-        console.log('✅ Snacks loaded:', snackItemsResult.data?.length || 0)
-      } else {
-        console.error('❌ Error loading snacks:', snackItemsResult.error)
-      }
-
-      if (!snackCategoriesResult.error) {
-        setSnackCategories(snackCategoriesResult.data || [])
-        console.log('✅ Snack categories loaded:', snackCategoriesResult.data?.length || 0)
-      } else {
-        console.error('❌ Error loading snack categories:', snackCategoriesResult.error)
-      }
-
-    } catch (error) {
-      console.error('❌ Error in loadSnacksData:', error)
-      toast.error('Error al cargar datos de snacks')
-    } finally {
-      setSnacksLoading(false)
+    if (!primaryBranch?.id) {
+      console.warn('No hay sucursal primaria configurada')
     }
-  }
+  }, [primaryBranch])
 
-  // ✅ FIXED: Función faltante handleUpdateSnackStock
-  const handleUpdateSnackStock = async (snackId, newStock, reason = 'Ajuste manual de stock') => {
-    try {
-      console.log('🔄 Updating snack stock:', { snackId, newStock, reason })
-      
-      const result = await snackService.updateSnackStock(snackId, newStock)
-      
-      if (result.error) {
-        throw result.error
-      }
-      
-      // Recargar snacks para reflejar el cambio
-      await loadSnacksData()
-      toast.success('Stock de snack actualizado exitosamente')
-      
-      return { success: true, data: result.data }
-    } catch (error) {
-      console.error('❌ Error updating snack stock:', error)
-      toast.error('Error al actualizar stock del snack')
-      return { success: false, error }
-    }
-  }
-
-  // ✅ NUEVAS: Funciones para manejo de snacks
+  // ✅ Función para manejar creación de snacks
   const handleCreateSnack = async (snackData) => {
     try {
       console.log('🍿 Creando nuevo snack:', snackData)
       
-      // Usar el servicio de snacks para crear
-      const result = await snackService.createSnackItem({
+      const result = await createSnack({
         name: snackData.name,
         categoryId: snackData.categoryId,
         price: snackData.price,
@@ -136,17 +100,14 @@ const Supplies = () => {
         minimumStock: snackData.minimumStock
       })
       
-      if (result.error) {
-        throw result.error
+      if (result.success) {
+        closeSnackModal()
+        toast.success('Snack creado exitosamente')
+      } else {
+        toast.error(result.error || 'Error al crear snack')
       }
       
-      // Recargar snacks
-      await loadSnacksData()
-      setShowSnackModal(false)
-      setSelectedSnack(null)
-      toast.success('Snack creado exitosamente')
-      
-      return { success: true, data: result.data }
+      return result
     } catch (error) {
       console.error('❌ Error creando snack:', error)
       toast.error('Error al crear snack')
@@ -154,25 +115,21 @@ const Supplies = () => {
     }
   }
 
+  // ✅ Función para manejar actualización de snacks
   const handleUpdateSnack = async (snackId, updateData) => {
     try {
-      console.log('🔄 Actualizando snack completo:', { snackId, updateData })
+      console.log('🔄 Actualizando snack:', { snackId, updateData })
       
-      // Usar la nueva función updateSnackItem si está disponible
-      const result = await snackService.updateSnackItem?.(snackId, updateData) || 
-                    await handleUpdateSnackStock(snackId, updateData.stock, 'Actualización de snack')
+      const result = await updateSnack(snackId, updateData)
       
-      if (result.error) {
-        throw result.error
+      if (result.success) {
+        closeSnackModal()
+        toast.success('Snack actualizado exitosamente')
+      } else {
+        toast.error(result.error || 'Error al actualizar snack')
       }
       
-      // Recargar snacks
-      await loadSnacksData()
-      setShowSnackModal(false)
-      setSelectedSnack(null)
-      toast.success('Snack actualizado exitosamente')
-      
-      return { success: true, data: result.data }
+      return result
     } catch (error) {
       console.error('❌ Error actualizando snack:', error)
       toast.error('Error al actualizar snack')
@@ -180,18 +137,35 @@ const Supplies = () => {
     }
   }
 
+  // ✅ Función para manejar ajuste de stock de snacks
+  const handleUpdateSnackStock = async (snackId, newStock, reason = 'Ajuste manual de stock') => {
+    try {
+      console.log('🔄 Updating snack stock:', { snackId, newStock, reason })
+      
+      const result = await updateSnackStock(snackId, newStock, reason)
+      
+      if (result.success) {
+        toast.success('Stock de snack actualizado exitosamente')
+      } else {
+        toast.error(result.error || 'Error al actualizar stock del snack')
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ Error updating snack stock:', error)
+      toast.error('Error al actualizar stock del snack')
+      return { success: false, error }
+    }
+  }
+
+  // ✅ Función para crear categoría de snack
   const handleCreateSnackCategory = async (categoryData) => {
     try {
       console.log('🏷️ Creando categoría de snack:', categoryData)
       
-      // Usar la función específica para snacks si está disponible
-      const result = await snackService.createSnackCategory?.(categoryData) ||
-                    await createCategory(categoryData)
+      const result = await createSnackCategory(categoryData)
       
-      if (result.success || (result.data && !result.error)) {
-        // Recargar categorías de snacks
-        const { data: newCategories } = await snackService.getSnackCategories()
-        setSnackCategories(newCategories || [])
+      if (result.success) {
         return { success: true, data: result.data }
       }
       
@@ -218,21 +192,21 @@ const Supplies = () => {
     setSelectedSnack(null)
   }
 
-  // ✅ NUEVO: Combinar suministros y snacks para las estadísticas
+  // ✅ Combinar suministros y snacks para las estadísticas
   const getCombinedStats = () => {
     const suppliesStats = getSuppliesStats()
     
     // Estadísticas de snacks
     const snacksLowStock = snacks.filter(s => s.stock <= s.minimum_stock).length
     const snacksOutOfStock = snacks.filter(s => s.stock === 0).length
-    const snacksValue = snacks.reduce((sum, s) => sum + (s.stock * s.cost), 0)
+    const snacksValue = snacks.reduce((sum, s) => sum + (s.stock * (s.cost || 0)), 0)
     
     return {
       ...suppliesStats,
       total: suppliesStats.total + snacks.length,
       totalValue: suppliesStats.totalValue + snacksValue,
       categories: suppliesStats.categories + snackCategories.length,
-      // Mantener los contadores originales para no duplicar
+      // Mantener los contadores originales
       lowStock: suppliesStats.lowStock,
       outOfStock: suppliesStats.outOfStock,
       // Agregar stats específicos de snacks
@@ -243,7 +217,7 @@ const Supplies = () => {
     }
   }
 
-  // ✅ NUEVO: Convertir snacks al formato de suministros para mostrar en la tabla
+  // ✅ Convertir snacks al formato de suministros para mostrar en la tabla
   const convertSnacksToSupplyFormat = () => {
     return snacks.map(snack => ({
       id: snack.id,
@@ -252,7 +226,7 @@ const Supplies = () => {
         id: snack.category_id, 
         name: snack.category_name || 'Snacks' 
       },
-      supplier: null, // Los snacks no tienen proveedor en el modelo actual
+      supplier: null,
       unit_of_measure: 'unidad',
       minimum_stock: snack.minimum_stock,
       current_stock: snack.stock,
@@ -262,26 +236,22 @@ const Supplies = () => {
       created_at: snack.created_at,
       updated_at: snack.updated_at,
       // Campos calculados
-      stockStatus: snackService.getStockStatus(snack.stock, snack.minimum_stock),
+      stockStatus: snack.stock_status,
       totalValue: snack.stock * (snack.cost || 0),
       needsRestock: snack.stock <= snack.minimum_stock,
       isOutOfStock: snack.stock === 0,
-      stockPercentage: snack.minimum_stock > 0 
-        ? Math.round((snack.stock / snack.minimum_stock) * 100)
-        : 100,
-      // Marcador para identificar que es un snack
+      stockPercentage: snack.stock_percentage,
+      // Marcadores especiales
       isSnack: true,
-      price: snack.price // Precio de venta (adicional para snacks)
+      price: snack.price
     }))
   }
 
-  // ✅ NUEVO: Combinar suministros y snacks para mostrar en la tabla
+  // ✅ Obtener items de inventario según la vista actual
   const getAllInventoryItems = () => {
     if (currentView === 'snacks') {
       return convertSnacksToSupplyFormat()
     } else {
-      // Vista de inventario normal - solo suministros por ahora
-      // Podrías agregar una opción para mostrar ambos si quieres
       return supplies
     }
   }
@@ -291,7 +261,7 @@ const Supplies = () => {
   const outOfStockSupplies = getOutOfStockSupplies()
   const inventoryItems = getAllInventoryItems()
 
-  // ✅ FUNCIONES DE MANEJO DE SUMINISTROS (sin cambios)
+  // Funciones de manejo de suministros
   const handleCreateSupply = async (supplyData) => {
     const result = await createSupply(supplyData)
     if (result.success) {
@@ -330,7 +300,7 @@ const Supplies = () => {
     return result
   }
 
-  // ✅ FUNCIONES DE MANEJO DE ALERTAS (sin cambios)
+  // Funciones de manejo de alertas
   const handleResolveAlert = async (alertId) => {
     const result = await resolveAlert(alertId)
     if (result.success) {
@@ -347,7 +317,7 @@ const Supplies = () => {
     return result
   }
 
-  // ✅ FUNCIONES DE CATEGORÍAS Y PROVEEDORES (sin cambios)
+  // Funciones de categorías y proveedores
   const handleCreateCategory = async (categoryData) => {
     const result = await createCategory(categoryData)
     return result
@@ -358,12 +328,29 @@ const Supplies = () => {
     return result
   }
 
-  // ✅ NUEVO: Función de refresh combinada
-  const handleRefreshData = async () => {
-    await Promise.all([
-      refreshData(),
-      loadSnacksData()
-    ])
+  // Verificar si hay sucursal configurada
+  if (!primaryBranch?.id) {
+    return (
+      <div className="min-h-screen bg-gray-100 p-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-yellow-600 mb-4">Sucursal no configurada</h2>
+            <p className="text-gray-600 mb-6">
+              No se ha encontrado una sucursal primaria para tu usuario. El inventario se gestiona por sucursal.
+            </p>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-left">
+              <h3 className="font-semibold text-yellow-800 mb-2">💡 Para configurar tu sucursal:</h3>
+              <ul className="text-sm text-yellow-700 space-y-1">
+                <li>• Contacta al administrador del sistema</li>
+                <li>• Verifica que tu usuario esté asignado a una sucursal</li>
+                <li>• Asegúrate de que tengas una sucursal marcada como "primaria"</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // Error State
@@ -373,23 +360,24 @@ const Supplies = () => {
         <div className="max-w-6xl mx-auto">
           <div className="bg-white rounded-lg shadow-lg p-8 text-center">
             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-red-600 mb-4">Error al cargar datos de suministros</h2>
+            <h2 className="text-2xl font-bold text-red-600 mb-4">Error al cargar inventario</h2>
+            <p className="text-gray-600 mb-4">Sucursal: {primaryBranch.name}</p>
             <p className="text-gray-600 mb-6">{error}</p>
             <div className="space-y-4">
               <Button
                 variant="primary"
-                onClick={handleRefreshData}
+                onClick={refreshData}
                 icon={RefreshCw}
-                disabled={loading || snacksLoading}
+                disabled={loading}
               >
-                {loading || snacksLoading ? 'Recargando...' : 'Reintentar'}
+                {loading ? 'Recargando...' : 'Reintentar'}
               </Button>
               
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-left">
                 <h3 className="font-semibold text-yellow-800 mb-2">💡 Posibles soluciones:</h3>
                 <ul className="text-sm text-yellow-700 space-y-1">
-                  <li>• Verifica que las tablas de suministros y snacks existan en Supabase</li>
-                  <li>• Ejecuta el script de "Completar Base de Datos - Suministros"</li>
+                  <li>• Verifica que las tablas tengan la columna branch_id</li>
+                  <li>• Ejecuta el script de corrección de suministros por sucursal</li>
                   <li>• Revisa los permisos de Row Level Security (RLS)</li>
                   <li>• Comprueba la conexión a internet</li>
                 </ul>
@@ -402,18 +390,18 @@ const Supplies = () => {
   }
 
   // Loading State
-  if (loading && snacksLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 p-6">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">Suministros e Inventario</h1>
-            <p className="text-gray-600">Gestión de productos y stock del hotel</p>
+            <h1 className="text-4xl font-bold text-gray-800 mb-2">Inventario - {primaryBranch.name}</h1>
+            <p className="text-gray-600">Gestión de suministros y snacks</p>
           </div>
           
           <div className="bg-white rounded-lg shadow-lg p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Cargando inventario...</p>
+            <p className="text-gray-600">Cargando inventario para {primaryBranch.name}...</p>
             <p className="text-sm text-gray-500 mt-2">
               Obteniendo suministros, snacks, categorías y alertas...
             </p>
@@ -429,13 +417,18 @@ const Supplies = () => {
     <div className="min-h-screen bg-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
         
-        {/* Header */}
+        {/* Header con información de sucursal */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">Suministros e Inventario</h1>
-          <p className="text-gray-600">Gestión completa de productos, snacks y stock del hotel</p>
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">
+            Inventario - {primaryBranch.name}
+          </h1>
+          <p className="text-gray-600">Gestión de suministros y snacks por sucursal</p>
+          <div className="mt-2 text-sm text-gray-500">
+            📍 {primaryBranch.address || 'Dirección no disponible'}
+          </div>
         </div>
 
-        {/* ✅ NUEVA: Navegación de pestañas con snacks */}
+        {/* Navegación de pestañas */}
         <div className="mb-6">
           <div className="border-b border-gray-200">
             <nav className="-mb-px flex space-x-8">
@@ -487,7 +480,7 @@ const Supplies = () => {
           </div>
         </div>
 
-        {/* ✅ NUEVA: Stats Cards combinadas */}
+        {/* Stats Cards combinadas */}
         <div className="mb-8">
           <StatsCards 
             stats={stats}
@@ -556,10 +549,10 @@ const Supplies = () => {
           </div>
         )}
 
-        {/* ✅ NUEVA: Contenido principal con soporte para snacks */}
+        {/* Contenido principal */}
         {(currentView === 'inventory' || currentView === 'snacks') ? (
           <div className="space-y-6">
-            {/* Filtros - Solo mostrar para suministros regulares */}
+            {/* Filtros - Solo para suministros regulares */}
             {currentView === 'inventory' && (
               <SuppliesFilters
                 filters={filters}
@@ -585,7 +578,7 @@ const Supplies = () => {
                   )}
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  {inventoryItems.length} artículos registrados
+                  {inventoryItems.length} artículos registrados en {primaryBranch.name}
                   {currentView === 'snacks' && (
                     <span className="text-green-600 ml-2">
                       • Se consumen automáticamente en check-ins
@@ -598,13 +591,13 @@ const Supplies = () => {
                 <Button
                   variant="outline"
                   icon={RefreshCw}
-                  onClick={handleRefreshData}
-                  disabled={loading || snacksLoading}
+                  onClick={refreshData}
+                  disabled={loading}
                 >
-                  {loading || snacksLoading ? 'Actualizando...' : 'Actualizar'}
+                  {loading ? 'Actualizando...' : 'Actualizar'}
                 </Button>
                 
-                {/* ✅ BOTÓN MEJORADO - Se adapta según la vista */}
+                {/* Botón para crear suministros */}
                 {currentView === 'inventory' && (
                   <Button
                     variant="primary"
@@ -615,7 +608,7 @@ const Supplies = () => {
                   </Button>
                 )}
                 
-                {/* ✅ NUEVO - Botón para crear snacks */}
+                {/* Botón para crear snacks */}
                 {currentView === 'snacks' && (
                   <Button
                     variant="success"
@@ -628,12 +621,12 @@ const Supplies = () => {
               </div>
             </div>
 
-            {/* ✅ NUEVA: Tabla con soporte completo para snacks */}
+            {/* Tabla con soporte completo para snacks */}
             <SuppliesTable
               supplies={inventoryItems}
-              loading={loading || snacksLoading}
+              loading={loading}
               onEdit={currentView === 'snacks' ? null : openEditModal}
-              onEditSnack={currentView === 'snacks' ? openEditSnackModal : null} // ✅ NUEVA prop
+              onEditSnack={currentView === 'snacks' ? openEditSnackModal : null}
               onDelete={currentView === 'snacks' ? null : handleDeleteSupply}
               onAddMovement={currentView === 'snacks' ? null : openMovementModal}
               onAdjustStock={async (itemId, newStock, reason) => {
@@ -652,7 +645,7 @@ const Supplies = () => {
               isSnacksView={currentView === 'snacks'}
             />
 
-            {/* ✅ NUEVA: Información adicional para snacks */}
+            {/* Información adicional para snacks */}
             {currentView === 'snacks' && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
                 <div className="flex items-start space-x-3">
@@ -678,6 +671,10 @@ const Supplies = () => {
                         <strong>📊 Seguimiento:</strong> Todos los consumos quedan registrados en 
                         la tabla quick_checkins con el detalle de snacks consumidos.
                       </p>
+                      <p>
+                        <strong>🏢 Por Sucursal:</strong> Cada sucursal maneja su propio inventario 
+                        de snacks de forma independiente.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -685,12 +682,12 @@ const Supplies = () => {
             )}
           </div>
         ) : (
-          /* Vista de Alertas - sin cambios */
+          /* Vista de Alertas */
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-semibold text-gray-800">
-                  Centro de Alertas
+                  Centro de Alertas - {primaryBranch.name}
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
                   Gestión de alertas de inventario
@@ -709,8 +706,8 @@ const Supplies = () => {
                 <Button
                   variant="outline"
                   icon={RefreshCw}
-                  onClick={handleRefreshData}
-                  disabled={loading || snacksLoading}
+                  onClick={refreshData}
+                  disabled={loading}
                 >
                   Actualizar
                 </Button>
@@ -727,7 +724,7 @@ const Supplies = () => {
           </div>
         )}
 
-        {/* ✅ MODALES */}
+        {/* MODALES */}
         
         {/* Modal de crear/editar suministro */}
         <SupplyFormModal
@@ -751,7 +748,7 @@ const Supplies = () => {
           loading={loading}
         />
 
-        {/* ✅ NUEVO: Modal de crear/editar snack */}
+        {/* Modal de crear/editar snack */}
         <SnackFormModal
           isOpen={showSnackModal}
           onClose={closeSnackModal}
@@ -759,10 +756,10 @@ const Supplies = () => {
           snack={selectedSnack}
           categories={snackCategories}
           onCreateCategory={handleCreateSnackCategory}
-          loading={loading || snacksLoading}
+          loading={loading}
         />
 
-        {/* ✅ NUEVO: Debug Info mejorado */}
+        {/* Debug Info para desarrollo */}
         {process.env.NODE_ENV === 'development' && (
           <div className="mt-8 bg-gray-50 border border-gray-200 rounded-lg p-4">
             <details>
@@ -770,6 +767,7 @@ const Supplies = () => {
                 🐛 Debug Info (Development)
               </summary>
               <div className="mt-2 text-sm text-gray-600 space-y-1">
+                <p><strong>Current Branch:</strong> {primaryBranch.name} ({primaryBranch.id})</p>
                 <p><strong>Current View:</strong> {currentView}</p>
                 <p><strong>Supplies loaded:</strong> {supplies.length}</p>
                 <p><strong>Snacks loaded:</strong> {snacks.length}</p>
@@ -779,10 +777,9 @@ const Supplies = () => {
                 <p><strong>Alerts count:</strong> {alerts.length}</p>
                 <p><strong>Unresolved alerts:</strong> {unresolvedAlertsCount}</p>
                 <p><strong>Inventory items shown:</strong> {inventoryItems.length}</p>
-                <p><strong>Combined stats:</strong> {JSON.stringify(stats)}</p>
+                <p><strong>Combined stats:</strong> Total: {stats.total}, Value: S/ {stats.totalValue?.toFixed(2)}</p>
                 <p><strong>Current filters:</strong> {JSON.stringify(filters)}</p>
                 <p><strong>Loading state:</strong> {loading ? 'True' : 'False'}</p>
-                <p><strong>Snacks loading:</strong> {snacksLoading ? 'True' : 'False'}</p>
                 <p><strong>Error state:</strong> {error || 'None'}</p>
               </div>
             </details>
