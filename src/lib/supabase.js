@@ -4321,11 +4321,6 @@ export const db = {
   }
 }
 
-// =====================================================
-// 🏢 IMPORTAR Y EXPORTAR BRANCH SERVICE
-// =====================================================
-import { branchService as externalBranchService } from './branchService'
-
 
 // =====================================================
 // 🔄 EXPORT PRINCIPAL ACTUALIZADO
