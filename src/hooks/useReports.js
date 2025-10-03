@@ -6,7 +6,7 @@ export const useReports = () => {
   const [error, setError] = useState(null);
   const [dashboardStats, setDashboardStats] = useState(null);
   const [occupancyData, setOccupancyData] = useState([]);
-  const [revenueData, setRevenueData] = useState([]);
+  const [revenueData, setRevenueData] = useState(null); // ✅ Cambiado a null por defecto
   const [expensesData, setExpensesData] = useState([]);
   const [dailyReports, setDailyReports] = useState([]);
   const [savedReports, setSavedReports] = useState([]);
@@ -32,7 +32,6 @@ export const useReports = () => {
       const now = Date.now();
       const cache = cacheRef.current.dashboardStats;
       
-      // Usar cache si es reciente
       if (cache.data && (now - cache.timestamp) < CACHE_DURATION) {
         console.log('📊 Using cached dashboard stats');
         setDashboardStats(cache.data);
@@ -65,7 +64,6 @@ export const useReports = () => {
 
       console.log('✅ Dashboard stats loaded:', stats);
 
-      // Actualizar cache
       cacheRef.current.dashboardStats = {
         data: stats,
         timestamp: now
@@ -115,7 +113,7 @@ export const useReports = () => {
   }, []);
 
   // ===================================================
-  // REPORTES DE INGRESOS
+  // REPORTES DE INGRESOS - ✅ CORREGIDO
   // ===================================================
   const getRevenueReport = useCallback(async (branchId, startDate, endDate, period = 'daily') => {
     try {
@@ -124,7 +122,6 @@ export const useReports = () => {
 
       console.log('💰 Fetching revenue report:', { branchId, startDate, endDate, period });
 
-      // Usar la función de la base de datos
       const { data, error } = await supabase.rpc('calculate_revenue_by_period', {
         branch_uuid: branchId,
         start_date: startDate,
@@ -133,8 +130,9 @@ export const useReports = () => {
 
       if (error) throw error;
 
-      console.log('✅ Revenue data calculated:', data?.[0]);
+      console.log('✅ Revenue data calculated:', data);
       
+      // ✅ CORRECCIÓN: Siempre retornar un objeto, no array
       const revenueStats = data?.[0] || {
         room_revenue: 0,
         service_revenue: 0,
@@ -143,12 +141,22 @@ export const useReports = () => {
         net_profit: 0
       };
 
-      setRevenueData([revenueStats]);
+      setRevenueData(revenueStats); // ✅ Guardar como objeto
       return revenueStats;
     } catch (err) {
       console.error('❌ Error fetching revenue report:', err);
       setError(err.message || 'Error al cargar reporte de ingresos');
-      return null;
+      
+      // ✅ Retornar objeto vacío en caso de error
+      const emptyRevenue = {
+        room_revenue: 0,
+        service_revenue: 0,
+        total_revenue: 0,
+        total_expenses: 0,
+        net_profit: 0
+      };
+      setRevenueData(emptyRevenue);
+      return emptyRevenue;
     } finally {
       setLoading(false);
     }
@@ -242,7 +250,6 @@ export const useReports = () => {
       const targetDate = reportDate || new Date().toISOString().split('T')[0];
       console.log('🔄 Generating daily report for:', targetDate);
 
-      // Usar la función de la base de datos
       const { error } = await supabase.rpc('generate_daily_report', {
         branch_uuid: branchId,
         report_date_param: targetDate
@@ -346,7 +353,7 @@ export const useReports = () => {
   }, []);
 
   // ===================================================
-  // ELIMINAR REPORTE GUARDADO
+  // ✅ ELIMINAR REPORTE GUARDADO - NOMBRE CORREGIDO
   // ===================================================
   const deleteSavedReport = useCallback(async (reportId) => {
     try {
@@ -380,8 +387,9 @@ export const useReports = () => {
   // ===================================================
   // EXPORTAR REPORTE A CSV
   // ===================================================
-  const exportToCSV = useCallback(async (reportType, data, filename) => {
+  const exportToCSV = useCallback(async (reportType, data, options = {}) => {
     try {
+      const { filename = `reporte_${reportType}_${new Date().toISOString().split('T')[0]}` } = options;
       console.log('📤 Exporting to CSV:', reportType, filename);
 
       let csvContent = '';
@@ -516,7 +524,7 @@ export const useReports = () => {
     generateDailyReport,
     getSavedReports,
     saveReport,
-    deleteSavedReport,
+    deleteSavedReport, // ✅ Nombre corregido
     exportToCSV,
 
     // Utilidades

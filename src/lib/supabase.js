@@ -3776,7 +3776,6 @@ export const suppliesService = {
     }
   },
 
-  // ✅ Obtener alertas por sucursal - CORREGIDO
   async getAlertsByBranch(branchId) {
     try {
       console.log('🚨 Fetching alerts for branch:', branchId)

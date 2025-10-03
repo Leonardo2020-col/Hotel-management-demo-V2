@@ -4,8 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   BarChart3, TrendingUp, Calendar, Download, 
   Users, DollarSign, Home, AlertCircle,
-  Filter, RefreshCw, Save, Eye, Trash2,
-  PieChart, Activity, FileText
+  RefreshCw, Save, Eye, Trash2, FileText
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -28,7 +27,7 @@ const ReportsPage = () => {
     generateDailyReport,
     getSavedReports,
     saveReport,
-    deleteSavedReports,
+    deleteSavedReport, // ✅ Nombre corregido
     exportToCSV,
     clearError,
     refreshCache,
@@ -37,7 +36,6 @@ const ReportsPage = () => {
     formatPercentage
   } = useReports();
 
-  // Estados locales
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dateRange, setDateRange] = useState({
     startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -45,7 +43,6 @@ const ReportsPage = () => {
   });
   const [showSaveModal, setShowSaveModal] = useState(false);
 
-  // Pestañas de navegación
   const tabs = [
     { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
     { id: 'occupancy', name: 'Ocupación', icon: Home },
@@ -55,11 +52,9 @@ const ReportsPage = () => {
     { id: 'saved', name: 'Guardados', icon: Save }
   ];
 
-  // Obtener branch ID del usuario
   const branchId = userInfo?.user_branches?.[0]?.branch_id;
   const branchName = userInfo?.user_branches?.[0]?.branch?.name;
 
-  // Cargar datos iniciales
   useEffect(() => {
     if (branchId) {
       getDashboardStats(branchId);
@@ -67,7 +62,6 @@ const ReportsPage = () => {
     }
   }, [branchId, userInfo?.id, getDashboardStats, getSavedReports]);
 
-  // Cargar datos según la pestaña activa
   useEffect(() => {
     if (!branchId) return;
 
@@ -89,25 +83,22 @@ const ReportsPage = () => {
     }
   }, [activeTab, branchId, dateRange, getOccupancyReport, getRevenueReport, getExpensesReport, getDailyReports]);
 
-  // Manejar cambio de fechas
   const handleDateChange = useCallback((field, value) => {
     setDateRange(prev => ({ ...prev, [field]: value }));
   }, []);
 
-  // Generar reporte diario
   const handleGenerateDailyReport = useCallback(async () => {
     if (!branchId) return;
 
     const result = await generateDailyReport(branchId);
-    if (result?.success) {
+    if (result) {
       toast.success('Reporte diario generado exitosamente');
     } else {
       toast.error('Error al generar reporte diario');
     }
   }, [branchId, generateDailyReport]);
 
-  // Exportar reporte actual
-  const handleExport = useCallback(async (format = 'csv') => {
+  const handleExport = useCallback(async () => {
     if (!branchId) return;
 
     const timestamp = new Date().toISOString().split('T')[0];
@@ -135,8 +126,7 @@ const ReportsPage = () => {
     }
 
     if (dataToExport) {
-      const result = await exportToCSV(activeTab, dataToExport, { filename });
-      success = result?.success;
+      success = await exportToCSV(activeTab, dataToExport, { filename });
     }
 
     if (success) {
@@ -144,9 +134,8 @@ const ReportsPage = () => {
     } else {
       toast.error('Error al exportar el reporte');
     }
-  }, [activeTab, branchName, occupancyData, revenueData, expensesData, dailyReports, exportToCSV]);
+  }, [activeTab, branchName, occupancyData, revenueData, expensesData, dailyReports, exportToCSV, branchId]);
 
-  // Guardar reporte
   const handleSaveReport = useCallback(async (reportData) => {
     try {
       await saveReport({
@@ -167,15 +156,14 @@ const ReportsPage = () => {
     }
   }, [activeTab, dateRange, branchId, branchName, userInfo?.id, saveReport]);
 
-  // Eliminar reporte guardado
   const handleDeleteSavedReport = useCallback(async (reportId) => {
     if (!window.confirm('¿Estás seguro de que quieres eliminar este reporte?')) {
       return;
     }
 
     try {
-      const result = await deleteSavedReports(reportId);
-      if (result?.success) {
+      const result = await deleteSavedReport(reportId); // ✅ Nombre corregido
+      if (result) {
         toast.success('Reporte eliminado exitosamente');
       } else {
         toast.error('Error al eliminar reporte');
@@ -183,9 +171,8 @@ const ReportsPage = () => {
     } catch (err) {
       toast.error('Error al eliminar reporte');
     }
-  }, [deleteSavedReports]);
+  }, [deleteSavedReport]);
 
-  // Refrescar datos
   const handleRefresh = useCallback(() => {
     refreshCache();
     if (branchId) {
@@ -193,10 +180,8 @@ const ReportsPage = () => {
     }
   }, [branchId, getDashboardStats, refreshCache]);
 
-  // Componente de estadísticas del dashboard
   const DashboardStats = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-      {/* Ocupación */}
       <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 hover:shadow-xl transition-all duration-200">
         <div className="flex items-center justify-between">
           <div>
@@ -214,7 +199,6 @@ const ReportsPage = () => {
         </div>
       </div>
 
-      {/* Ingresos del día */}
       <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 hover:shadow-xl transition-all duration-200">
         <div className="flex items-center justify-between">
           <div>
@@ -222,9 +206,7 @@ const ReportsPage = () => {
             <p className="text-3xl font-bold text-green-600">
               {formatCurrency(dashboardStats?.today_revenue)}
             </p>
-            <p className="text-sm text-slate-600 mt-1">
-              Últimas 24 horas
-            </p>
+            <p className="text-sm text-slate-600 mt-1">Últimas 24 horas</p>
           </div>
           <div className="p-4 bg-green-100 rounded-2xl">
             <DollarSign className="w-8 h-8 text-green-600" />
@@ -232,7 +214,6 @@ const ReportsPage = () => {
         </div>
       </div>
 
-      {/* Check-ins/Check-outs */}
       <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 hover:shadow-xl transition-all duration-200">
         <div className="flex items-center justify-between">
           <div>
@@ -255,7 +236,6 @@ const ReportsPage = () => {
         </div>
       </div>
 
-      {/* Reservaciones pendientes */}
       <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 hover:shadow-xl transition-all duration-200">
         <div className="flex items-center justify-between">
           <div>
@@ -263,9 +243,7 @@ const ReportsPage = () => {
             <p className="text-3xl font-bold text-orange-600">
               {dashboardStats?.pending_reservations}
             </p>
-            <p className="text-sm text-slate-600 mt-1">
-              Por confirmar
-            </p>
+            <p className="text-sm text-slate-600 mt-1">Por confirmar</p>
           </div>
           <div className="p-4 bg-orange-100 rounded-2xl">
             <AlertCircle className="w-8 h-8 text-orange-600" />
@@ -291,7 +269,6 @@ const ReportsPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <div className="max-w-7xl mx-auto p-6">
         
-        {/* Header */}
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
             <div className="flex items-center gap-4">
@@ -309,7 +286,6 @@ const ReportsPage = () => {
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Refrescar */}
               <button
                 onClick={handleRefresh}
                 disabled={loading}
@@ -319,34 +295,31 @@ const ReportsPage = () => {
                 <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
               </button>
 
-              {/* Exportar */}
               {activeTab !== 'dashboard' && activeTab !== 'saved' && (
-                <button
-                  onClick={() => handleExport('csv')}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors disabled:opacity-50"
-                >
-                  <Download className="w-5 h-5" />
-                  Exportar
-                </button>
-              )}
+                <>
+                  <button
+                    onClick={handleExport}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors disabled:opacity-50"
+                  >
+                    <Download className="w-5 h-5" />
+                    Exportar
+                  </button>
 
-              {/* Guardar reporte */}
-              {activeTab !== 'dashboard' && activeTab !== 'saved' && (
-                <button
-                  onClick={() => setShowSaveModal(true)}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-50"
-                >
-                  <Save className="w-5 h-5" />
-                  Guardar
-                </button>
+                  <button
+                    onClick={() => setShowSaveModal(true)}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-50"
+                  >
+                    <Save className="w-5 h-5" />
+                    Guardar
+                  </button>
+                </>
               )}
             </div>
           </div>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="bg-red-50/80 backdrop-blur-sm border border-red-200 rounded-2xl p-4 mb-6">
             <div className="flex items-center justify-between">
@@ -356,7 +329,7 @@ const ReportsPage = () => {
               </div>
               <button
                 onClick={clearError}
-                className="text-red-600 hover:text-red-800 transition-colors"
+                className="text-red-600 hover:text-red-800 transition-colors text-xl"
               >
                 ×
               </button>
@@ -364,7 +337,6 @@ const ReportsPage = () => {
           </div>
         )}
 
-        {/* Navigation Tabs */}
         <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 mb-8 overflow-hidden">
           <div className="flex overflow-x-auto">
             {tabs.map((tab) => (
@@ -384,7 +356,6 @@ const ReportsPage = () => {
           </div>
         </div>
 
-        {/* Date Range Filter (para pestañas que no sean dashboard o saved) */}
         {activeTab !== 'dashboard' && activeTab !== 'saved' && (
           <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6 mb-8">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -393,7 +364,7 @@ const ReportsPage = () => {
                 <span className="text-slate-700 font-medium">Rango de fechas:</span>
               </div>
               
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <div>
                   <label className="block text-sm text-slate-600 mb-1">Desde:</label>
                   <input
@@ -421,7 +392,7 @@ const ReportsPage = () => {
                       disabled={loading}
                       className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-50"
                     >
-                      <Activity className="w-4 h-4" />
+                      <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                       Generar
                     </button>
                   </div>
@@ -431,7 +402,6 @@ const ReportsPage = () => {
           </div>
         )}
 
-        {/* Content Area */}
         <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 overflow-hidden">
           {loading && (
             <div className="flex items-center justify-center py-12">
@@ -444,12 +414,10 @@ const ReportsPage = () => {
 
           {!loading && (
             <>
-              {/* Dashboard Stats */}
               {activeTab === 'dashboard' && (
                 <div className="p-8">
                   <DashboardStats />
                   
-                  {/* Quick Actions */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
                       <div className="flex items-center gap-4 mb-4">
@@ -508,14 +476,13 @@ const ReportsPage = () => {
                 </div>
               )}
 
-              {/* Occupancy Report */}
               {activeTab === 'occupancy' && (
                 <div className="p-8">
                   <h2 className="text-2xl font-bold text-slate-800 mb-6">Reporte de Ocupación</h2>
                   
                   {occupancyData.length === 0 ? (
                     <div className="text-center py-12">
-                      <PieChart className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+                      <Home className="w-16 h-16 text-slate-400 mx-auto mb-4" />
                       <p className="text-slate-600">No hay datos de ocupación para el rango seleccionado</p>
                     </div>
                   ) : (
@@ -549,57 +516,54 @@ const ReportsPage = () => {
                 </div>
               )}
 
-              {/* Revenue Report */}
               {activeTab === 'revenue' && (
                 <div className="p-8">
                   <h2 className="text-2xl font-bold text-slate-800 mb-6">Reporte de Ingresos</h2>
                   
-                  {!revenueData || (Array.isArray(revenueData) && revenueData.length === 0) ? (
+                  {!revenueData ? (
                     <div className="text-center py-12">
                       <DollarSign className="w-16 h-16 text-slate-400 mx-auto mb-4" />
                       <p className="text-slate-600">No hay datos de ingresos para el rango seleccionado</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      {/* Resumen de ingresos */}
                       <div className="space-y-4">
                         <div className="bg-green-50 rounded-xl p-6 border border-green-200">
                           <h3 className="font-semibold text-green-800 mb-4">Ingresos por Habitaciones</h3>
                           <p className="text-3xl font-bold text-green-600">
-                            {formatCurrency(revenueData?.room_revenue || 0)}
+                            {formatCurrency(revenueData.room_revenue || 0)}
                           </p>
                         </div>
 
                         <div className="bg-blue-50 rounded-xl p-6 border border-blue-200">
                           <h3 className="font-semibold text-blue-800 mb-4">Ingresos por Servicios</h3>
                           <p className="text-3xl font-bold text-blue-600">
-                            {formatCurrency(revenueData?.service_revenue || 0)}
+                            {formatCurrency(revenueData.service_revenue || 0)}
                           </p>
                         </div>
 
                         <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
                           <h3 className="font-semibold text-slate-800 mb-4">Total de Gastos</h3>
                           <p className="text-3xl font-bold text-red-600">
-                            {formatCurrency(revenueData?.total_expenses || 0)}
+                            {formatCurrency(revenueData.total_expenses || 0)}
                           </p>
                         </div>
                       </div>
 
-                      {/* Resumen total */}
                       <div className="space-y-4">
                         <div className="bg-indigo-50 rounded-xl p-6 border border-indigo-200">
                           <h3 className="font-semibold text-indigo-800 mb-4">Ingresos Totales</h3>
                           <p className="text-4xl font-bold text-indigo-600">
-                            {formatCurrency(revenueData?.total_revenue || 0)}
+                            {formatCurrency(revenueData.total_revenue || 0)}
                           </p>
                         </div>
 
                         <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 border border-green-200">
                           <h3 className="font-semibold text-slate-800 mb-4">Ganancia Neta</h3>
                           <p className={`text-4xl font-bold ${
-                            (revenueData?.net_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                            (revenueData.net_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                           }`}>
-                            {formatCurrency(revenueData?.net_profit || 0)}
+                            {formatCurrency(revenueData.net_profit || 0)}
                           </p>
                           <p className="text-sm text-slate-600 mt-2">
                             Ingresos - Gastos del período
@@ -611,7 +575,6 @@ const ReportsPage = () => {
                 </div>
               )}
 
-              {/* Expenses Report */}
               {activeTab === 'expenses' && (
                 <div className="p-8">
                   <h2 className="text-2xl font-bold text-slate-800 mb-6">Reporte de Gastos</h2>
@@ -623,7 +586,6 @@ const ReportsPage = () => {
                     </div>
                   ) : (
                     <>
-                      {/* Resumen de gastos */}
                       <div className="bg-red-50 rounded-xl p-6 border border-red-200 mb-6">
                         <div className="flex items-center justify-between">
                           <div>
@@ -641,7 +603,6 @@ const ReportsPage = () => {
                         </div>
                       </div>
 
-                      {/* Tabla de gastos */}
                       <div className="overflow-x-auto">
                         <table className="w-full">
                           <thead>
@@ -655,7 +616,7 @@ const ReportsPage = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {expensesData.map((expense, index) => (
+                            {expensesData.map((expense) => (
                               <tr key={expense.id} className="border-b border-slate-100 hover:bg-slate-50">
                                 <td className="py-3 px-4">{formatDate(expense.expense_date)}</td>
                                 <td className="py-3 px-4">
@@ -690,7 +651,6 @@ const ReportsPage = () => {
                 </div>
               )}
 
-              {/* Daily Reports */}
               {activeTab === 'daily' && (
                 <div className="p-8">
                   <h2 className="text-2xl font-bold text-slate-800 mb-6">Reportes Diarios</h2>
@@ -722,7 +682,7 @@ const ReportsPage = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {dailyReports.map((report, index) => (
+                          {dailyReports.map((report) => (
                             <tr key={report.id} className="border-b border-slate-100 hover:bg-slate-50">
                               <td className="py-3 px-4 font-medium">{formatDate(report.report_date)}</td>
                               <td className="py-3 px-4 text-blue-600 font-semibold">{report.total_checkins}</td>
@@ -744,7 +704,6 @@ const ReportsPage = () => {
                 </div>
               )}
 
-              {/* Saved Reports */}
               {activeTab === 'saved' && (
                 <div className="p-8">
                   <h2 className="text-2xl font-bold text-slate-800 mb-6">Reportes Guardados</h2>
@@ -796,7 +755,6 @@ const ReportsPage = () => {
 
                           <button
                             onClick={() => {
-                              // Cargar parámetros del reporte guardado
                               if (report.parameters?.dateRange) {
                                 setDateRange(report.parameters.dateRange);
                               }
@@ -817,7 +775,6 @@ const ReportsPage = () => {
           )}
         </div>
 
-        {/* Modal para guardar reporte */}
         {showSaveModal && (
           <SaveReportModal
             onSave={handleSaveReport}
@@ -831,7 +788,6 @@ const ReportsPage = () => {
   );
 };
 
-// Componente Modal para guardar reportes
 const SaveReportModal = ({ onSave, onClose, reportType }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -857,7 +813,7 @@ const SaveReportModal = ({ onSave, onClose, reportType }) => {
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition-colors text-2xl leading-none"
           >
             ×
           </button>
