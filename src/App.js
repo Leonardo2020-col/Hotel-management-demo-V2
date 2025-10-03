@@ -21,6 +21,7 @@ import Reservations from './pages/Reservations.jsx'
 import Rooms from './pages/Rooms.jsx'
 import GuestsPage from './pages/GuestsPage.jsx' 
 import ReportsPage from './pages/ReportsPage.jsx'
+import ReportsPageNew from './pages/ReportsPageNew.jsx'
 import BranchSwitcher from './pages/BranchSwitcher.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
@@ -221,9 +222,21 @@ function App() {
                 }
               />
               
-              {/* Reportes CON Layout */}
+              {/* Reportes CON Layout - NUEVA VERSIÓN */}
               <Route
                 path="/reports"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <ReportsPageNew />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Reportes Antigua (temporal) */}
+              <Route
+                path="/reports-old"
                 element={
                   <ProtectedRoute requireReception>
                     <Layout>

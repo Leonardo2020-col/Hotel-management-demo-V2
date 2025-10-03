@@ -1,0 +1,323 @@
+-- =====================================================
+-- MIGRACIÓN COMPLETA: SISTEMA DE REPORTES V2
+-- Ejecutar en Supabase SQL Editor
+-- =====================================================
+
+-- PASO 1: Crear vista simple para estadísticas de dashboard
+CREATE OR REPLACE VIEW dashboard_stats_view AS
+SELECT
+    b.id as branch_id,
+    b.name as branch_name,
+    -- Contar habitaciones totales
+    COUNT(DISTINCT r.id) as total_rooms,
+    -- Contar habitaciones ocupadas
+    COUNT(DISTINCT CASE WHEN rs.status = 'ocupada' THEN r.id END) as occupied_rooms,
+    -- Contar habitaciones disponibles
+    COUNT(DISTINCT CASE WHEN rs.status = 'disponible' THEN r.id END) as available_rooms,
+    -- Contar habitaciones en mantenimiento
+    COUNT(DISTINCT CASE WHEN rs.status = 'mantenimiento' THEN r.id END) as maintenance_rooms,
+    -- Calcular tasa de ocupación
+    CASE
+        WHEN COUNT(DISTINCT r.id) > 0
+        THEN ROUND((COUNT(DISTINCT CASE WHEN rs.status = 'ocupada' THEN r.id END)::decimal / COUNT(DISTINCT r.id)) * 100, 2)
+        ELSE 0
+    END as occupancy_rate
+FROM branches b
+LEFT JOIN rooms r ON r.branch_id = b.id
+LEFT JOIN room_status rs ON r.status_id = rs.id
+WHERE b.is_active = true
+GROUP BY b.id, b.name;
+
+-- PASO 2: Crear función simple para obtener estadísticas de dashboard
+CREATE OR REPLACE FUNCTION get_dashboard_stats_simple(p_branch_id UUID)
+RETURNS TABLE (
+    total_rooms INTEGER,
+    occupied_rooms INTEGER,
+    available_rooms INTEGER,
+    maintenance_rooms INTEGER,
+    occupancy_rate DECIMAL,
+    today_checkins INTEGER,
+    today_checkouts INTEGER,
+    pending_reservations INTEGER
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH room_stats AS (
+        SELECT
+            COUNT(r.id)::INTEGER as total,
+            COUNT(CASE WHEN rs.status = 'ocupada' THEN 1 END)::INTEGER as occupied,
+            COUNT(CASE WHEN rs.status = 'disponible' THEN 1 END)::INTEGER as available,
+            COUNT(CASE WHEN rs.status = 'mantenimiento' THEN 1 END)::INTEGER as maintenance
+        FROM rooms r
+        LEFT JOIN room_status rs ON r.status_id = rs.id
+        WHERE r.branch_id = p_branch_id
+    ),
+    checkins_today AS (
+        SELECT COUNT(*)::INTEGER as count
+        FROM checkin_orders
+        WHERE branch_id = p_branch_id
+        AND DATE(checkin_date) = CURRENT_DATE
+    ),
+    checkouts_today AS (
+        SELECT COUNT(*)::INTEGER as count
+        FROM checkout_orders
+        WHERE branch_id = p_branch_id
+        AND DATE(checkout_date) = CURRENT_DATE
+    ),
+    pending_res AS (
+        SELECT COUNT(*)::INTEGER as count
+        FROM reservations res
+        JOIN reservation_status st ON res.status_id = st.id
+        WHERE res.branch_id = p_branch_id
+        AND st.status = 'pendiente'
+    )
+    SELECT
+        rs.total,
+        rs.occupied,
+        rs.available,
+        rs.maintenance,
+        CASE
+            WHEN rs.total > 0
+            THEN ROUND((rs.occupied::DECIMAL / rs.total) * 100, 2)
+            ELSE 0
+        END,
+        COALESCE(ci.count, 0),
+        COALESCE(co.count, 0),
+        COALESCE(pr.count, 0)
+    FROM room_stats rs
+    CROSS JOIN checkins_today ci
+    CROSS JOIN checkouts_today co
+    CROSS JOIN pending_res pr;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- PASO 3: Función para calcular ingresos por período
+CREATE OR REPLACE FUNCTION calculate_revenue_simple(
+    p_branch_id UUID,
+    p_start_date DATE,
+    p_end_date DATE
+)
+RETURNS TABLE (
+    room_revenue DECIMAL,
+    service_revenue DECIMAL,
+    total_revenue DECIMAL,
+    total_expenses DECIMAL,
+    net_profit DECIMAL
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH room_income AS (
+        SELECT COALESCE(SUM(total_amount), 0) as amount
+        FROM checkout_orders
+        WHERE branch_id = p_branch_id
+        AND checkout_date BETWEEN p_start_date AND p_end_date
+    ),
+    service_income AS (
+        SELECT COALESCE(SUM(total_snacks_amount), 0) as amount
+        FROM checkout_orders
+        WHERE branch_id = p_branch_id
+        AND checkout_date BETWEEN p_start_date AND p_end_date
+    ),
+    expenses_total AS (
+        SELECT COALESCE(SUM(amount), 0) as amount
+        FROM expenses
+        WHERE branch_id = p_branch_id
+        AND expense_date BETWEEN p_start_date AND p_end_date
+    )
+    SELECT
+        ri.amount,
+        si.amount,
+        ri.amount + si.amount,
+        et.amount,
+        (ri.amount + si.amount) - et.amount
+    FROM room_income ri
+    CROSS JOIN service_income si
+    CROSS JOIN expenses_total et;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- PASO 4: Crear tabla para reportes diarios (si no existe)
+CREATE TABLE IF NOT EXISTS daily_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_id UUID NOT NULL REFERENCES branches(id),
+    report_date DATE NOT NULL,
+    total_checkins INTEGER DEFAULT 0,
+    total_checkouts INTEGER DEFAULT 0,
+    total_revenue DECIMAL(10,2) DEFAULT 0,
+    total_expenses DECIMAL(10,2) DEFAULT 0,
+    occupancy_rate DECIMAL(5,2) DEFAULT 0,
+    available_rooms INTEGER DEFAULT 0,
+    occupied_rooms INTEGER DEFAULT 0,
+    maintenance_rooms INTEGER DEFAULT 0,
+    generated_by UUID REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(branch_id, report_date)
+);
+
+-- Índice para búsquedas rápidas
+CREATE INDEX IF NOT EXISTS idx_daily_reports_branch_date
+ON daily_reports(branch_id, report_date DESC);
+
+-- PASO 5: Función para generar reporte diario
+CREATE OR REPLACE FUNCTION generate_daily_report_simple(
+    p_branch_id UUID,
+    p_report_date DATE DEFAULT CURRENT_DATE,
+    p_user_id UUID DEFAULT NULL
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_checkins INTEGER;
+    v_checkouts INTEGER;
+    v_revenue DECIMAL;
+    v_expenses DECIMAL;
+    v_occupancy DECIMAL;
+    v_available INTEGER;
+    v_occupied INTEGER;
+    v_maintenance INTEGER;
+BEGIN
+    -- Obtener estadísticas del día
+    SELECT
+        COUNT(*)
+    INTO v_checkins
+    FROM checkin_orders
+    WHERE branch_id = p_branch_id
+    AND DATE(checkin_date) = p_report_date;
+
+    SELECT
+        COUNT(*)
+    INTO v_checkouts
+    FROM checkout_orders
+    WHERE branch_id = p_branch_id
+    AND DATE(checkout_date) = p_report_date;
+
+    SELECT
+        COALESCE(SUM(total_amount), 0)
+    INTO v_revenue
+    FROM checkout_orders
+    WHERE branch_id = p_branch_id
+    AND DATE(checkout_date) = p_report_date;
+
+    SELECT
+        COALESCE(SUM(amount), 0)
+    INTO v_expenses
+    FROM expenses
+    WHERE branch_id = p_branch_id
+    AND DATE(expense_date) = p_report_date;
+
+    SELECT
+        COUNT(CASE WHEN rs.status = 'disponible' THEN 1 END),
+        COUNT(CASE WHEN rs.status = 'ocupada' THEN 1 END),
+        COUNT(CASE WHEN rs.status = 'mantenimiento' THEN 1 END)
+    INTO v_available, v_occupied, v_maintenance
+    FROM rooms r
+    JOIN room_status rs ON r.status_id = rs.id
+    WHERE r.branch_id = p_branch_id;
+
+    v_occupancy := CASE
+        WHEN (v_available + v_occupied + v_maintenance) > 0
+        THEN ROUND((v_occupied::DECIMAL / (v_available + v_occupied + v_maintenance)) * 100, 2)
+        ELSE 0
+    END;
+
+    -- Insertar o actualizar reporte
+    INSERT INTO daily_reports (
+        branch_id,
+        report_date,
+        total_checkins,
+        total_checkouts,
+        total_revenue,
+        total_expenses,
+        occupancy_rate,
+        available_rooms,
+        occupied_rooms,
+        maintenance_rooms,
+        generated_by
+    ) VALUES (
+        p_branch_id,
+        p_report_date,
+        v_checkins,
+        v_checkouts,
+        v_revenue,
+        v_expenses,
+        v_occupancy,
+        v_available,
+        v_occupied,
+        v_maintenance,
+        p_user_id
+    )
+    ON CONFLICT (branch_id, report_date)
+    DO UPDATE SET
+        total_checkins = EXCLUDED.total_checkins,
+        total_checkouts = EXCLUDED.total_checkouts,
+        total_revenue = EXCLUDED.total_revenue,
+        total_expenses = EXCLUDED.total_expenses,
+        occupancy_rate = EXCLUDED.occupancy_rate,
+        available_rooms = EXCLUDED.available_rooms,
+        occupied_rooms = EXCLUDED.occupied_rooms,
+        maintenance_rooms = EXCLUDED.maintenance_rooms,
+        generated_by = EXCLUDED.generated_by,
+        created_at = CURRENT_TIMESTAMP;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- PASO 6: Otorgar permisos
+GRANT EXECUTE ON FUNCTION get_dashboard_stats_simple(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION calculate_revenue_simple(UUID, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION generate_daily_report_simple(UUID, DATE, UUID) TO authenticated;
+
+GRANT SELECT ON dashboard_stats_view TO authenticated;
+GRANT ALL ON daily_reports TO authenticated;
+
+-- PASO 7: Crear políticas RLS para daily_reports (si no existen)
+ALTER TABLE daily_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view daily reports from their branch" ON daily_reports;
+CREATE POLICY "Users can view daily reports from their branch"
+ON daily_reports FOR SELECT
+USING (
+    branch_id IN (
+        SELECT ub.branch_id
+        FROM user_branches ub
+        WHERE ub.user_id = auth.uid()
+    )
+);
+
+DROP POLICY IF EXISTS "Users can insert daily reports for their branch" ON daily_reports;
+CREATE POLICY "Users can insert daily reports for their branch"
+ON daily_reports FOR INSERT
+WITH CHECK (
+    branch_id IN (
+        SELECT ub.branch_id
+        FROM user_branches ub
+        WHERE ub.user_id = auth.uid()
+    )
+);
+
+DROP POLICY IF EXISTS "Users can update daily reports for their branch" ON daily_reports;
+CREATE POLICY "Users can update daily reports for their branch"
+ON daily_reports FOR UPDATE
+USING (
+    branch_id IN (
+        SELECT ub.branch_id
+        FROM user_branches ub
+        WHERE ub.user_id = auth.uid()
+    )
+);
+
+-- PASO 8: Verificación de instalación
+DO $$
+BEGIN
+    RAISE NOTICE '✅ Migración completada exitosamente';
+    RAISE NOTICE '📊 Vista: dashboard_stats_view';
+    RAISE NOTICE '🔧 Función: get_dashboard_stats_simple(branch_id)';
+    RAISE NOTICE '💰 Función: calculate_revenue_simple(branch_id, start_date, end_date)';
+    RAISE NOTICE '📅 Función: generate_daily_report_simple(branch_id, date, user_id)';
+    RAISE NOTICE '📋 Tabla: daily_reports';
+    RAISE NOTICE '';
+    RAISE NOTICE '🚀 Ahora puedes usar el nuevo sistema de reportes';
+END $$;
+
+-- PASO 9: Test rápido (opcional - comentar si no quieres ejecutar)
+-- SELECT * FROM get_dashboard_stats_simple('123e4567-e89b-12d3-a456-426614174000');
