@@ -31,7 +31,7 @@ export const useReports = () => {
     try {
       const now = Date.now();
       const cache = cacheRef.current.dashboardStats;
-      
+
       if (cache.data && (now - cache.timestamp) < CACHE_DURATION) {
         console.log('📊 Using cached dashboard stats');
         setDashboardStats(cache.data);
@@ -42,12 +42,21 @@ export const useReports = () => {
       setError(null);
 
       console.log('📊 Fetching dashboard stats for branch:', branchId);
+      console.log('🔍 Branch ID type:', typeof branchId, 'Value:', branchId);
 
+      // Intentar llamar a la función RPC
       const { data, error } = await supabase.rpc('get_dashboard_stats', {
         branch_uuid: branchId
       });
 
-      if (error) throw error;
+      console.log('📊 RPC Response - Data:', data);
+      console.log('📊 RPC Response - Error:', error);
+
+      // Si hay error en RPC, intentar método alternativo
+      if (error) {
+        console.warn('⚠️ RPC failed, trying fallback method:', error.message);
+        return await getFallbackDashboardStats(branchId);
+      }
 
       const stats = data?.[0] || {
         total_rooms: 0,
@@ -73,12 +82,93 @@ export const useReports = () => {
       return stats;
     } catch (err) {
       console.error('❌ Error fetching dashboard stats:', err);
-      setError(err.message || 'Error al cargar estadísticas');
-      return null;
+      console.error('❌ Error details:', err.message, err.code, err.details);
+
+      // Intentar método fallback
+      try {
+        console.log('🔄 Trying fallback method...');
+        return await getFallbackDashboardStats(branchId);
+      } catch (fallbackErr) {
+        console.error('❌ Fallback also failed:', fallbackErr);
+        setError(err.message || 'Error al cargar estadísticas');
+        return null;
+      }
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Método fallback para obtener estadísticas sin RPC
+  const getFallbackDashboardStats = async (branchId) => {
+    console.log('📊 Using fallback method to get dashboard stats');
+
+    try {
+      const today = new Date().toISOString().split('T')[0];
+
+      // Contar habitaciones por estado
+      const { data: rooms, error: roomsError } = await supabase
+        .from('rooms')
+        .select('id, status_id, room_status:status_id(status)')
+        .eq('branch_id', branchId);
+
+      if (roomsError) throw roomsError;
+
+      const total_rooms = rooms?.length || 0;
+      const occupied_rooms = rooms?.filter(r => r.room_status?.status === 'ocupada').length || 0;
+      const available_rooms = rooms?.filter(r => r.room_status?.status === 'disponible').length || 0;
+      const maintenance_rooms = rooms?.filter(r => r.room_status?.status === 'mantenimiento').length || 0;
+      const occupancy_rate = total_rooms > 0 ? (occupied_rooms / total_rooms) * 100 : 0;
+
+      // Contar check-ins de hoy
+      const { count: checkins, error: checkinsError } = await supabase
+        .from('checkin_orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('branch_id', branchId)
+        .gte('checkin_date', today)
+        .lte('checkin_date', today);
+
+      // Contar check-outs de hoy
+      const { count: checkouts, error: checkoutsError } = await supabase
+        .from('checkout_orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('branch_id', branchId)
+        .gte('checkout_date', today)
+        .lte('checkout_date', today);
+
+      // Contar reservaciones pendientes
+      const { count: pending, error: pendingError } = await supabase
+        .from('reservations')
+        .select('*, reservation_status!inner(status)', { count: 'exact', head: true })
+        .eq('branch_id', branchId)
+        .eq('reservation_status.status', 'pendiente');
+
+      const stats = {
+        total_rooms,
+        occupied_rooms,
+        available_rooms,
+        maintenance_rooms,
+        occupancy_rate,
+        today_checkins: checkins || 0,
+        today_checkouts: checkouts || 0,
+        today_revenue: 0, // No podemos calcularlo sin la función
+        pending_reservations: pending || 0,
+        low_stock_items: 0
+      };
+
+      console.log('✅ Fallback stats calculated:', stats);
+
+      cacheRef.current.dashboardStats = {
+        data: stats,
+        timestamp: Date.now()
+      };
+
+      setDashboardStats(stats);
+      return stats;
+    } catch (err) {
+      console.error('❌ Error in fallback method:', err);
+      throw err;
+    }
+  };
 
   // ===================================================
   // REPORTES DE OCUPACIÓN

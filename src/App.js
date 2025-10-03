@@ -33,6 +33,9 @@ import AdminReportsPage from './pages/Admin/AdminReports.jsx'
 import AdminSettingsPage from './pages/Admin/AdminSettings.jsx'
 import AdminAuditPage from './pages/Admin/AdminAudit.jsx'
 
+// Debug Components
+import ReportsDebug from './debug/ReportsDebug.jsx'
+
 function App() {
   console.log('🚀 App rendering...')
 
@@ -250,6 +253,20 @@ function App() {
                 }
               />
               
+              {/* =====================================================
+                  DEBUG (TEMPORAL)
+                  ===================================================== */}
+              <Route
+                path="/debug/reports"
+                element={
+                  <ProtectedRoute requireReception>
+                    <Layout>
+                      <ReportsDebug />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
               {/* =====================================================
                   PÁGINAS DE ERROR
                   ===================================================== */}
