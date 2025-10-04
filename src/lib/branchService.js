@@ -24,13 +24,13 @@ export const branchService = {
     try {
       // Usar la función SQL existente get_dashboard_stats
       const { data, error } = await supabase.rpc('get_dashboard_stats', {
-        branch_uuid: branchId
+        p_branch_id: branchId
       })
 
       if (error) throw error
 
       // Si no hay datos, devolver estructura básica
-      const stats = data?.[0] || {
+      const stats = data || {
         total_rooms: 0,
         occupied_rooms: 0,
         available_rooms: 0,

@@ -9,12 +9,7 @@ const FILES_TO_CACHE = [
 ];
 
 // URLs de API que se pueden cachear para uso offline
-const API_URLS_TO_CACHE = [
-  '/api/rooms/status',
-  '/api/guests/current',
-  '/api/reservations/today',
-  '/api/dashboard/stats'
-];
+const API_URLS_TO_CACHE = [];
 
 // Instalar Service Worker
 self.addEventListener('install', (event) => {
