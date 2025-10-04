@@ -2496,7 +2496,7 @@ export const quickCheckinService = {
         guest_document: documentInfo,
         guest_phone: guestData.phone?.trim() || '',
         check_in_date: roomData.checkInDate || new Date().toISOString().split('T')[0],
-        check_out_date: roomData.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        check_out_date: roomData.checkOutDate || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // ✅ 3 días para evitar filtrado prematuro
         amount: totalAmount,
         payment_method_id: paymentMethodId,
         snacks_consumed: snacksForDB

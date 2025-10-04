@@ -169,7 +169,7 @@ const CheckIn = () => {
         isWalkIn: true,
         isCheckout: false,
         checkInDate: new Date().toISOString().split('T')[0],
-        checkOutDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        checkOutDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // ✅ 3 días para evitar filtrado prematuro
       })
       setSelectedSnacks([])
       setSelectedSnackType(null)
