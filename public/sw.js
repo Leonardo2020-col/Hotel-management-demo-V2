@@ -5,17 +5,7 @@ const DATA_CACHE_NAME = 'hotel-data-v1.0.0';
 // Archivos estáticos a cachear
 const FILES_TO_CACHE = [
   '/',
-  '/dashboard',
-  '/checkin',
-  '/rooms',
-  '/guests',
-  '/static/js/bundle.js',
-  '/static/css/main.css',
-  '/manifest.json',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png',
-  // Agregar más recursos críticos
-  '/offline.html'
+  '/manifest.json'
 ];
 
 // URLs de API que se pueden cachear para uso offline
@@ -31,29 +21,13 @@ self.addEventListener('install', (event) => {
   console.log('[SW] Installing...');
   
   event.waitUntil(
-    Promise.all([
-      // Cache de archivos estáticos
-      caches.open(CACHE_NAME).then((cache) => {
-        console.log('[SW] Pre-caching offline page');
-        return cache.addAll(FILES_TO_CACHE);
-      }),
-      // Cache de datos de API
-      caches.open(DATA_CACHE_NAME).then((cache) => {
-        console.log('[SW] Pre-caching API data');
-        return Promise.allSettled(
-          API_URLS_TO_CACHE.map(url => 
-            fetch(url).then(response => {
-              if (response.ok) {
-                cache.put(url, response.clone());
-              }
-            }).catch(() => {
-              // Ignorar errores en desarrollo
-              console.log(`[SW] Could not cache ${url}`);
-            })
-          )
-        );
-      })
-    ])
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[SW] Pre-caching static files');
+      return cache.addAll(FILES_TO_CACHE).catch((err) => {
+        console.log('[SW] Cache addAll failed:', err);
+        return Promise.resolve();
+      });
+    })
   );
   
   // Activar inmediatamente
