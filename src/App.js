@@ -17,11 +17,11 @@ import LoginPage from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
-import Reservations from './pages/Reservations.jsx' 
+import Reservations from './pages/Reservations.jsx'
 import Rooms from './pages/Rooms.jsx'
-import GuestsPage from './pages/GuestsPage.jsx' 
+import GuestsPage from './pages/GuestsPage.jsx'
 import ReportsPage from './pages/ReportsPage.jsx'
-import ReportsPageNew from './pages/ReportsPageNew.jsx'
+
 import BranchSwitcher from './pages/BranchSwitcher.jsx'
 import Unauthorized from './pages/Unauthorized.jsx'
 import NotFound from './pages/NotFound.jsx'
@@ -33,9 +33,6 @@ import AdminBranchesPage from './pages/Admin/AdminBranches.jsx'
 import AdminReportsPage from './pages/Admin/AdminReports.jsx'
 import AdminSettingsPage from './pages/Admin/AdminSettings.jsx'
 import AdminAuditPage from './pages/Admin/AdminAudit.jsx'
-
-// Debug Components
-import ReportsDebug from './debug/ReportsDebug.jsx'
 
 function App() {
   console.log('🚀 App rendering...')
@@ -222,21 +219,9 @@ function App() {
                 }
               />
               
-              {/* Reportes CON Layout - NUEVA VERSIÓN */}
+              {/* Reportes CON Layout */}
               <Route
                 path="/reports"
-                element={
-                  <ProtectedRoute requireReception>
-                    <Layout>
-                      <ReportsPageNew />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* Reportes Antigua (temporal) */}
-              <Route
-                path="/reports-old"
                 element={
                   <ProtectedRoute requireReception>
                     <Layout>
@@ -266,20 +251,6 @@ function App() {
                 }
               />
               
-              {/* =====================================================
-                  DEBUG (TEMPORAL)
-                  ===================================================== */}
-              <Route
-                path="/debug/reports"
-                element={
-                  <ProtectedRoute requireReception>
-                    <Layout>
-                      <ReportsDebug />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-
               {/* =====================================================
                   PÁGINAS DE ERROR
                   ===================================================== */}
