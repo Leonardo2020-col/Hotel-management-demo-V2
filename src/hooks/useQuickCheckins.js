@@ -165,8 +165,8 @@ export const useQuickCheckins = () => {
     }
   }, [branchId, roomPrices])
 
-  // ✅ FUNCIÓN CORREGIDA: Cargar check-ins activos (SOLUCION AL PROBLEMA)
-  const loadActiveCheckinsFromDatabase = useCallback(async () => {
+  // ✅ FUNCIÓN CORREGIDA: Cargar check-ins activos
+const loadActiveCheckinsFromDatabase = useCallback(async () => {
   try {
     console.log('📋 Cargando check-ins activos desde la base de datos...')
     
@@ -175,9 +175,12 @@ export const useQuickCheckins = () => {
       return {}
     }
 
-    const today = new Date().toISOString().split('T')[0]
+    // ✅ CORRECCIÓN: Usar fecha de ayer para incluir todos los check-ins activos
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
     
-    // ✅ CONSULTA SIMPLIFICADA - Solo usar campos que existen
+    // ✅ CONSULTA MEJORADA
     const { data, error } = await supabase
       .from('quick_checkins')
       .select(`
@@ -201,7 +204,7 @@ export const useQuickCheckins = () => {
         )
       `)
       .eq('branch_id', branchId)
-      .gte('check_out_date', today) // Solo los que tienen check_out_date >= hoy
+      .gte('check_out_date', yesterdayStr) // ✅ Incluir desde ayer
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -222,12 +225,13 @@ export const useQuickCheckins = () => {
           return
         }
 
-        // ✅ LÓGICA SIMPLIFICADA: Si check_out_date es hoy o futuro, está activo
+        // ✅ LÓGICA MEJORADA: Verificar que el check-out no sea en el pasado
         const checkOutDate = new Date(checkin.check_out_date)
-        const todayDate = new Date(today)
+        const now = new Date()
+        now.setHours(0, 0, 0, 0) // Normalizar a medianoche
         
-        // Solo incluir si el checkout es hoy o en el futuro
-        if (checkOutDate >= todayDate) {
+        // Solo incluir si el checkout es HOY o en el FUTURO
+        if (checkOutDate >= now) {
           const docParts = checkin.guest_document?.split(':') || ['DNI', '']
           
           structured[roomNumber] = {
@@ -249,9 +253,9 @@ export const useQuickCheckins = () => {
             status: 'active'
           }
           
-          console.log(`✅ Check-in activo incluido: Habitación ${roomNumber}`)
+          console.log(`✅ Check-in activo incluido: Habitación ${roomNumber}, Check-out: ${checkin.check_out_date}`)
         } else {
-          console.log(`⏭️ Excluyendo habitación ${roomNumber} - Check-out pasado`)
+          console.log(`⏭️ Excluyendo habitación ${roomNumber} - Check-out pasado: ${checkin.check_out_date}`)
         }
       })
     }

@@ -56,10 +56,13 @@ const CheckIn = () => {
         orderStep,
         isCheckout: currentOrder?.isCheckout,
         isWalkIn: currentOrder?.isWalkIn,
-        selectedSnacks: selectedSnacks?.length
+        selectedSnacks: selectedSnacks?.length,
+        count: Object.keys(activeCheckins || {}).length,
+    checkins: activeCheckins,
+    roomsByFloor: Object.keys(roomsByFloor || {}).length
       })
     }
-  }, [currentOrder, orderStep, selectedSnacks])
+  }, [activeCheckins, roomsByFloor, currentOrder, orderStep, selectedSnacks])
 
   // Auto-refresh cada 30 segundos
   useEffect(() => {
