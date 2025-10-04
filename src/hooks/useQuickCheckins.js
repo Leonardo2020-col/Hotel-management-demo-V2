@@ -175,12 +175,13 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
       return {}
     }
 
-    // ✅ CORRECCIÓN: Usar fecha de ayer para incluir todos los check-ins activos
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayStr = yesterday.toISOString().split('T')[0]
+    // ✅ CORRECCIÓN CRÍTICA: Obtener fecha de HOY a las 00:00:00
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const todayStr = today.toISOString().split('T')[0]
     
-    // ✅ CONSULTA MEJORADA
+    console.log('📅 Buscando check-ins con check_out_date >= ', todayStr)
+    
     const { data, error } = await supabase
       .from('quick_checkins')
       .select(`
@@ -204,7 +205,7 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
         )
       `)
       .eq('branch_id', branchId)
-      .gte('check_out_date', yesterdayStr) // ✅ Incluir desde ayer
+      .gte('check_out_date', todayStr) // Solo los de HOY o futuro
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -225,12 +226,20 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
           return
         }
 
-        // ✅ LÓGICA MEJORADA: Verificar que el check-out no sea en el pasado
+        // ✅ VERIFICACIÓN ESTRICTA: Comparar solo fechas (sin horas)
         const checkOutDate = new Date(checkin.check_out_date)
-        const now = new Date()
-        now.setHours(0, 0, 0, 0) // Normalizar a medianoche
+        checkOutDate.setHours(0, 0, 0, 0)
         
-        // Solo incluir si el checkout es HOY o en el FUTURO
+        const now = new Date()
+        now.setHours(0, 0, 0, 0)
+        
+        console.log(`🔍 Habitación ${roomNumber}:`, {
+          checkOutDate: checkOutDate.toISOString().split('T')[0],
+          today: now.toISOString().split('T')[0],
+          isActive: checkOutDate >= now
+        })
+        
+        // Solo incluir si el checkout es HOY o FUTURO
         if (checkOutDate >= now) {
           const docParts = checkin.guest_document?.split(':') || ['DNI', '']
           
@@ -253,14 +262,14 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
             status: 'active'
           }
           
-          console.log(`✅ Check-in activo incluido: Habitación ${roomNumber}, Check-out: ${checkin.check_out_date}`)
+          console.log(`✅ Check-in ACTIVO: Habitación ${roomNumber}`)
         } else {
-          console.log(`⏭️ Excluyendo habitación ${roomNumber} - Check-out pasado: ${checkin.check_out_date}`)
+          console.log(`⏭️ Check-in PROCESADO (excluido): Habitación ${roomNumber} - Checkout pasado`)
         }
       })
     }
 
-    console.log(`✅ Check-ins activos cargados: ${Object.keys(structured).length}`)
+    console.log(`✅ Check-ins activos finales: ${Object.keys(structured).length}`)
     return structured
 
   } catch (error) {
