@@ -502,7 +502,7 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
 
     console.log('📝 Actualizando check-out en la base de datos...')
     
-    // ✅ SOLUCIÓN: Marcar como procesado cambiando check_out_date al pasado
+    // Marcar como procesado cambiando check_out_date al pasado
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
     const yesterdayStr = yesterday.toISOString().split('T')[0]
@@ -510,7 +510,7 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
     const { error: updateError } = await supabase
       .from('quick_checkins')
       .update({
-        check_out_date: yesterdayStr, // ✅ Cambiar a ayer para marcarlo como procesado
+        check_out_date: yesterdayStr,
         updated_at: new Date().toISOString()
       })
       .eq('id', activeCheckin.id)
@@ -522,56 +522,63 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
 
     console.log('✅ Check-out actualizado en la base de datos exitosamente')
 
-    // Actualizar estado de la habitación a limpieza
-    try {
-      const { data: cleaningStatus } = await supabase
-        .from('room_status')
-        .select('id')
-        .eq('status', 'limpieza')
-        .single()
+    // Obtener el room_id correcto
+    const { data: roomData } = await supabase
+      .from('rooms')
+      .select('id')
+      .eq('room_number', roomNumber)
+      .eq('branch_id', branchId)
+      .single()
 
-      if (cleaningStatus) {
-        // Buscar el room_id correcto
-        const { data: roomData } = await supabase
-          .from('rooms')
-          .select('id')
-          .eq('room_number', roomNumber)
-          .eq('branch_id', branchId)
-          .single()
-
-        if (roomData) {
-          await supabase
-            .from('rooms')
-            .update({ status_id: cleaningStatus.id })
-            .eq('id', roomData.id)
-        }
-      }
-    } catch (roomError) {
-      console.warn('⚠️ Warning actualizando estado de habitación:', roomError)
+    if (!roomData) {
+      console.warn('⚠️ No se encontró la habitación en la BD')
     }
 
-    console.log('✅ Quick check-out procesado completamente')
+    // Actualizar estado de habitación a limpieza
+    const { data: cleaningStatus } = await supabase
+      .from('room_status')
+      .select('id')
+      .eq('status', 'limpieza')
+      .single()
 
-    // ✅ Actualizar estados locales inmediatamente
+    if (cleaningStatus && roomData) {
+      const { error: roomError } = await supabase
+        .from('rooms')
+        .update({ 
+          status_id: cleaningStatus.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', roomData.id)
+
+      if (roomError) {
+        console.warn('⚠️ Error actualizando estado de habitación:', roomError)
+      } else {
+        console.log('✅ Habitación actualizada a limpieza en BD')
+      }
+    }
+
+    // ✅ ACTUALIZAR ESTADOS LOCALES INMEDIATAMENTE
     setRoomsByFloor(prev => {
       const updated = { ...prev }
       Object.keys(updated).forEach(floor => {
-        updated[floor] = updated[floor].map(room => 
-          (room.number === roomNumber || room.room_number === roomNumber)
-            ? { 
-                ...room, 
-                status: 'available',
-                cleaning_status: 'dirty',
-                quickCheckin: null,
-                room_status: {
-                  ...room.room_status,
-                  status: 'limpieza',
-                  color: '#f59e0b',
-                  is_available: false
-                }
+        updated[floor] = updated[floor].map(room => {
+          if (room.number === roomNumber || room.room_number === roomNumber) {
+            console.log(`🔄 Actualizando estado local de habitación ${roomNumber} a limpieza`)
+            return { 
+              ...room, 
+              status: 'cleaning', // Estado interno
+              cleaning_status: 'dirty',
+              quickCheckin: null,
+              room_status: {
+                ...room.room_status,
+                status: 'limpieza',
+                color: '#f59e0b',
+                is_available: false
               }
-            : room
-        )
+            }
+          }
+          return room
+        })
       })
       return updated
     })
@@ -580,8 +587,11 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
     setActiveCheckins(prev => {
       const updated = { ...prev }
       delete updated[roomNumber]
+      console.log(`✅ Check-in removido del estado local para habitación ${roomNumber}`)
       return updated
     })
+
+    console.log('✅ Quick check-out procesado completamente')
 
     return { 
       data: { 
@@ -603,7 +613,6 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
   try {
     console.log('🧹 Limpiando habitación en base de datos:', roomId)
 
-    // ✅ ACTUALIZAR EN LA BASE DE DATOS PRIMERO
     // Obtener el ID del estado "disponible"
     const { data: availableStatus, error: statusError } = await supabase
       .from('room_status')
@@ -647,13 +656,14 @@ const loadActiveCheckinsFromDatabase = useCallback(async () => {
 
     let roomNumber = null
     
-    // ✅ ACTUALIZAR ESTADO LOCAL DESPUÉS DE CONFIRMAR EL CAMBIO EN BD
+    // ✅ ACTUALIZAR ESTADO LOCAL
     setRoomsByFloor(prev => {
       const updated = { ...prev }
       Object.keys(updated).forEach(floor => {
         updated[floor] = updated[floor].map(room => {
           if (room.id === roomId || room.room_id === roomId) {
             roomNumber = room.number || room.room_number
+            console.log(`✅ Limpiando habitación ${roomNumber} en estado local`)
             return { 
               ...room, 
               status: 'available',
