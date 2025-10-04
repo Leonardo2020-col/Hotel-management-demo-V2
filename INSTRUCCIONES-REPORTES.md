@@ -16,10 +16,14 @@ https://app.supabase.com
 - Click en "SQL Editor" en el menú lateral
 - Click en "+ New query"
 
-### 1.3. Copia y Ejecuta el Script
-Abre el archivo: `scripts/reportes-migration.sql`
+### 1.3. Copia y Ejecuta el Script CORREGIDO ⚠️
+Abre el archivo: `scripts/reportes-migration-fixed.sql`
+
+**IMPORTANTE: USA `reportes-migration-fixed.sql` NO `reportes-migration.sql`**
 
 Copia TODO el contenido y pégalo en el SQL Editor de Supabase.
+
+**NOTA:** Este script está corregido para la estructura real de tu base de datos.
 
 ### 1.4. Ejecuta el Script
 - Click en "RUN" o presiona `Ctrl + Enter`
@@ -43,7 +47,7 @@ Deberías ver estos mensajes en la consola:
 He creado los siguientes archivos nuevos:
 
 ### Archivos Creados:
-1. ✅ `scripts/reportes-migration.sql` - Script SQL completo
+1. ✅ `scripts/reportes-migration-fixed.sql` - Script SQL corregido ⚠️ **USA ESTE**
 2. ✅ `src/services/reportsService.js` - Servicio de reportes
 3. ✅ `src/hooks/useReportsNew.js` - Hook personalizado
 4. ✅ `src/pages/ReportsPageNew.jsx` - Página de reportes nueva

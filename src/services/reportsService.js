@@ -19,7 +19,7 @@ export const reportsService = {
         throw error;
       }
 
-      const stats = data?.[0] || {
+      const stats = data || {
         total_rooms: 0,
         occupied_rooms: 0,
         available_rooms: 0,
@@ -61,7 +61,7 @@ export const reportsService = {
         throw error;
       }
 
-      const revenue = data?.[0] || {
+      const revenue = data || {
         room_revenue: 0,
         service_revenue: 0,
         total_revenue: 0,
