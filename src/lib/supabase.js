@@ -2763,19 +2763,70 @@ export const quickCheckinService = {
 // 📊 SERVICIOS DE REPORTES
 // =====================================================
 export const reportService = {
+  // ✅ FUNCIÓN CORREGIDA PARA MANEJAR RESPUESTA JSON
   async getDashboardStats(branchId) {
-    try {
-      const { data, error } = await supabase.rpc('get_dashboard_stats', {
-        branch_uuid: branchId
-      })
+  try {
+    console.log('📊 Calling get_dashboard_stats for branch:', branchId)
+    
+    const { data, error } = await supabase.rpc('get_dashboard_stats', {
+      p_branch_id: branchId  // ✅ CORRECTO - coincide con el parámetro SQL
+    })
 
-      if (error) throw error
-      return { data: data[0] || {}, error: null }
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error)
-      return { data: null, error }
+    if (error) {
+      console.error('❌ RPC Error:', error)
+      throw error
     }
-  },
+
+    console.log('📦 Raw RPC response:', data)
+
+    let statsData = data
+
+    // Si es un array, tomar el primer elemento
+    if (Array.isArray(data) && data.length > 0) {
+      statsData = data[0]
+    }
+
+    // Si es un string JSON, parsearlo
+    if (typeof statsData === 'string') {
+      try {
+        statsData = JSON.parse(statsData)
+      } catch (parseError) {
+        console.error('❌ JSON Parse Error:', parseError)
+        statsData = {}
+      }
+    }
+
+    // Validar que sea un objeto
+    if (!statsData || typeof statsData !== 'object') {
+      console.warn('⚠️ Invalid stats data, using defaults')
+      statsData = {}
+    }
+
+    console.log('✅ Processed stats data:', statsData)
+
+    return { data: statsData, error: null }
+
+  } catch (error) {
+    console.error('❌ Error in getDashboardStats:', error)
+    
+    // Retornar estructura válida con valores en 0
+    return { 
+      data: {
+        total_rooms: 0,
+        occupied_rooms: 0,
+        available_rooms: 0,
+        maintenance_rooms: 0,
+        occupancy_rate: 0,
+        today_checkins: 0,
+        today_checkouts: 0,
+        today_revenue: 0,
+        pending_reservations: 0,
+        low_stock_items: 0
+      }, 
+      error 
+    }
+  }
+},
 
   // ===================================================
   // 🏨 REPORTES DE OCUPACIÓN
