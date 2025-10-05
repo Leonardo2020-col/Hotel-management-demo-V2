@@ -293,22 +293,22 @@ const AdminReports = () => {
           </nav>
         </div>
 
-        {/* Contenido del reporte - USANDO COMPONENTES */}
-        <div className="p-6">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
-              <span className="ml-2 text-gray-600">Cargando reporte...</span>
-            </div>
-          ) : (
-            <>
-              {activeTab === 'overview' && <OverviewReport data={reportData} />}
-              {activeTab === 'daily' && <DailyReport data={reportData} />}
-              {activeTab === 'revenue' && <RevenueReport data={reportData} />}
-              {activeTab === 'expenses' && <ExpensesReport data={reportData} />}
-            </>
-          )}
-        </div>
+{/* Contenido del reporte - VALIDACIÓN MEJORADA */}
+       <div className="p-6">
+  {loading ? (
+    <div className="flex items-center justify-center h-64">
+      <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+      <span className="ml-2 text-gray-600">Cargando reporte...</span>
+    </div>
+  ) : (
+    <>
+      {activeTab === 'overview' && <OverviewReport data={reportData} />}
+      {activeTab === 'daily' && <DailyReport data={reportData} />}
+      {activeTab === 'revenue' && <RevenueReport data={reportData} />}
+      {activeTab === 'expenses' && <ExpensesReport data={reportData} />}
+    </>
+  )}
+</div>
       </div>
 
       {/* Reportes programados */}
