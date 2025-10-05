@@ -1,3 +1,4 @@
+// src/pages/Admin/AdminReports.jsx - VERSIÓN CORREGIDA CON COMPONENTES
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { reportService } from '../../lib/supabase';
@@ -7,21 +8,14 @@ import {
   Calendar,
   Download,
   FileText,
-  TrendingUp,
   DollarSign,
-  Users,
-  Building,
-  Filter,
   RefreshCw,
-  Eye,
-  Search,
-  Plus,
-  Save
+  Plus
 } from 'lucide-react';
 
+// ✅ Importar componentes existentes
 import OverviewReport from '../../components/admin/report/OverviewReport';
 import DailyReport from '../../components/admin/report/DailyReport';
-import OccupancyReport from '../../components/admin/report/OccupancyReport';
 import RevenueReport from '../../components/admin/report/RevenueReport';
 import ExpensesReport from '../../components/admin/report/ExpensesReport';
 
@@ -45,7 +39,7 @@ const AdminReports = () => {
         setSelectedBranch(userBranches[0].id);
       }
     }
-  }, []);
+  }, [isAdmin, getUserBranches]);
 
   useEffect(() => {
     if (selectedBranch && isAdmin()) {
@@ -54,40 +48,43 @@ const AdminReports = () => {
   }, [activeTab, selectedBranch, dateRange]);
 
   const loadReportData = async () => {
-    if (!selectedBranch) return;
+    if (!selectedBranch) {
+      toast.error('Selecciona una sucursal');
+      return;
+    }
     
     setLoading(true);
     try {
-      let data;
+      let result;
       
       switch (activeTab) {
         case 'overview':
-          data = await generateOverviewData();
+          result = await generateOverviewData();
           break;
         case 'daily':
-          const dailyResult = await reportService.getDailyReports(selectedBranch, dateRange.startDate, dateRange.endDate);
-          data = dailyResult.data;
-          break;
-        case 'occupancy':
-          const occupancyResult = await reportService.getOccupancyReport(selectedBranch, dateRange.startDate, dateRange.endDate);
-          data = occupancyResult.data;
+          result = await reportService.getDailyReports(selectedBranch, dateRange.startDate, dateRange.endDate);
           break;
         case 'revenue':
-          const revenueResult = await reportService.getRevenueReport(selectedBranch, dateRange.startDate, dateRange.endDate);
-          data = revenueResult.data;
+          result = await reportService.getRevenueReport(selectedBranch, dateRange.startDate, dateRange.endDate);
           break;
         case 'expenses':
-          const expensesResult = await reportService.getExpensesReport(selectedBranch, dateRange.startDate, dateRange.endDate);
-          data = expensesResult.data;
+          result = await reportService.getExpensesReport(selectedBranch, dateRange.startDate, dateRange.endDate);
           break;
         default:
-          data = null;
+          result = { data: null };
       }
       
-      setReportData(data);
+      if (result.error) {
+        console.error('Error loading report:', result.error);
+        throw new Error(result.error.message || 'Error al cargar reporte');
+      }
+      
+      setReportData(result.data || result);
+      
     } catch (error) {
       console.error('Error loading report:', error);
-      toast.error('Error al cargar el reporte');
+      toast.error(`Error: ${error.message || 'No se pudo cargar el reporte'}`);
+      setReportData(null);
     } finally {
       setLoading(false);
     }
@@ -95,34 +92,59 @@ const AdminReports = () => {
 
   const generateOverviewData = async () => {
     try {
-      const [revenueResult, expensesResult, occupancyResult] = await Promise.all([
+      console.log('📊 Generating overview data...');
+      
+      const [revenueResult, expensesResult, statsResult] = await Promise.all([
         reportService.getRevenueReport(selectedBranch, dateRange.startDate, dateRange.endDate),
         reportService.getExpensesReport(selectedBranch, dateRange.startDate, dateRange.endDate),
-        reportService.getOccupancyReport(selectedBranch, dateRange.startDate, dateRange.endDate)
+        reportService.getDashboardStats(selectedBranch)
       ]);
+
+      // Manejar errores individuales
+      if (revenueResult.error) {
+        console.error('Revenue error:', revenueResult.error);
+      }
+      if (expensesResult.error) {
+        console.error('Expenses error:', expensesResult.error);
+      }
+      if (statsResult.error) {
+        console.error('Stats error:', statsResult.error);
+      }
 
       const revenue = revenueResult.data || {};
       const expenses = expensesResult.data || [];
-      const occupancy = occupancyResult.data || [];
+      const stats = statsResult.data || {};
 
-      const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-      const avgOccupancy = occupancy.length > 0
-        ? occupancy.reduce((sum, day) => sum + parseFloat(day.occupancy_percentage || 0), 0) / occupancy.length
+      const totalExpenses = Array.isArray(expenses) 
+        ? expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0)
         : 0;
 
-      return {
-        totalRevenue: revenue.total_revenue || 0,
+      const totalRevenue = revenue.total_revenue || 0;
+      const netProfit = totalRevenue - totalExpenses;
+
+      // Calcular ocupación promedio (basado en stats actuales)
+      const averageOccupancy = stats.occupancy_rate || 0;
+
+      const overviewData = {
+        totalRevenue: totalRevenue,
         totalExpenses: totalExpenses,
-        netProfit: (revenue.total_revenue || 0) - totalExpenses,
-        averageOccupancy: avgOccupancy.toFixed(1)
+        netProfit: netProfit,
+        averageOccupancy: averageOccupancy.toFixed(1)
       };
+
+      console.log('✅ Overview data generated:', overviewData);
+
+      return { data: overviewData };
+      
     } catch (error) {
-      console.error('Error generating overview:', error);
+      console.error('❌ Error generating overview:', error);
       return {
-        totalRevenue: 0,
-        totalExpenses: 0,
-        netProfit: 0,
-        averageOccupancy: 0
+        data: {
+          totalRevenue: 0,
+          totalExpenses: 0,
+          netProfit: 0,
+          averageOccupancy: '0.0'
+        }
       };
     }
   };
@@ -145,14 +167,13 @@ const AdminReports = () => {
       }
     } catch (error) {
       console.error('Error exporting report:', error);
-      toast.error('Error al exportar el reporte');
+      toast.error('Función de exportación no disponible');
     }
   };
 
   const tabs = [
     { id: 'overview', name: 'Resumen General', icon: BarChart3 },
     { id: 'daily', name: 'Reportes Diarios', icon: Calendar },
-    { id: 'occupancy', name: 'Ocupación', icon: Building },
     { id: 'revenue', name: 'Ingresos', icon: DollarSign },
     { id: 'expenses', name: 'Gastos', icon: FileText }
   ];
@@ -185,7 +206,7 @@ const AdminReports = () => {
           <button
             onClick={handleExportReport}
             disabled={!reportData || loading}
-            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download className="h-4 w-4 mr-2" />
             Exportar CSV
@@ -272,7 +293,7 @@ const AdminReports = () => {
           </nav>
         </div>
 
-        {/* Contenido del reporte */}
+        {/* Contenido del reporte - USANDO COMPONENTES */}
         <div className="p-6">
           {loading ? (
             <div className="flex items-center justify-center h-64">
@@ -283,7 +304,6 @@ const AdminReports = () => {
             <>
               {activeTab === 'overview' && <OverviewReport data={reportData} />}
               {activeTab === 'daily' && <DailyReport data={reportData} />}
-              {activeTab === 'occupancy' && <OccupancyReport data={reportData} />}
               {activeTab === 'revenue' && <RevenueReport data={reportData} />}
               {activeTab === 'expenses' && <ExpensesReport data={reportData} />}
             </>
@@ -296,7 +316,10 @@ const AdminReports = () => {
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-medium text-gray-900">Reportes Programados</h3>
-            <button className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            <button 
+              className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              onClick={() => toast.info('Función próximamente disponible')}
+            >
               <Plus className="h-4 w-4 mr-1" />
               Programar Reporte
             </button>
