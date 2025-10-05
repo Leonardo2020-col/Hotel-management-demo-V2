@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { reportsService } from '../services/reportsService';
+// src/hooks/useReports.js - VERSIÓN CORREGIDA
+import { useState, useEffect, useCallback } from 'react';
+import { reportService } from '../lib/supabase'; // ✅ Importar correctamente
 import { useAuth } from '../context/AuthContext';
 
 export const useReports = () => {
-  const { userInfo } = useAuth();
+  const { userInfo, getPrimaryBranch } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dashboardStats, setDashboardStats] = useState(null);
@@ -11,36 +12,52 @@ export const useReports = () => {
   const [expensesData, setExpensesData] = useState([]);
   const [dailyReports, setDailyReports] = useState([]);
 
-  const branchId = userInfo?.branch_id;
+  // ✅ CORRECCIÓN: Obtener branch_id correctamente
+  const primaryBranch = getPrimaryBranch();
+  const branchId = primaryBranch?.id;
 
-  const loadDashboardStats = async () => {
-    if (!branchId) return;
+  // ✅ Cargar estadísticas del dashboard
+  const loadDashboardStats = useCallback(async () => {
+    if (!branchId) {
+      console.warn('⚠️ No branch ID available');
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const { data, error } = await reportsService.getDashboardStats(branchId);
+      console.log('📊 Loading dashboard stats for reports...');
+      
+      const { data, error } = await reportService.getDashboardStats(branchId);
 
       if (error) throw error;
 
+      console.log('✅ Dashboard stats loaded:', data);
       setDashboardStats(data);
     } catch (err) {
-      setError(err.message);
-      console.error('Error loading dashboard stats:', err);
+      const errorMessage = err.message || 'Error al cargar estadísticas';
+      setError(errorMessage);
+      console.error('❌ Error loading dashboard stats:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [branchId]);
 
-  const loadRevenueReport = async (startDate, endDate) => {
-    if (!branchId) return;
+  // ✅ Cargar reporte de ingresos
+  const loadRevenueReport = useCallback(async (startDate, endDate) => {
+    if (!branchId) {
+      console.warn('⚠️ No branch ID available');
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const { data, error } = await reportsService.getRevenueReport(
+      console.log('💰 Loading revenue report...', { startDate, endDate });
+      
+      const { data, error } = await reportService.getRevenueReport(
         branchId,
         startDate,
         endDate
@@ -48,23 +65,31 @@ export const useReports = () => {
 
       if (error) throw error;
 
+      console.log('✅ Revenue report loaded:', data);
       setRevenueData(data);
     } catch (err) {
-      setError(err.message);
-      console.error('Error loading revenue report:', err);
+      const errorMessage = err.message || 'Error al cargar reporte de ingresos';
+      setError(errorMessage);
+      console.error('❌ Error loading revenue report:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [branchId]);
 
-  const loadExpensesReport = async (startDate, endDate) => {
-    if (!branchId) return;
+  // ✅ Cargar reporte de gastos
+  const loadExpensesReport = useCallback(async (startDate, endDate) => {
+    if (!branchId) {
+      console.warn('⚠️ No branch ID available');
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const { data, error } = await reportsService.getExpensesReport(
+      console.log('💸 Loading expenses report...', { startDate, endDate });
+      
+      const { data, error } = await reportService.getExpensesReport(
         branchId,
         startDate,
         endDate
@@ -72,23 +97,31 @@ export const useReports = () => {
 
       if (error) throw error;
 
-      setExpensesData(data);
+      console.log('✅ Expenses report loaded:', data?.length || 0, 'items');
+      setExpensesData(data || []);
     } catch (err) {
-      setError(err.message);
-      console.error('Error loading expenses report:', err);
+      const errorMessage = err.message || 'Error al cargar reporte de gastos';
+      setError(errorMessage);
+      console.error('❌ Error loading expenses report:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [branchId]);
 
-  const loadDailyReports = async (startDate, endDate) => {
-    if (!branchId) return;
+  // ✅ Cargar reportes diarios
+  const loadDailyReports = useCallback(async (startDate, endDate) => {
+    if (!branchId) {
+      console.warn('⚠️ No branch ID available');
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const { data, error } = await reportsService.getDailyReports(
+      console.log('📅 Loading daily reports...', { startDate, endDate });
+      
+      const { data, error } = await reportService.getDailyReports(
         branchId,
         startDate,
         endDate
@@ -96,33 +129,40 @@ export const useReports = () => {
 
       if (error) throw error;
 
-      setDailyReports(data);
+      console.log('✅ Daily reports loaded:', data?.length || 0, 'reports');
+      setDailyReports(data || []);
     } catch (err) {
-      setError(err.message);
-      console.error('Error loading daily reports:', err);
+      const errorMessage = err.message || 'Error al cargar reportes diarios';
+      setError(errorMessage);
+      console.error('❌ Error loading daily reports:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [branchId]);
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('es-MX', {
+  // ✅ CORRECCIÓN: Formatear moneda en PEN (soles peruanos)
+  const formatCurrency = useCallback((amount) => {
+    return new Intl.NumberFormat('es-PE', {
       style: 'currency',
-      currency: 'MXN'
+      currency: 'PEN'
     }).format(amount || 0);
-  };
+  }, []);
 
-  const formatPercentage = (value) => {
+  // ✅ Formatear porcentaje
+  const formatPercentage = useCallback((value) => {
     return `${(value || 0).toFixed(2)}%`;
-  };
+  }, []);
 
-  const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('es-MX', {
+  // ✅ Formatear fecha
+  const formatDate = useCallback((date) => {
+    if (!date) return '-';
+    
+    return new Date(date).toLocaleDateString('es-PE', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     });
-  };
+  }, []);
 
   return {
     loading,
@@ -131,6 +171,7 @@ export const useReports = () => {
     revenueData,
     expensesData,
     dailyReports,
+    branchId, // ✅ Exportar para verificación
     loadDashboardStats,
     loadRevenueReport,
     loadExpensesReport,
