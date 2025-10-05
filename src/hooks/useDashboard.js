@@ -1,4 +1,4 @@
-// src/hooks/useDashboard.js - HOOK OPTIMIZADO PARA DASHBOARD
+// src/hooks/useDashboard.js - VERSIÓN CORREGIDA
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { reportService, realtimeService } from '../lib/supabase'
@@ -37,32 +37,80 @@ export const useDashboard = () => {
   // Obtener sucursal principal
   const primaryBranch = useMemo(() => getPrimaryBranch(), [userInfo])
 
-  // ✅ Función para cargar estadísticas principales
+  // ✅ FUNCIÓN CORREGIDA - Cargar estadísticas principales
   const loadDashboardStats = useCallback(async () => {
-    if (!primaryBranch?.id) return
+    if (!primaryBranch?.id) {
+      console.warn('⚠️ No primary branch found')
+      return
+    }
 
     try {
+      console.log('📊 Loading dashboard stats for branch:', primaryBranch.id)
+      
       const { data, error } = await reportService.getDashboardStats(primaryBranch.id)
       
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error from getDashboardStats:', error)
+        throw error
+      }
 
+      console.log('📦 Raw data from getDashboardStats:', data)
+
+      // ✅ CORRECCIÓN: Manejar tanto formato JSON como objeto plano
+      let statsData = data
+
+      // Si data es un string JSON, parsearlo
+      if (typeof data === 'string') {
+        try {
+          statsData = JSON.parse(data)
+        } catch (parseError) {
+          console.error('❌ Error parsing JSON:', parseError)
+          statsData = {}
+        }
+      }
+
+      // Si data es un array, tomar el primer elemento
+      if (Array.isArray(statsData)) {
+        statsData = statsData[0] || {}
+      }
+
+      console.log('✅ Processed stats data:', statsData)
+
+      // ✅ Mapear correctamente los campos
       setDashboardStats({
-        totalRooms: data.total_rooms || 0,
-        occupiedRooms: data.occupied_rooms || 0,
-        availableRooms: data.available_rooms || 0,
-        maintenanceRooms: data.maintenance_rooms || 0,
-        occupancyRate: data.occupancy_rate || 0,
-        todayCheckins: data.today_checkins || 0,
-        todayCheckouts: data.today_checkouts || 0,
-        todayRevenue: data.today_revenue || 0,
-        pendingReservations: data.pending_reservations || 0,
-        lowStockItems: data.low_stock_items || 0
+        totalRooms: Number(statsData.total_rooms || 0),
+        occupiedRooms: Number(statsData.occupied_rooms || 0),
+        availableRooms: Number(statsData.available_rooms || 0),
+        maintenanceRooms: Number(statsData.maintenance_rooms || 0),
+        occupancyRate: Number(statsData.occupancy_rate || 0),
+        todayCheckins: Number(statsData.today_checkins || 0),
+        todayCheckouts: Number(statsData.today_checkouts || 0),
+        todayRevenue: Number(statsData.today_revenue || 0),
+        pendingReservations: Number(statsData.pending_reservations || 0),
+        lowStockItems: Number(statsData.low_stock_items || 0)
       })
 
+      console.log('✅ Dashboard stats loaded successfully')
+
     } catch (error) {
+      console.error('❌ Error in loadDashboardStats:', error)
       handleError(error, 'stats', { 
         context: 'Cargando estadísticas del dashboard',
         showToast: true 
+      })
+      
+      // Establecer valores por defecto en caso de error
+      setDashboardStats({
+        totalRooms: 0,
+        occupiedRooms: 0,
+        availableRooms: 0,
+        maintenanceRooms: 0,
+        occupancyRate: 0,
+        todayCheckins: 0,
+        todayCheckouts: 0,
+        todayRevenue: 0,
+        pendingReservations: 0,
+        lowStockItems: 0
       })
     }
   }, [primaryBranch?.id, handleError])
@@ -73,7 +121,6 @@ export const useDashboard = () => {
 
     try {
       // Simulamos datos de actividad reciente
-      // En tu implementación real, esto vendría de la API
       const mockActivity = [
         {
           id: `activity_${Date.now()}_1`,
@@ -107,6 +154,7 @@ export const useDashboard = () => {
       setRecentActivity(mockActivity)
 
     } catch (error) {
+      console.error('❌ Error loading activity:', error)
       handleError(error, 'activity', { 
         context: 'Cargando actividad reciente',
         showToast: false 
@@ -162,6 +210,7 @@ export const useDashboard = () => {
       setAlerts(alertsData)
 
     } catch (error) {
+      console.error('❌ Error loading alerts:', error)
       handleError(error, 'alerts', { 
         context: 'Cargando alertas',
         showToast: false 
@@ -171,10 +220,10 @@ export const useDashboard = () => {
 
   // ✅ Función para cargar datos de gráficos
   const loadChartData = useCallback(async () => {
-    if (!primaryBranch?.id) return
+    if (!primaryBranch?.id || !dashboardStats.totalRooms) return
 
     try {
-      // Datos de ocupación semanal (simulados)
+      // Datos de ocupación semanal
       const weeklyOccupancy = [
         { day: 'Lun', ocupadas: Math.floor(dashboardStats.totalRooms * 0.8), disponibles: Math.floor(dashboardStats.totalRooms * 0.2) },
         { day: 'Mar', ocupadas: Math.floor(dashboardStats.totalRooms * 0.72), disponibles: Math.floor(dashboardStats.totalRooms * 0.28) },
@@ -185,7 +234,7 @@ export const useDashboard = () => {
         { day: 'Dom', ocupadas: dashboardStats.occupiedRooms, disponibles: dashboardStats.availableRooms }
       ]
 
-      // Datos de ingresos últimos 7 días (simulados)
+      // Datos de ingresos últimos 7 días
       const revenueData = Array.from({ length: 7 }, (_, i) => ({
         fecha: new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000).getDate().toString(),
         ingresos: Math.floor(Math.random() * 1000) + 2000,
@@ -203,10 +252,11 @@ export const useDashboard = () => {
         occupancyTrend: weeklyOccupancy,
         revenueTrend: revenueData,
         roomStatus: roomStatusData,
-        monthlyComparison: [] // Se puede agregar más adelante
+        monthlyComparison: []
       })
 
     } catch (error) {
+      console.error('❌ Error loading charts:', error)
       handleError(error, 'charts', { 
         context: 'Cargando datos de gráficos',
         showToast: false 
@@ -216,7 +266,11 @@ export const useDashboard = () => {
 
   // ✅ Función principal para cargar todos los datos
   const loadDashboardData = useCallback(async (isRefresh = false) => {
-    if (!primaryBranch?.id) return
+    if (!primaryBranch?.id) {
+      console.warn('⚠️ No primary branch, skipping dashboard load')
+      setLoading(false)
+      return
+    }
 
     try {
       if (isRefresh) {
@@ -224,6 +278,11 @@ export const useDashboard = () => {
       } else {
         setLoading(true)
       }
+
+      console.log('🔄 Loading dashboard data...', { 
+        isRefresh, 
+        branchId: primaryBranch.id 
+      })
 
       // Cargar datos en paralelo
       await Promise.all([
@@ -234,6 +293,7 @@ export const useDashboard = () => {
       setLastUpdate(new Date())
 
     } catch (error) {
+      console.error('❌ Error in loadDashboardData:', error)
       handleError(error, 'general', { 
         context: 'Cargando dashboard',
         showToast: true 
@@ -246,17 +306,19 @@ export const useDashboard = () => {
 
   // ✅ Función para refrescar datos
   const refreshDashboard = useCallback(() => {
+    console.log('🔄 Manual refresh triggered')
     loadDashboardData(true)
   }, [loadDashboardData])
 
   // ✅ Efecto para cargar datos iniciales
   useEffect(() => {
     if (primaryBranch?.id) {
+      console.log('🚀 Initial dashboard load for branch:', primaryBranch.id)
       loadDashboardData()
     }
   }, [primaryBranch?.id, loadDashboardData])
 
-  // ✅ Efecto para cargar alertas cuando cambien las estadísticas
+  // ✅ Efecto para cargar alertas y gráficos cuando cambien las estadísticas
   useEffect(() => {
     if (dashboardStats.totalRooms > 0) {
       loadAlerts()
@@ -275,7 +337,6 @@ export const useDashboard = () => {
         primaryBranch.id,
         (payload) => {
           console.log('🔄 Cambio en tiempo real detectado:', payload)
-          // Refrescar estadísticas cuando hay cambios
           setTimeout(() => {
             loadDashboardStats()
           }, 1000)
@@ -296,9 +357,10 @@ export const useDashboard = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       if (!loading && !refreshing) {
+        console.log('⏰ Auto-refresh triggered')
         refreshDashboard()
       }
-    }, 5 * 60 * 1000) // 5 minutos
+    }, 5 * 60 * 1000)
 
     return () => clearInterval(interval)
   }, [loading, refreshing, refreshDashboard])
