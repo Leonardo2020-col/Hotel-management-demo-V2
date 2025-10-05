@@ -1,8 +1,8 @@
-// src/pages/Admin/AdminReports.jsx - VERSIÓN CORREGIDA CON COMPONENTES
+// src/pages/Admin/AdminReports.jsx - VERSIÓN COMPLETAMENTE CORREGIDA
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { reportService } from '../../lib/supabase';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast'; // ✅ CORRECCIÓN: Importación correcta
 import {
   BarChart3,
   Calendar,
@@ -100,16 +100,9 @@ const AdminReports = () => {
         reportService.getDashboardStats(selectedBranch)
       ]);
 
-      // Manejar errores individuales
-      if (revenueResult.error) {
-        console.error('Revenue error:', revenueResult.error);
-      }
-      if (expensesResult.error) {
-        console.error('Expenses error:', expensesResult.error);
-      }
-      if (statsResult.error) {
-        console.error('Stats error:', statsResult.error);
-      }
+      if (revenueResult.error) console.error('Revenue error:', revenueResult.error);
+      if (expensesResult.error) console.error('Expenses error:', expensesResult.error);
+      if (statsResult.error) console.error('Stats error:', statsResult.error);
 
       const revenue = revenueResult.data || {};
       const expenses = expensesResult.data || [];
@@ -121,8 +114,6 @@ const AdminReports = () => {
 
       const totalRevenue = revenue.total_revenue || 0;
       const netProfit = totalRevenue - totalExpenses;
-
-      // Calcular ocupación promedio (basado en stats actuales)
       const averageOccupancy = stats.occupancy_rate || 0;
 
       const overviewData = {
@@ -133,7 +124,6 @@ const AdminReports = () => {
       };
 
       console.log('✅ Overview data generated:', overviewData);
-
       return { data: overviewData };
       
     } catch (error) {
@@ -169,6 +159,19 @@ const AdminReports = () => {
       console.error('Error exporting report:', error);
       toast.error('Función de exportación no disponible');
     }
+  };
+
+  // ✅ FUNCIÓN CORREGIDA para programar reportes
+  const handleScheduleReport = () => {
+    toast('Función de reportes programados próximamente', {
+      icon: '📅',
+      duration: 3000,
+      style: {
+        borderRadius: '10px',
+        background: '#3B82F6',
+        color: '#fff',
+      },
+    });
   };
 
   const tabs = [
@@ -293,32 +296,32 @@ const AdminReports = () => {
           </nav>
         </div>
 
-{/* Contenido del reporte - VALIDACIÓN MEJORADA */}
-       <div className="p-6">
-  {loading ? (
-    <div className="flex items-center justify-center h-64">
-      <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
-      <span className="ml-2 text-gray-600">Cargando reporte...</span>
-    </div>
-  ) : (
-    <>
-      {activeTab === 'overview' && <OverviewReport data={reportData} />}
-      {activeTab === 'daily' && <DailyReport data={reportData} />}
-      {activeTab === 'revenue' && <RevenueReport data={reportData} />}
-      {activeTab === 'expenses' && <ExpensesReport data={reportData} />}
-    </>
-  )}
-</div>
+        {/* Contenido del reporte */}
+        <div className="p-6">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+              <span className="ml-2 text-gray-600">Cargando reporte...</span>
+            </div>
+          ) : (
+            <>
+              {activeTab === 'overview' && <OverviewReport data={reportData} />}
+              {activeTab === 'daily' && <DailyReport data={reportData} />}
+              {activeTab === 'revenue' && <RevenueReport data={reportData} />}
+              {activeTab === 'expenses' && <ExpensesReport data={reportData} />}
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Reportes programados */}
+      {/* Reportes programados - SECCIÓN CORREGIDA */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-medium text-gray-900">Reportes Programados</h3>
             <button 
               className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              onClick={() => toast.info('Función próximamente disponible')}
+              onClick={handleScheduleReport}
             >
               <Plus className="h-4 w-4 mr-1" />
               Programar Reporte
