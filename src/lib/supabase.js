@@ -2828,6 +2828,33 @@ export const reportService = {
   }
 },
 
+async saveScheduledReport(reportData, userId) {
+  try {
+    const { data, error } = await supabase
+      .from('saved_reports')
+      .insert({
+        name: reportData.name,
+        description: reportData.description,
+        report_type: reportData.reportType,
+        parameters: { branch_id: reportData.branchId },
+        schedule: {
+          frequency: reportData.frequency,
+          time: reportData.scheduleTime,
+          email: reportData.email
+        },
+        created_by: userId,
+        is_active: reportData.isActive
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
+},
+
   // ===================================================
   // 🏨 REPORTES DE OCUPACIÓN
   // ===================================================
