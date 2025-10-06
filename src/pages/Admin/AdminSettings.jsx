@@ -20,8 +20,356 @@ import {
   DollarSign,
   Building,
   Users,
-  Key
+  Key,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
+
+// Componente separado para Gestión de Datos
+const DataManagementTab = ({ userInfo, getPrimaryBranch }) => {
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('');
+  const [branchDataCount, setBranchDataCount] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [deleteOptions, setDeleteOptions] = useState({
+    includeRooms: true,
+    includeReservations: true,
+    includeQuickCheckins: true,
+    includeSupplies: true,
+    includeSnacks: true,
+    includeExpenses: true,
+    includeDailyReports: true
+  });
+  const [confirmText, setConfirmText] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteType, setDeleteType] = useState('single'); // 'single' o 'all'
+
+  useEffect(() => {
+    loadBranches();
+  }, []);
+
+  useEffect(() => {
+    if (selectedBranch) {
+      loadBranchDataCount(selectedBranch);
+    }
+  }, [selectedBranch]);
+
+  const loadBranches = async () => {
+    try {
+      const result = await adminService.getAllBranches();
+      if (result.data) {
+        setBranches(result.data);
+        if (result.data.length > 0) {
+          setSelectedBranch(result.data[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading branches:', error);
+      toast.error('Error al cargar sucursales');
+    }
+  };
+
+  const loadBranchDataCount = async (branchId) => {
+    try {
+      setLoading(true);
+      const result = await adminService.getBranchDataCount(branchId);
+      if (result.data) {
+        setBranchDataCount(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading branch data count:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteBranchData = async () => {
+    if (confirmText !== 'ELIMINAR') {
+      toast.error('Debes escribir "ELIMINAR" para confirmar');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await adminService.deleteBranchData(selectedBranch, deleteOptions);
+      
+      if (result.error) {
+        toast.error(`Errores al eliminar: ${result.error.length} tablas fallaron`);
+        console.error('Delete errors:', result.error);
+      } else {
+        const totalDeleted = Object.values(result.data)
+          .filter(v => typeof v === 'number')
+          .reduce((sum, v) => sum + v, 0);
+        
+        toast.success(`Eliminados ${totalDeleted} registros exitosamente`);
+        setShowDeleteModal(false);
+        setConfirmText('');
+        loadBranchDataCount(selectedBranch);
+      }
+    } catch (error) {
+      console.error('Error deleting branch data:', error);
+      toast.error('Error al eliminar datos: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAllBranchesData = async () => {
+    if (confirmText !== 'ELIMINAR TODO') {
+      toast.error('Debes escribir "ELIMINAR TODO" para confirmar');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const primaryBranch = getPrimaryBranch();
+      const excludeIds = primaryBranch ? [primaryBranch.id] : [];
+      
+      const result = await adminService.deleteAllBranchesData(excludeIds);
+      
+      if (result.error) {
+        toast.error('Error al eliminar datos de todas las sucursales');
+      } else {
+        const totalBranches = result.data.length;
+        toast.success(`Datos eliminados de ${totalBranches} sucursales`);
+        setShowDeleteModal(false);
+        setConfirmText('');
+        loadBranchDataCount(selectedBranch);
+      }
+    } catch (error) {
+      console.error('Error deleting all branches data:', error);
+      toast.error('Error al eliminar datos: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleOption = (option) => {
+    setDeleteOptions(prev => ({
+      ...prev,
+      [option]: !prev[option]
+    }));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="flex">
+          <AlertTriangle className="h-5 w-5 text-red-400 mt-0.5" />
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-red-800">
+              Zona de Peligro
+            </h3>
+            <p className="text-sm text-red-700 mt-1">
+              Las operaciones en esta sección son irreversibles. Los datos eliminados no se pueden recuperar.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Gestión de Datos por Sucursal</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Seleccionar Sucursal
+            </label>
+            <select
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {branches.map(branch => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Estadísticas de datos */}
+        {branchDataCount && (
+          <div className="mt-6 bg-gray-50 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-gray-900 mb-3">
+              Datos almacenados en esta sucursal:
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{branchDataCount.rooms}</div>
+                <div className="text-xs text-gray-600">Habitaciones</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{branchDataCount.reservations}</div>
+                <div className="text-xs text-gray-600">Reservaciones</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{branchDataCount.quick_checkins}</div>
+                <div className="text-xs text-gray-600">Check-ins Rápidos</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{branchDataCount.supplies}</div>
+                <div className="text-xs text-gray-600">Suministros</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{branchDataCount.snack_items}</div>
+                <div className="text-xs text-gray-600">Snacks</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{branchDataCount.expenses}</div>
+                <div className="text-xs text-gray-600">Gastos</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{branchDataCount.daily_reports}</div>
+                <div className="text-xs text-gray-600">Reportes Diarios</div>
+              </div>
+              <div className="text-center bg-blue-100 rounded-lg p-2">
+                <div className="text-2xl font-bold text-blue-900">{branchDataCount.total}</div>
+                <div className="text-xs text-blue-700 font-medium">Total Registros</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Opciones de eliminación */}
+        <div className="mt-6">
+          <h4 className="text-sm font-medium text-gray-900 mb-3">
+            Seleccionar datos a eliminar:
+          </h4>
+          <div className="space-y-2">
+            {[
+              { key: 'includeRooms', label: 'Habitaciones', description: 'Eliminar todas las habitaciones y sus estados' },
+              { key: 'includeReservations', label: 'Reservaciones', description: 'Incluye pagos y órdenes de check-in/out' },
+              { key: 'includeQuickCheckins', label: 'Check-ins Rápidos', description: 'Eliminar todos los check-ins rápidos' },
+              { key: 'includeSupplies', label: 'Suministros', description: 'Incluye movimientos y alertas de inventario' },
+              { key: 'includeSnacks', label: 'Snacks', description: 'Eliminar todos los items de snacks' },
+              { key: 'includeExpenses', label: 'Gastos', description: 'Eliminar todos los gastos registrados' },
+              { key: 'includeDailyReports', label: 'Reportes Diarios', description: 'Eliminar historial de reportes' }
+            ].map(option => (
+              <div key={option.key} className="flex items-start">
+                <input
+                  id={option.key}
+                  type="checkbox"
+                  checked={deleteOptions[option.key]}
+                  onChange={() => toggleOption(option.key)}
+                  className="h-4 w-4 mt-1 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                />
+                <label htmlFor={option.key} className="ml-3 flex-1">
+                  <div className="text-sm font-medium text-gray-900">{option.label}</div>
+                  <div className="text-xs text-gray-600">{option.description}</div>
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Botones de acción */}
+        <div className="mt-6 flex space-x-4">
+          <button
+            onClick={() => {
+              setDeleteType('single');
+              setShowDeleteModal(true);
+            }}
+            disabled={loading || !selectedBranch}
+            className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Eliminar Datos de Esta Sucursal
+          </button>
+
+          <button
+            onClick={() => {
+              setDeleteType('all');
+              setShowDeleteModal(true);
+            }}
+            disabled={loading}
+            className="flex items-center px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-900 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Eliminar Datos de TODAS las Sucursales
+          </button>
+        </div>
+      </div>
+
+      {/* Modal de confirmación */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center mb-4">
+              <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
+              <h3 className="text-lg font-bold text-gray-900">
+                Confirmar Eliminación
+              </h3>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-700 mb-2">
+                {deleteType === 'single' 
+                  ? `Estás a punto de eliminar datos de la sucursal seleccionada. Esta acción NO se puede deshacer.`
+                  : `Estás a punto de eliminar datos de TODAS las sucursales. Esta acción NO se puede deshacer.`
+                }
+              </p>
+              
+              <div className="bg-red-50 border border-red-200 rounded p-3 mb-4">
+                <p className="text-sm text-red-800 font-medium">
+                  Registros que se eliminarán:
+                </p>
+                <ul className="text-xs text-red-700 mt-2 space-y-1">
+                  {deleteOptions.includeRooms && <li>• Habitaciones</li>}
+                  {deleteOptions.includeReservations && <li>• Reservaciones y pagos</li>}
+                  {deleteOptions.includeQuickCheckins && <li>• Check-ins rápidos</li>}
+                  {deleteOptions.includeSupplies && <li>• Suministros e inventario</li>}
+                  {deleteOptions.includeSnacks && <li>• Items de snacks</li>}
+                  {deleteOptions.includeExpenses && <li>• Gastos</li>}
+                  {deleteOptions.includeDailyReports && <li>• Reportes diarios</li>}
+                </ul>
+              </div>
+
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Para confirmar, escribe{' '}
+                <span className="font-bold text-red-600">
+                  {deleteType === 'single' ? '"ELIMINAR"' : '"ELIMINAR TODO"'}
+                </span>
+              </label>
+              <input
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder={deleteType === 'single' ? 'ELIMINAR' : 'ELIMINAR TODO'}
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setConfirmText('');
+                }}
+                disabled={loading}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={deleteType === 'single' ? handleDeleteBranchData : handleDeleteAllBranchesData}
+                disabled={loading || confirmText !== (deleteType === 'single' ? 'ELIMINAR' : 'ELIMINAR TODO')}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {loading ? (
+                  <RefreshCw className="h-4 w-4 animate-spin mx-auto" />
+                ) : (
+                  'Eliminar Permanentemente'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const AdminSettings = () => {
   const { userInfo, isAdmin, getPrimaryBranch } = useAuth();
@@ -92,20 +440,16 @@ const AdminSettings = () => {
     setLoading(true);
     try {
       const primaryBranch = getPrimaryBranch();
-      console.log('🔄 Loading settings for branch:', primaryBranch?.id);
       
       if (primaryBranch) {
         const result = await adminService.getSystemSettings(primaryBranch.id);
         
         if (result.error) {
-          console.warn('⚠️ Error loading settings:', result.error);
           toast.error('Error al cargar configuraciones, usando valores por defecto');
           return;
         }
         
         if (result.data && result.data.length > 0) {
-          console.log('✅ Settings loaded successfully:', result.data.length, 'settings');
-          
           const mappedSettings = { ...settings };
           
           result.data.forEach(setting => {
@@ -124,16 +468,13 @@ const AdminSettings = () => {
           });
           
           setSettings(mappedSettings);
-          console.log('📋 Settings mapped successfully');
         } else {
-          console.log('ℹ️ No settings found, using defaults');
           toast.success('Configuraciones inicializadas con valores por defecto');
         }
       } else {
         toast.error('No se pudo determinar la sucursal principal');
       }
     } catch (error) {
-      console.error('❌ Error loading settings:', error);
       toast.error('Error al cargar configuraciones: ' + (error.message || 'Error desconocido'));
     } finally {
       setLoading(false);
@@ -149,16 +490,12 @@ const AdminSettings = () => {
         return;
       }
 
-      console.log('💾 Saving settings for branch:', primaryBranch.id);
-
       const savePromises = [];
       
       Object.keys(settings).forEach(category => {
         Object.keys(settings[category]).forEach(key => {
           const settingKey = `${category}.${key}`;
           const settingValue = settings[category][key];
-          
-          console.log('📝 Saving setting:', settingKey, '=', settingValue);
           
           savePromises.push(
             adminService.updateSystemSetting(
@@ -177,16 +514,13 @@ const AdminSettings = () => {
       const successes = results.filter(result => result.status === 'fulfilled');
       
       if (errors.length > 0) {
-        console.error('❌ Some settings failed to save:', errors);
         toast.error(`Error al guardar ${errors.length} configuraciones`);
       } else {
-        console.log('✅ All settings saved successfully:', successes.length);
         toast.success('Configuraciones guardadas exitosamente');
         setLastSaved(new Date());
       }
 
     } catch (error) {
-      console.error('❌ Error saving settings:', error);
       toast.error('Error al guardar configuraciones: ' + (error.message || 'Error desconocido'));
     } finally {
       setSaveLoading(false);
@@ -194,7 +528,6 @@ const AdminSettings = () => {
   };
 
   const updateSetting = (category, key, value) => {
-    console.log('🔄 Updating setting:', category, key, '=', value);
     setSettings(prev => ({
       ...prev,
       [category]: {
@@ -209,7 +542,8 @@ const AdminSettings = () => {
     { id: 'booking', name: 'Reservaciones', icon: Clock },
     { id: 'notifications', name: 'Notificaciones', icon: Bell },
     { id: 'billing', name: 'Facturación', icon: DollarSign },
-    { id: 'security', name: 'Seguridad', icon: Shield }
+    { id: 'security', name: 'Seguridad', icon: Shield },
+    { id: 'data', name: 'Gestión de Datos', icon: Database }
   ];
 
   if (!isAdmin()) {
@@ -282,14 +616,14 @@ const AdminSettings = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         {/* Tabs */}
         <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+          <nav className="flex space-x-8 px-6 overflow-x-auto" aria-label="Tabs">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center ${
+                  className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -912,6 +1246,14 @@ const AdminSettings = () => {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* PESTAÑA GESTIÓN DE DATOS */}
+          {activeTab === 'data' && (
+            <DataManagementTab 
+              userInfo={userInfo}
+              getPrimaryBranch={getPrimaryBranch}
+            />
           )}
         </div>
       </div>

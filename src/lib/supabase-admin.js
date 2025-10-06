@@ -1000,6 +1000,175 @@ export const adminService = {
   },
 
   // =====================================================
+  // 📈 ELIMINACION DE DATOS EN GENERAL
+  // =====================================================
+
+  async deleteBranchData(branchId, options = {}) {
+  try {
+    console.log('🗑️ Deleting data for branch:', branchId, options);
+    
+    const results = {
+      rooms: 0,
+      reservations: 0,
+      quick_checkins: 0,
+      supplies: 0,
+      snack_items: 0,
+      expenses: 0,
+      daily_reports: 0,
+      errors: []
+    };
+
+    // 1. Eliminar daily_reports (no tiene dependencias)
+    if (options.includeDailyReports !== false) {
+      const { error: reportsError, count } = await supabase
+        .from('daily_reports')
+        .delete()
+        .eq('branch_id', branchId);
+      
+      if (reportsError) results.errors.push({ table: 'daily_reports', error: reportsError });
+      else results.daily_reports = count || 0;
+    }
+
+    // 2. Eliminar expenses (no tiene dependencias)
+    if (options.includeExpenses !== false) {
+      const { error: expensesError, count } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('branch_id', branchId);
+      
+      if (expensesError) results.errors.push({ table: 'expenses', error: expensesError });
+      else results.expenses = count || 0;
+    }
+
+    // 3. Eliminar quick_checkins (tiene checkin_orders como dependencia CASCADE)
+    if (options.includeQuickCheckins !== false) {
+      const { error: quickError, count } = await supabase
+        .from('quick_checkins')
+        .delete()
+        .eq('branch_id', branchId);
+      
+      if (quickError) results.errors.push({ table: 'quick_checkins', error: quickError });
+      else results.quick_checkins = count || 0;
+    }
+
+    // 4. Eliminar reservations (tiene CASCADE en payments, checkin_orders)
+    if (options.includeReservations !== false) {
+      const { error: reservationsError, count } = await supabase
+        .from('reservations')
+        .delete()
+        .eq('branch_id', branchId);
+      
+      if (reservationsError) results.errors.push({ table: 'reservations', error: reservationsError });
+      else results.reservations = count || 0;
+    }
+
+    // 5. Eliminar supplies (tiene CASCADE en supply_movements, inventory_alerts)
+    if (options.includeSupplies !== false) {
+      const { error: suppliesError, count } = await supabase
+        .from('supplies')
+        .delete()
+        .eq('branch_id', branchId);
+      
+      if (suppliesError) results.errors.push({ table: 'supplies', error: suppliesError });
+      else results.supplies = count || 0;
+    }
+
+    // 6. Eliminar snack_items (no tiene dependencias directas)
+    if (options.includeSnacks !== false) {
+      const { error: snacksError, count } = await supabase
+        .from('snack_items')
+        .delete()
+        .eq('branch_id', branchId);
+      
+      if (snacksError) results.errors.push({ table: 'snack_items', error: snacksError });
+      else results.snack_items = count || 0;
+    }
+
+    // 7. Eliminar rooms (debe ser último, tiene referencias en muchas tablas)
+    if (options.includeRooms !== false) {
+      const { error: roomsError, count } = await supabase
+        .from('rooms')
+        .delete()
+        .eq('branch_id', branchId);
+      
+      if (roomsError) results.errors.push({ table: 'rooms', error: roomsError });
+      else results.rooms = count || 0;
+    }
+
+    console.log('✅ Branch data deletion completed:', results);
+    return { data: results, error: results.errors.length > 0 ? results.errors : null };
+    
+  } catch (error) {
+    console.error('❌ Error deleting branch data:', error);
+    return { data: null, error };
+  }
+},
+
+async deleteAllBranchesData(excludeBranchIds = []) {
+  try {
+    console.log('🗑️ Deleting data for ALL branches except:', excludeBranchIds);
+    
+    const { data: branches, error: branchesError } = await supabase
+      .from('branches')
+      .select('id, name')
+      .not('id', 'in', `(${excludeBranchIds.join(',')})`)
+      .eq('is_active', true);
+
+    if (branchesError) throw branchesError;
+
+    const results = [];
+    
+    for (const branch of branches) {
+      console.log(`Processing branch: ${branch.name}`);
+      const result = await this.deleteBranchData(branch.id);
+      results.push({
+        branchId: branch.id,
+        branchName: branch.name,
+        ...result
+      });
+    }
+
+    return { data: results, error: null };
+  } catch (error) {
+    console.error('❌ Error deleting all branches data:', error);
+    return { data: null, error };
+  }
+},
+
+async getBranchDataCount(branchId) {
+  try {
+    console.log('📊 Counting data for branch:', branchId);
+    
+    const counts = await Promise.all([
+      supabase.from('rooms').select('*', { count: 'exact', head: true }).eq('branch_id', branchId),
+      supabase.from('reservations').select('*', { count: 'exact', head: true }).eq('branch_id', branchId),
+      supabase.from('quick_checkins').select('*', { count: 'exact', head: true }).eq('branch_id', branchId),
+      supabase.from('supplies').select('*', { count: 'exact', head: true }).eq('branch_id', branchId),
+      supabase.from('snack_items').select('*', { count: 'exact', head: true }).eq('branch_id', branchId),
+      supabase.from('expenses').select('*', { count: 'exact', head: true }).eq('branch_id', branchId),
+      supabase.from('daily_reports').select('*', { count: 'exact', head: true }).eq('branch_id', branchId)
+    ]);
+
+    return {
+      data: {
+        rooms: counts[0].count || 0,
+        reservations: counts[1].count || 0,
+        quick_checkins: counts[2].count || 0,
+        supplies: counts[3].count || 0,
+        snack_items: counts[4].count || 0,
+        expenses: counts[5].count || 0,
+        daily_reports: counts[6].count || 0,
+        total: counts.reduce((sum, c) => sum + (c.count || 0), 0)
+      },
+      error: null
+    };
+  } catch (error) {
+    console.error('❌ Error counting branch data:', error);
+    return { data: null, error };
+  }
+},
+
+  // =====================================================
   // 🔧 FUNCIONES AUXILIARES
   // =====================================================
   
