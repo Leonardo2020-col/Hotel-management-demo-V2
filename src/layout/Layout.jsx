@@ -1,4 +1,4 @@
-// src/layout/Layout.jsx - ACTUALIZADO CON SELECTOR DE SUCURSAL
+// src/layout/Layout.jsx - CON MENÚ DE ADMINISTRACIÓN COLAPSABLE
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -16,11 +16,15 @@ import {
   Menu,
   X,
   ChevronDown,
+  ChevronUp,
   User,
   Bell,
   Search,
   Building,
-  RefreshCw
+  Shield,
+  UserCog,
+  FileText,
+  Database
 } from 'lucide-react'
 import BranchSwitcherModal from '../components/BranchSwitcherModal'
 
@@ -31,8 +35,8 @@ const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
   const [branchSwitcherOpen, setBranchSwitcherOpen] = useState(false)
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false)
   
-  // ✅ Refs para manejar clicks fuera del dropdown
   const profileDropdownRef = useRef(null)
   const searchInputRef = useRef(null)
 
@@ -40,7 +44,15 @@ const Layout = ({ children }) => {
   const userBranches = getUserBranches()
   const canSwitchBranches = isAdmin() && userBranches.length > 1
 
-  // ✅ Cerrar dropdown cuando se hace click fuera
+  // Detectar si estamos en una ruta de admin para abrir el menú automáticamente
+  const isAdminPath = location.pathname.startsWith('/admin')
+
+  useEffect(() => {
+    if (isAdminPath) {
+      setAdminMenuOpen(true)
+    }
+  }, [isAdminPath])
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target)) {
@@ -52,15 +64,12 @@ const Layout = ({ children }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // ✅ Cerrar sidebar cuando cambia la ruta
   useEffect(() => {
     setSidebarOpen(false)
   }, [location.pathname])
 
-  // Función para determinar si una ruta está activa
   const isCurrentPath = useCallback((path) => location.pathname === path, [location.pathname])
 
-  // ✅ Configuración de navegación con mejor estructura
   const navigation = [
     {
       name: 'Dashboard',
@@ -116,18 +125,46 @@ const Layout = ({ children }) => {
     }
   ]
 
-  // Menú de administrador
+  // Menú de administración
   const adminNavigation = [
     {
       name: 'Panel de Admin',
-      href: '/admin',
+      href: '/admin/panel',
+      icon: Shield,
+      current: isCurrentPath('/admin/panel')
+    },
+    {
+      name: 'Usuarios',
+      href: '/admin/users',
+      icon: UserCog,
+      current: isCurrentPath('/admin/users')
+    },
+    {
+      name: 'Sucursales',
+      href: '/admin/branches',
+      icon: Building,
+      current: isCurrentPath('/admin/branches')
+    },
+    {
+      name: 'Reportes Avanzados',
+      href: '/admin/reports',
+      icon: FileText,
+      current: isCurrentPath('/admin/reports')
+    },
+    {
+      name: 'Configuración',
+      href: '/admin/settings',
       icon: Settings,
-      current: isCurrentPath('/admin'),
-      description: 'Configuración del sistema'
+      current: isCurrentPath('/admin/settings')
+    },
+    {
+      name: 'Auditoría',
+      href: '/admin/audit',
+      icon: Database,
+      current: isCurrentPath('/admin/audit')
     }
   ]
 
-  // ✅ Mejorar manejo de logout con confirmación
   const handleLogout = useCallback(async () => {
     try {
       if (!window.confirm('¿Estás seguro de que deseas cerrar sesión?')) {
@@ -143,30 +180,25 @@ const Layout = ({ children }) => {
     }
   }, [logout, navigate])
 
-  // ✅ Mejorar navegación
   const handleNavigation = useCallback((href) => {
     navigate(href)
     setSidebarOpen(false)
     setProfileDropdownOpen(false)
   }, [navigate])
 
-  // ✅ Manejar búsqueda
   const handleSearch = useCallback((event) => {
     if (event.key === 'Enter') {
       const searchTerm = event.target.value.trim()
       if (searchTerm) {
         console.log('🔍 Búsqueda:', searchTerm)
-        // TODO: Implementar funcionalidad de búsqueda
       }
     }
   }, [])
 
-  // Función para combinar clases CSS
   const classNames = (...classes) => {
     return classes.filter(Boolean).join(' ')
   }
 
-  // ✅ Componente optimizado para notificaciones
   const NotificationBell = React.memo(() => (
     <button 
       className="bg-white p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
@@ -178,7 +210,6 @@ const Layout = ({ children }) => {
 
   return (
     <div className="h-screen flex overflow-hidden bg-gray-100">
-      {/* ✅ Overlay mejorado para móvil */}
       {sidebarOpen && (
         <div 
           className="fixed inset-0 bg-gray-600 bg-opacity-75 z-40 md:hidden transition-opacity"
@@ -187,7 +218,7 @@ const Layout = ({ children }) => {
         />
       )}
 
-      {/* Sidebar para móvil */}
+      {/* Sidebar móvil */}
       <div className={classNames(
         "fixed inset-0 flex z-50 md:hidden transition-transform transform",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -212,11 +243,13 @@ const Layout = ({ children }) => {
             canSwitchBranches={canSwitchBranches}
             onBranchSwitcherOpen={() => setBranchSwitcherOpen(true)}
             classNames={classNames}
+            adminMenuOpen={adminMenuOpen}
+            setAdminMenuOpen={setAdminMenuOpen}
           />
         </div>
       </div>
 
-      {/* Sidebar para desktop */}
+      {/* Sidebar desktop */}
       <div className="hidden md:flex md:flex-shrink-0">
         <div className="flex flex-col w-64">
           <SidebarContent 
@@ -228,6 +261,8 @@ const Layout = ({ children }) => {
             canSwitchBranches={canSwitchBranches}
             onBranchSwitcherOpen={() => setBranchSwitcherOpen(true)}
             classNames={classNames}
+            adminMenuOpen={adminMenuOpen}
+            setAdminMenuOpen={setAdminMenuOpen}
           />
         </div>
       </div>
@@ -236,7 +271,6 @@ const Layout = ({ children }) => {
       <div className="flex flex-col w-0 flex-1 overflow-hidden">
         {/* Header superior */}
         <div className="relative z-10 flex-shrink-0 flex h-16 bg-white shadow-sm border-b border-gray-200">
-          {/* Botón menú móvil */}
           <button
             className="px-4 border-r border-gray-200 text-gray-500 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 md:hidden transition-colors"
             onClick={() => setSidebarOpen(true)}
@@ -246,7 +280,6 @@ const Layout = ({ children }) => {
           </button>
 
           <div className="flex-1 px-4 flex justify-between items-center">
-            {/* ✅ Barra de búsqueda mejorada */}
             <div className="flex-1 flex max-w-lg">
               <div className="w-full flex md:ml-0">
                 <div className="relative w-full text-gray-400 focus-within:text-gray-600">
@@ -264,9 +297,7 @@ const Layout = ({ children }) => {
               </div>
             </div>
 
-            {/* Perfil de usuario */}
             <div className="ml-4 flex items-center md:ml-6 space-x-4">
-              {/* ✅ Selector rápido de sucursal para admin */}
               {canSwitchBranches && (
                 <button
                   onClick={() => setBranchSwitcherOpen(true)}
@@ -281,10 +312,8 @@ const Layout = ({ children }) => {
                 </button>
               )}
 
-              {/* Notificaciones */}
               <NotificationBell />
 
-              {/* ✅ Dropdown de perfil mejorado */}
               <div className="relative" ref={profileDropdownRef}>
                 <button
                   className="max-w-xs bg-white flex items-center text-sm rounded-full hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 p-2 transition-colors"
@@ -305,11 +334,9 @@ const Layout = ({ children }) => {
                   )} />
                 </button>
 
-                {/* ✅ Dropdown mejorado */}
                 {profileDropdownOpen && (
                   <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                     <div className="py-1">
-                      {/* Info del usuario */}
                       <div className="px-4 py-3 border-b border-gray-100">
                         <p className="text-sm font-medium text-gray-900">{userName}</p>
                         <p className="text-sm text-gray-500">{userRole}</p>
@@ -320,7 +347,6 @@ const Layout = ({ children }) => {
                         )}
                       </div>
                       
-                      {/* ✅ Opción de cambio de sucursal en dropdown */}
                       {canSwitchBranches && (
                         <button
                           onClick={() => {
@@ -334,7 +360,6 @@ const Layout = ({ children }) => {
                         </button>
                       )}
                       
-                      {/* Opciones */}
                       <button
                         onClick={handleLogout}
                         className="group flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-900 transition-colors"
@@ -350,7 +375,6 @@ const Layout = ({ children }) => {
           </div>
         </div>
 
-        {/* ✅ Contenido de la página con mejor manejo de scroll */}
         <main className="flex-1 relative overflow-y-auto focus:outline-none bg-gray-50">
           <div className="min-h-full">
             {children}
@@ -358,7 +382,6 @@ const Layout = ({ children }) => {
         </main>
       </div>
 
-      {/* ✅ Modal de cambio de sucursal */}
       <BranchSwitcherModal 
         isOpen={branchSwitcherOpen}
         onClose={() => setBranchSwitcherOpen(false)}
@@ -367,7 +390,7 @@ const Layout = ({ children }) => {
   )
 }
 
-// ✅ Componente del sidebar optimizado con React.memo
+// Componente del sidebar con menú de administración colapsable
 const SidebarContent = React.memo(({ 
   navigation, 
   adminNavigation, 
@@ -376,22 +399,25 @@ const SidebarContent = React.memo(({
   primaryBranch, 
   canSwitchBranches,
   onBranchSwitcherOpen,
-  classNames 
+  classNames,
+  adminMenuOpen,
+  setAdminMenuOpen
 }) => {
   return (
     <div className="flex flex-col h-full bg-white border-r border-gray-200">
-      {/* Logo y título */}
+      {/* Logo */}
       <div className="flex items-center h-16 flex-shrink-0 px-4 bg-gradient-to-r from-indigo-600 to-purple-600">
         <Hotel className="h-8 w-8 text-white" />
         <span className="ml-2 text-xl font-semibold text-white">Hotel System</span>
       </div>
 
-      {/* ✅ Información de la sucursal mejorada con acción */}
+      {/* Info de sucursal */}
       {primaryBranch && (
-        <div className={`px-4 py-3 bg-gradient-to-r from-gray-50 to-indigo-50 border-b border-gray-200 ${
-          canSwitchBranches ? 'cursor-pointer hover:from-blue-50 hover:to-indigo-100 transition-colors' : ''
-        }`}
-        onClick={canSwitchBranches ? onBranchSwitcherOpen : undefined}
+        <div 
+          className={`px-4 py-3 bg-gradient-to-r from-gray-50 to-indigo-50 border-b border-gray-200 ${
+            canSwitchBranches ? 'cursor-pointer hover:from-blue-50 hover:to-indigo-100 transition-colors' : ''
+          }`}
+          onClick={canSwitchBranches ? onBranchSwitcherOpen : undefined}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -412,6 +438,7 @@ const SidebarContent = React.memo(({
 
       {/* Navegación principal */}
       <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+        {/* Menú principal */}
         <div className="space-y-1">
           {navigation.map((item) => {
             const Icon = item.icon
@@ -437,7 +464,6 @@ const SidebarContent = React.memo(({
                   <span>{item.name}</span>
                 </div>
                 
-                {/* ✅ Badges y alertas mejoradas */}
                 <div className="flex items-center space-x-1">
                   {item.badge && (
                     <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium">
@@ -453,45 +479,60 @@ const SidebarContent = React.memo(({
           })}
         </div>
 
-        {/* Sección de administrador */}
+        {/* Sección de Administración colapsable */}
         {isAdmin() && (
-          <div className="mt-8">
-            <div className="px-3 py-2">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Administración
-              </h3>
-            </div>
-            <div className="space-y-1">
-              {adminNavigation.map((item) => {
-                const Icon = item.icon
-                return (
-                  <button
-                    key={item.name}
-                    onClick={() => onNavigate(item.href)}
-                    className={classNames(
-                      item.current
-                        ? 'bg-indigo-100 text-indigo-900 border-r-2 border-indigo-500'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-                      'group flex items-center w-full px-3 py-2 text-sm font-medium rounded-l-md transition-all duration-150'
-                    )}
-                    title={item.description}
-                  >
-                    <Icon
+          <div className="mt-6">
+            {/* Header colapsable */}
+            <button
+              onClick={() => setAdminMenuOpen(!adminMenuOpen)}
+              className="w-full flex items-center justify-between px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+            >
+              <div className="flex items-center">
+                <Shield className="h-5 w-5 mr-3 text-purple-600" />
+                <span className="uppercase text-xs tracking-wider text-gray-500">
+                  Administración
+                </span>
+              </div>
+              {adminMenuOpen ? (
+                <ChevronUp className="h-4 w-4 text-gray-400" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-gray-400" />
+              )}
+            </button>
+
+            {/* Menú de admin colapsable */}
+            {adminMenuOpen && (
+              <div className="mt-2 space-y-1">
+                {adminNavigation.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <button
+                      key={item.name}
+                      onClick={() => onNavigate(item.href)}
                       className={classNames(
-                        item.current ? 'text-indigo-500' : 'text-gray-400 group-hover:text-gray-500',
-                        'mr-3 h-5 w-5 transition-colors'
+                        item.current
+                          ? 'bg-purple-100 text-purple-900 border-r-2 border-purple-500'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+                        'group flex items-center w-full px-3 py-2 text-sm font-medium rounded-l-md transition-all duration-150'
                       )}
-                    />
-                    {item.name}
-                  </button>
-                )
-              })}
-            </div>
+                    >
+                      <Icon
+                        className={classNames(
+                          item.current ? 'text-purple-500' : 'text-gray-400 group-hover:text-gray-500',
+                          'mr-3 h-5 w-5 transition-colors'
+                        )}
+                      />
+                      {item.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
       </nav>
 
-      {/* ✅ Footer del sidebar mejorado */}
+      {/* Footer */}
       <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-gray-50">
         <div className="text-xs text-gray-500 text-center">
           <p className="font-medium">Sistema de Hotel</p>
