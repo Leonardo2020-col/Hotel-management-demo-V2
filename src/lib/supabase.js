@@ -3151,6 +3151,43 @@ async saveScheduledReport(reportData, userId) {
     }
   },
 
+  async saveScheduledReport(reportData, userId) {
+  try {
+    console.log('💾 Saving scheduled report:', reportData.name);
+
+    const { data, error } = await supabase
+      .from('saved_reports')
+      .insert({
+        name: reportData.name,
+        description: reportData.description || null,
+        report_type: reportData.reportType,
+        parameters: { 
+          branch_id: reportData.branchId 
+        },
+        schedule: {
+          frequency: reportData.frequency,
+          time: reportData.scheduleTime,
+          email: reportData.email
+        },
+        created_by: userId,
+        is_active: reportData.isActive
+      })
+      .select(`
+        *,
+        created_by_user:created_by(first_name, last_name)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    console.log('✅ Scheduled report saved:', data.id);
+    return { data, error: null };
+  } catch (error) {
+    console.error('❌ Error saving scheduled report:', error);
+    return { data: null, error };
+  }
+},
+
   // ===================================================
   // 📈 REPORTES AVANZADOS
   // ===================================================
@@ -3273,11 +3310,8 @@ async saveScheduledReport(reportData, userId) {
     const { filename = `reporte_${reportType}_${new Date().toISOString().split('T')[0]}` } = options;
 
     switch (reportType) {
-      case 'overview':  // ✅ AGREGAR ESTE CASO
+      case 'overview':
         csvContent = this.generateOverviewCSV(data);
-        break;
-      case 'occupancy':
-        csvContent = this.generateOccupancyCSV(data);
         break;
       case 'daily':
         csvContent = this.generateDailyReportsCSV(data);
@@ -3287,6 +3321,9 @@ async saveScheduledReport(reportData, userId) {
         break;
       case 'expenses':
         csvContent = this.generateExpensesCSV(data);
+        break;
+      case 'occupancy':
+        csvContent = this.generateOccupancyCSV(data);
         break;
       default:
         throw new Error(`Tipo de reporte no soportado: ${reportType}`);
@@ -3301,6 +3338,20 @@ async saveScheduledReport(reportData, userId) {
     console.error('❌ Error exporting CSV:', error);
     return { success: false, error };
   }
+},
+
+// Agregar función faltante para Overview
+generateOverviewCSV(data) {
+  const headers = ['Métrica', 'Valor'];
+  const rows = [
+    ['Ingresos Totales', `S/. ${(data.totalRevenue || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`],
+    ['Gastos Totales', `S/. ${(data.totalExpenses || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`],
+    ['Ganancia Neta', `S/. ${(data.netProfit || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`],
+    ['Ocupación Promedio', `${data.averageOccupancy || 0}%`],
+    ['Margen de Ganancia', data.totalRevenue > 0 ? `${((data.netProfit / data.totalRevenue) * 100).toFixed(1)}%` : '0%']
+  ];
+  
+  return [headers, ...rows].map(row => row.join(',')).join('\n');
 },
 
   

@@ -93,53 +93,57 @@ const AdminReports = () => {
   };
 
   const generateOverviewData = async () => {
-    try {
-      console.log('📊 Generating overview data...');
-      
-      const [revenueResult, expensesResult, statsResult] = await Promise.all([
-        reportService.getRevenueReport(selectedBranch, dateRange.startDate, dateRange.endDate),
-        reportService.getExpensesReport(selectedBranch, dateRange.startDate, dateRange.endDate),
-        reportService.getDashboardStats(selectedBranch)
-      ]);
+  try {
+    console.log('📊 Generating overview data...');
+    
+    const [revenueResult, expensesResult, statsResult] = await Promise.all([
+      reportService.getRevenueReport(selectedBranch, dateRange.startDate, dateRange.endDate),
+      reportService.getExpensesReport(selectedBranch, dateRange.startDate, dateRange.endDate),
+      reportService.getDashboardStats(selectedBranch)
+    ]);
 
-      if (revenueResult.error) console.error('Revenue error:', revenueResult.error);
-      if (expensesResult.error) console.error('Expenses error:', expensesResult.error);
-      if (statsResult.error) console.error('Stats error:', statsResult.error);
-
-      const revenue = revenueResult.data || {};
-      const expenses = expensesResult.data || [];
-      const stats = statsResult.data || {};
-
-      const totalExpenses = Array.isArray(expenses) 
-        ? expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0)
-        : 0;
-
-      const totalRevenue = revenue.total_revenue || 0;
-      const netProfit = totalRevenue - totalExpenses;
-      const averageOccupancy = stats.occupancy_rate || 0;
-
-      const overviewData = {
-        totalRevenue: totalRevenue,
-        totalExpenses: totalExpenses,
-        netProfit: netProfit,
-        averageOccupancy: averageOccupancy.toFixed(1)
-      };
-
-      console.log('✅ Overview data generated:', overviewData);
-      return { data: overviewData };
-      
-    } catch (error) {
-      console.error('❌ Error generating overview:', error);
-      return {
-        data: {
-          totalRevenue: 0,
-          totalExpenses: 0,
-          netProfit: 0,
-          averageOccupancy: '0.0'
-        }
-      };
+    // Procesar revenue (puede ser JSON o objeto directo)
+    let revenue = revenueResult.data || {};
+    if (typeof revenue === 'string') {
+      revenue = JSON.parse(revenue);
     }
-  };
+    
+    // Procesar expenses (siempre es array)
+    const expenses = Array.isArray(expensesResult.data) ? expensesResult.data : [];
+    const totalExpenses = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+    
+    // Procesar stats (puede ser JSON o objeto directo)
+    let stats = statsResult.data || {};
+    if (typeof stats === 'string') {
+      stats = JSON.parse(stats);
+    }
+
+    const totalRevenue = Number(revenue.total_revenue) || 0;
+    const netProfit = totalRevenue - totalExpenses;
+    const averageOccupancy = Number(stats.occupancy_rate) || 0;
+
+    const overviewData = {
+      totalRevenue: totalRevenue,
+      totalExpenses: totalExpenses,
+      netProfit: netProfit,
+      averageOccupancy: averageOccupancy.toFixed(1)
+    };
+
+    console.log('✅ Overview data generated:', overviewData);
+    return { data: overviewData };
+    
+  } catch (error) {
+    console.error('❌ Error generating overview:', error);
+    return {
+      data: {
+        totalRevenue: 0,
+        totalExpenses: 0,
+        netProfit: 0,
+        averageOccupancy: '0.0'
+      }
+    };
+  }
+};
 
   const handleExportReport = async () => {
     if (!reportData) {
