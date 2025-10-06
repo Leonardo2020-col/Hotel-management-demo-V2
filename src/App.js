@@ -15,7 +15,6 @@ import Layout from './layout/Layout.jsx'
 // Pages
 import LoginPage from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
-import AdminPanel from './pages/AdminPanel.jsx'
 import CheckIn from './pages/CheckIn.jsx'
 import Reservations from './pages/Reservations.jsx'
 import Rooms from './pages/Rooms.jsx'
@@ -80,19 +79,7 @@ function App() {
               {/* Ruta principal de admin - redirige a panel por defecto */}
               <Route 
                 path="/admin" 
-                element={<Navigate to="/admin/panel" replace />} 
-              />
-              
-              {/* Panel de administración general */}
-              <Route
-                path="/admin/panel"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <Layout>
-                      <AdminPanel />
-                    </Layout>
-                  </ProtectedRoute>
-                }
+                element={<Navigate to="/admin/users" replace />} 
               />
               
               {/* Gestión de usuarios */}
