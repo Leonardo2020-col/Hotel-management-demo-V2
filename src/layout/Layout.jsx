@@ -128,12 +128,6 @@ const Layout = ({ children }) => {
   // Menú de administración
   const adminNavigation = [
     {
-      name: 'Panel de Admin',
-      href: '/admin/panel',
-      icon: Shield,
-      current: isCurrentPath('/admin/panel')
-    },
-    {
       name: 'Usuarios',
       href: '/admin/users',
       icon: UserCog,
