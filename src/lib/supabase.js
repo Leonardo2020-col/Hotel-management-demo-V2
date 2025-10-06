@@ -3262,6 +3262,50 @@ async saveScheduledReport(reportData, userId) {
     }
   },
 
+  /**
+   * Exportar reporte a CSV
+   */
+  async exportToCSV(reportType, data, options = {}) {
+    try {
+      console.log('📤 Exporting to CSV:', reportType);
+
+      if (!data) {
+        throw new Error('No hay datos para exportar');
+      }
+
+      const { filename = `reporte_${reportType}_${new Date().toISOString().split('T')[0]}` } = options;
+      let csvContent = '';
+
+      switch (reportType) {
+        case 'overview':
+          csvContent = this.generateOverviewCSV(data);
+          break;
+        case 'daily':
+          csvContent = this.generateDailyReportsCSV(data);
+          break;
+        case 'revenue':
+          csvContent = this.generateRevenueCSV(data);
+          break;
+        case 'expenses':
+          csvContent = this.generateExpensesCSV(data);
+          break;
+        default:
+          throw new Error('Tipo de reporte no soportado para exportación');
+      }
+
+      // Descargar archivo
+      this.downloadCSV(csvContent, `${filename}.csv`);
+      
+      console.log('✅ CSV exported successfully:', filename);
+      return { success: true, error: null };
+    } catch (error) {
+      console.error('❌ Error exporting CSV:', error);
+      return { success: false, error };
+    }
+  },
+
+  
+
   // ===================================================
   // 🛠️ UTILIDADES
   // ===================================================
@@ -3344,6 +3388,123 @@ async saveScheduledReport(reportData, userId) {
   formatPercentage(value, decimals = 1) {
     return `${(value || 0).toFixed(decimals)}%`;
   },
+
+  /**
+   * Generar CSV de resumen general
+   */
+  generateOverviewCSV(data) {
+    const headers = ['Métrica', 'Valor'];
+    const rows = [
+      ['Ingresos Totales', `S/. ${(data.totalRevenue || 0).toLocaleString('es-PE')}`],
+      ['Gastos Totales', `S/. ${(data.totalExpenses || 0).toLocaleString('es-PE')}`],
+      ['Ganancia Neta', `S/. ${(data.netProfit || 0).toLocaleString('es-PE')}`],
+      ['Ocupación Promedio', `${data.averageOccupancy || 0}%`]
+    ];
+    
+    return [headers, ...rows].map(row => row.join(',')).join('\n');
+  },
+
+  /**
+   * Generar CSV de reportes diarios
+   */
+  generateDailyReportsCSV(data) {
+    if (!Array.isArray(data) || data.length === 0) {
+      return 'No hay datos disponibles';
+    }
+
+    const headers = [
+      'Fecha',
+      'Check-ins',
+      'Check-outs',
+      'Ingresos',
+      'Gastos',
+      'Ocupación (%)',
+      'Hab. Disponibles',
+      'Hab. Ocupadas',
+      'Hab. Mantenimiento'
+    ];
+    
+    const rows = data.map(report => [
+      new Date(report.report_date).toLocaleDateString('es-PE'),
+      report.total_checkins || 0,
+      report.total_checkouts || 0,
+      (report.total_revenue || 0).toFixed(2),
+      (report.total_expenses || 0).toFixed(2),
+      (report.occupancy_rate || 0).toFixed(1),
+      report.available_rooms || 0,
+      report.occupied_rooms || 0,
+      report.maintenance_rooms || 0
+    ]);
+    
+    return [headers, ...rows].map(row => row.join(',')).join('\n');
+  },
+
+  /**
+   * Generar CSV de ingresos
+   */
+  generateRevenueCSV(data) {
+    const headers = ['Concepto', 'Monto (S/.)'];
+    const rows = [
+      ['Ingresos por Habitaciones', (data.room_revenue || 0).toFixed(2)],
+      ['Ingresos por Servicios', (data.service_revenue || 0).toFixed(2)],
+      ['Total Ingresos', (data.total_revenue || 0).toFixed(2)],
+      ['Total Gastos', (data.total_expenses || 0).toFixed(2)],
+      ['Ganancia Neta', (data.net_profit || 0).toFixed(2)]
+    ];
+    
+    return [headers, ...rows].map(row => row.join(',')).join('\n');
+  },
+
+  /**
+   * Generar CSV de gastos
+   */
+  generateExpensesCSV(data) {
+    if (!Array.isArray(data) || data.length === 0) {
+      return 'No hay datos disponibles';
+    }
+
+    const headers = [
+      'Fecha',
+      'Descripción',
+      'Monto (S/.)',
+      'Categoría',
+      'Método de Pago'
+    ];
+    
+    const rows = data.map(expense => [
+      new Date(expense.expense_date).toLocaleDateString('es-PE'),
+      `"${(expense.description || '').replace(/"/g, '""')}"`,
+      (expense.amount || 0).toFixed(2),
+      expense.expense_categories?.name || 'Sin categoría',
+      expense.payment_methods?.name || 'Sin método'
+    ]);
+    
+    return [headers, ...rows].map(row => row.join(',')).join('\n');
+  },
+
+  /**
+   * Descargar archivo CSV
+   */
+  downloadCSV(csvContent, filename) {
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { 
+      type: 'text/csv;charset=utf-8;' 
+    });
+    
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
+  },
+
 
   // ===================================================
   // 📤 EXPORTACIÓN DE DATOS
