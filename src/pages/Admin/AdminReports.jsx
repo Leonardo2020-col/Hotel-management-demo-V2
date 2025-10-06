@@ -1,4 +1,4 @@
-// src/pages/Admin/AdminReports.jsx - VERSIÓN COMPLETAMENTE CORREGIDA
+// src/pages/Admin/AdminReports.jsx - VERSIÓN FINAL CON MODAL FUNCIONAL
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { reportService } from '../../lib/supabase';
@@ -13,11 +13,12 @@ import {
   Plus
 } from 'lucide-react';
 
-// ✅ Importar componentes existentes
+// Importar componentes existentes
 import OverviewReport from '../../components/admin/report/OverviewReport';
 import DailyReport from '../../components/admin/report/DailyReport';
 import RevenueReport from '../../components/admin/report/RevenueReport';
 import ExpensesReport from '../../components/admin/report/ExpensesReport';
+import ScheduleReportModal from '../../components/admin/report/ScheduleReportModal';
 
 const AdminReports = () => {
   const { userInfo, isAdmin, getUserBranches } = useAuth();
@@ -30,6 +31,7 @@ const AdminReports = () => {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState([]);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
 
   useEffect(() => {
     if (isAdmin()) {
@@ -160,13 +162,6 @@ const AdminReports = () => {
       toast.error('Función de exportación no disponible');
     }
   };
-
-  // ✅ FUNCIÓN CORREGIDA para programar reportes
-  const handleScheduleReport = () => {
-    toast.success('📅 Función de reportes programados próximamente disponible', {
-    duration: 3000,
-  });
-};
 
   const tabs = [
     { id: 'overview', name: 'Resumen General', icon: BarChart3 },
@@ -308,14 +303,14 @@ const AdminReports = () => {
         </div>
       </div>
 
-      {/* Reportes programados - SECCIÓN CORREGIDA */}
+      {/* Reportes programados */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-medium text-gray-900">Reportes Programados</h3>
             <button 
               className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              onClick={handleScheduleReport}
+              onClick={() => setShowScheduleModal(true)}
             >
               <Plus className="h-4 w-4 mr-1" />
               Programar Reporte
@@ -332,6 +327,13 @@ const AdminReports = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de programación */}
+      <ScheduleReportModal
+        isOpen={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
+        branches={branches}
+      />
     </div>
   );
 };
