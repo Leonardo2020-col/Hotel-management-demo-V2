@@ -4763,7 +4763,6 @@ export const db = {
   }
 }
 
-export { reportsService as reportService } from '../services/reportsService';
 
 // =====================================================
 // 🔄 EXPORT PRINCIPAL ACTUALIZADO
