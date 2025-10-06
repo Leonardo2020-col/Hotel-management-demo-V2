@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { reportService } from '../../lib/supabase';
-import { toast } from 'react-hot-toast'; // ✅ CORRECCIÓN: Importación correcta
+import toast from 'react-hot-toast';
 import {
   BarChart3,
   Calendar,
@@ -163,16 +163,10 @@ const AdminReports = () => {
 
   // ✅ FUNCIÓN CORREGIDA para programar reportes
   const handleScheduleReport = () => {
-    toast('Función de reportes programados próximamente', {
-      icon: '📅',
-      duration: 3000,
-      style: {
-        borderRadius: '10px',
-        background: '#3B82F6',
-        color: '#fff',
-      },
-    });
-  };
+    toast.success('📅 Función de reportes programados próximamente disponible', {
+    duration: 3000,
+  });
+};
 
   const tabs = [
     { id: 'overview', name: 'Resumen General', icon: BarChart3 },
