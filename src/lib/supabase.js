@@ -3266,43 +3266,42 @@ async saveScheduledReport(reportData, userId) {
    * Exportar reporte a CSV
    */
   async exportToCSV(reportType, data, options = {}) {
-    try {
-      console.log('📤 Exporting to CSV:', reportType);
+  try {
+    console.log('📤 Exporting to CSV:', reportType);
 
-      if (!data) {
-        throw new Error('No hay datos para exportar');
-      }
+    let csvContent = '';
+    const { filename = `reporte_${reportType}_${new Date().toISOString().split('T')[0]}` } = options;
 
-      const { filename = `reporte_${reportType}_${new Date().toISOString().split('T')[0]}` } = options;
-      let csvContent = '';
-
-      switch (reportType) {
-        case 'overview':
-          csvContent = this.generateOverviewCSV(data);
-          break;
-        case 'daily':
-          csvContent = this.generateDailyReportsCSV(data);
-          break;
-        case 'revenue':
-          csvContent = this.generateRevenueCSV(data);
-          break;
-        case 'expenses':
-          csvContent = this.generateExpensesCSV(data);
-          break;
-        default:
-          throw new Error('Tipo de reporte no soportado para exportación');
-      }
-
-      // Descargar archivo
-      this.downloadCSV(csvContent, `${filename}.csv`);
-      
-      console.log('✅ CSV exported successfully:', filename);
-      return { success: true, error: null };
-    } catch (error) {
-      console.error('❌ Error exporting CSV:', error);
-      return { success: false, error };
+    switch (reportType) {
+      case 'overview':  // ✅ AGREGAR ESTE CASO
+        csvContent = this.generateOverviewCSV(data);
+        break;
+      case 'occupancy':
+        csvContent = this.generateOccupancyCSV(data);
+        break;
+      case 'daily':
+        csvContent = this.generateDailyReportsCSV(data);
+        break;
+      case 'revenue':
+        csvContent = this.generateRevenueCSV(data);
+        break;
+      case 'expenses':
+        csvContent = this.generateExpensesCSV(data);
+        break;
+      default:
+        throw new Error(`Tipo de reporte no soportado: ${reportType}`);
     }
-  },
+
+    // Descargar archivo
+    this.downloadCSV(csvContent, `${filename}.csv`);
+    
+    console.log('✅ CSV exported successfully:', filename);
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('❌ Error exporting CSV:', error);
+    return { success: false, error };
+  }
+},
 
   
 
@@ -3509,40 +3508,7 @@ async saveScheduledReport(reportData, userId) {
   // ===================================================
   // 📤 EXPORTACIÓN DE DATOS
   // ===================================================
-  async exportToCSV(reportType, data, options = {}) {
-    try {
-      console.log('📤 Exporting to CSV:', reportType);
-
-      let csvContent = '';
-      const { filename = `reporte_${reportType}_${new Date().toISOString().split('T')[0]}` } = options;
-
-      switch (reportType) {
-        case 'occupancy':
-          csvContent = this.generateOccupancyCSV(data);
-          break;
-        case 'revenue':
-          csvContent = this.generateRevenueCSV(data);
-          break;
-        case 'expenses':
-          csvContent = this.generateExpensesCSV(data);
-          break;
-        case 'daily':
-          csvContent = this.generateDailyReportsCSV(data);
-          break;
-        default:
-          throw new Error('Tipo de reporte no soportado para exportación');
-      }
-
-      // Descargar archivo
-      this.downloadCSV(csvContent, `${filename}.csv`);
-      
-      console.log('✅ CSV exported successfully:', filename);
-      return { success: true, error: null };
-    } catch (error) {
-      console.error('❌ Error exporting CSV:', error);
-      return { success: false, error };
-    }
-  },
+  
 
   generateOccupancyCSV(data) {
     const headers = ['Fecha', 'Total Habitaciones', 'Ocupadas', 'Disponibles', 'Mantenimiento', 'Tasa Ocupación (%)'];
