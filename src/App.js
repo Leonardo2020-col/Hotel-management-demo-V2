@@ -29,7 +29,7 @@ import Supplies from './pages/Supplies.jsx'
 // Admin Pages
 import AdminUsersPage from './pages/Admin/AdminUsers.jsx'
 import AdminBranchesPage from './pages/Admin/AdminBranches.jsx'
-import AdminReportsPage from './pages/Admin/AdminReports.jsx'
+//import AdminReportsPage from './pages/Admin/AdminReports.jsx'
 import AdminSettingsPage from './pages/Admin/AdminSettings.jsx'
 import AdminAuditPage from './pages/Admin/AdminAudit.jsx'
 
@@ -107,15 +107,15 @@ function App() {
               />
 
               {/* Reportes avanzados */}
-              <Route 
-                path="/admin/reports" 
+              <Route /*
+                path="/admin/reports"  
                 element={
                   <ProtectedRoute requireAdmin>
                     <Layout>
                       <AdminReportsPage />
                     </Layout>
                   </ProtectedRoute>
-                } 
+                } */
               />
 
               {/* Configuración del sistema */}

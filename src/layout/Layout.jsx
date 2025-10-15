@@ -139,12 +139,12 @@ const Layout = ({ children }) => {
       icon: Building,
       current: isCurrentPath('/admin/branches')
     },
-    {
+    /*{
       name: 'Reportes Avanzados',
       href: '/admin/reports',
       icon: FileText,
       current: isCurrentPath('/admin/reports')
-    },
+    },*/
     {
       name: 'Configuración',
       href: '/admin/settings',

@@ -137,7 +137,7 @@ export const DASHBOARD_CONFIG = {
       {
         key: 'revenue',
         title: 'Ingresos Hoy',
-        icon: 'DollarSign',
+        icon: 'SolSign',
         iconColor: 'text-green-600',
         path: '/reports',
         format: 'currency',
